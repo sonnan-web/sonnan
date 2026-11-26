@@ -85,6 +85,8 @@ th{background:#EEF3F3;color:var(--primary);font-weight:800;font-size:11.5px;whit
 td input,td select{padding:4px 7px;font-size:12px}
 td select{min-width:118px}
 td.err{background:#FFF4F4;color:#8F2530}
+td.emptyc{background:#FDE8E7;box-shadow:inset 0 0 0 1px #F1B9B5}
+.warnbox{border:1px solid #F1B9B5;background:#FFF7F6;color:#8F4A2B;border-radius:10px;padding:8px 12px;font-size:12px}
 
 .pill{display:inline-block;padding:1px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;border:1px solid}
 .pill.ok{color:var(--green);background:color-mix(in srgb,var(--green) 11%,#fff);border-color:color-mix(in srgb,var(--green) 30%,#fff)}
@@ -466,8 +468,9 @@ function refreshIssues() { const is = columnIssues(); const html = is.length ? `
 const DAY_HEADERS = ['اليوم', 'رقم اليوم', 'يوم', 'day'];
 function tabDays() {
   const cols = S.cols, imp = S.imported;
-  const rows = imp ? imp.rows : S.days.map(d => ({ day_number: d.day_number, vals: d.vals, errors: {} }));
+  const rows = imp ? imp.rows : S.days.map(d => ({ day_number: d.day_number, vals: d.vals, errors: {}, empty: {} }));
   const errCount = imp ? imp.rows.reduce((a, r) => a + Object.keys(r.errors).length, 0) + imp.problems.length : 0;
+  const emptyCount = imp ? imp.rows.reduce((a, r) => a + Object.keys(r.empty || {}).length, 0) : 0;
   $('#tab').innerHTML = `<div class="grid">
     <div class="drop" id="drop">
       <p><b>ارفع ملف إكسل للخطة</b></p>
@@ -482,10 +485,11 @@ function tabDays() {
         ${imp.problems.map(p => '<br>' + esc(p)).join('')}
         ${errCount ? `<br><b>${errCount} خطأ</b> مظلل بالأحمر في الجدول. صحّح الملف وارفعه مجددًا.` : '<br>لا أخطاء. اضغط «اعتماد الأيام» ثم «حفظ الخطة».'}
       </div>
+      ${emptyCount ? `<div class="warnbox">تنبيه: ${emptyCount} خلية فارغة، مظللة بالأحمر الفاتح في الجدول. الخلية الفارغة تعني أنه لا واجب في هذا العمود في ذلك اليوم. إن كان هذا مقصودًا اعتمد الأيام، وإلا صحّح الملف وارفعه مجددًا.</div>` : ''}
       <div class="row" style="justify-content:flex-start"><button class="btn" type="button" id="acceptImp" ${errCount ? 'disabled' : ''}>اعتماد الأيام (${imp.rows.length})</button><button class="btn ghost" type="button" id="cancelImp">إلغاء</button></div>` : ''}
     ${cols.length ? `<p class="muted small">الجدول يعرض أعمدة الخطة الحالية كما في تبويب «أعمدة الخطة»${S.dirty ? '، بما فيها التعديلات غير المحفوظة' : ''}.</p><div class="table-wrap" style="max-height:480px;overflow:auto"><table>
       <thead><tr><th>اليوم</th>${cols.map(c => `<th>${esc(c.header)}<br><span class="hint">${esc(taskName(c))}</span></th>`).join('')}</tr></thead>
-      <tbody>${rows.length ? '' : `<tr><td colspan="${cols.length + 1}" class="muted" style="text-align:center;padding:16px">لا توجد أيام بعد. نزّل النموذج، املأه، ثم ارفعه.</td></tr>`}${rows.slice(0, 400).map(r => `<tr><td class="colnum${r.errors._day ? ' err' : ''}" title="${esc(r.errors._day || '')}">${esc(r.day_number)}</td>${cols.map(c => { const e = r.errors[c.id]; const v = r.vals[c.id]; return `<td class="${e ? 'err' : ''}" title="${esc(e || '')}">${v == null || v === '' ? '<span class="muted">—</span>' : c.value_type === 'url' ? `<a href="${esc(v)}" target="_blank" rel="noopener">رابط</a>` : c.value_type === 'bool' ? (v ? 'نعم' : 'لا') : esc(v)}${e ? `<div class="small">${esc(e)}</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+      <tbody>${rows.length ? '' : `<tr><td colspan="${cols.length + 1}" class="muted" style="text-align:center;padding:16px">لا توجد أيام بعد. نزّل النموذج، املأه، ثم ارفعه.</td></tr>`}${rows.slice(0, 400).map(r => `<tr><td class="colnum${r.errors._day ? ' err' : ''}" title="${esc(r.errors._day || '')}">${esc(r.day_number)}</td>${cols.map(c => { const e = r.errors[c.id]; const em = r.empty?.[c.id]; const v = r.vals[c.id]; return `<td class="${e ? 'err' : em ? 'emptyc' : ''}" title="${esc(e || (em ? (em === 1 ? 'خلية فارغة: لا واجب في هذا اليوم' : em) : ''))}">${v == null || v === '' ? '<span class="muted">—</span>' : c.value_type === 'url' ? `<a href="${esc(v)}" target="_blank" rel="noopener">رابط</a>` : c.value_type === 'bool' ? (v ? 'نعم' : 'لا') : esc(v)}${e ? `<div class="small">${esc(e)}</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
       ${rows.length > 400 ? `<p class="muted small">يُعرض أول ٤٠٠ يوم من ${rows.length}.</p>` : ''}` : '<div class="empty">أضف أعمدة الخطة أولًا من تبويب «أعمدة الخطة».</div>'}
   </div>`;
   const fi = $('#xfile');
@@ -551,7 +555,7 @@ function parseSheet(fileName, aoa) {
   aoa.slice(hi + 1).forEach((r, ri) => {
     if (!r.some(v => String(v).trim() !== '')) return;
     seq++;
-    const errors = {}, vals = {};
+    const errors = {}, vals = {}, empty = {};
     let dn = seq;
     if (dayIdx >= 0) { const n = Number(toWestern(r[dayIdx])); if (!Number.isInteger(n) || n < 1) errors._day = 'رقم يوم غير صالح'; else dn = n; }
     if (seenDays[dn]) errors._day = 'اليوم ' + dn + ' مكرر'; seenDays[dn] = 1;
@@ -559,7 +563,7 @@ function parseSheet(fileName, aoa) {
       if (map[c.id] == null) return;
       let v = r[map[c.id]];
       v = typeof v === 'string' ? v.trim() : v;
-      if (v === '' || v == null) { if (c.required) errors[c.id] = 'مطلوب'; return; }
+      if (v === '' || v == null) { empty[c.id] = 1; return; }
       if (c.value_type === 'number') { const n = Number(toWestern(v)); if (isNaN(n)) errors[c.id] = 'ليس رقمًا'; else v = n; }
       else if (c.value_type === 'bool') { const s = norm(v); v = ['1', 'نعم', 'yes', 'true', '✓', 'صح'].includes(s); }
       else if (c.value_type === 'url') { if (!/^https?:\/\//i.test(String(v))) errors[c.id] = 'رابط غير صالح'; }
@@ -569,9 +573,9 @@ function parseSheet(fileName, aoa) {
     S.cols.filter(c => c.range_role === 'start' && c.value_type === 'number').forEach(c => {
       const e = S.cols.find(x => x.id === c.pair_column_id);
       if (e && typeof vals[c.id] === 'number' && typeof vals[e.id] === 'number' && vals[c.id] > vals[e.id]) errors[e.id] = '«' + c.header + '» أكبر من «' + e.header + '»';
-      if (e && (vals[c.id] != null) !== (vals[e.id] != null)) errors[vals[c.id] == null ? c.id : e.id] = 'النطاق ناقص';
+      if (e && (vals[c.id] != null) !== (vals[e.id] != null)) empty[vals[c.id] == null ? c.id : e.id] = 'النطاق ناقص';
     });
-    rows.push({ day_number: dn, vals, errors, line: hi + ri + 2 });
+    rows.push({ day_number: dn, vals, errors, empty, line: hi + ri + 2 });
   });
   rows.sort((a, b) => a.day_number - b.day_number);
   return { file: fileName, rows, matched, unknown, missing, problems };
