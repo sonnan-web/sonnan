@@ -171,10 +171,12 @@ async function honor(box) {
 // ============ الرصد ============
 // المعلم يرصد لأي طالب في المنصة، وتقاريره تبقى لطلابه المسندين إليه
 let recPick = null;
+// مهلة تعديل المعلم: 24 ساعة من أول رصد (تُفرض أيضًا في قاعدة البيانات)
+const inWindow = r => Date.now() - new Date(r.origin_at || r.created_at).getTime() < 24 * 3600e3;
 const ctxFor = s => {
   const a = assignOf[s.id];
   return { stu: s, assign: a, P: a ? PLANS[a.plan_id] : null, roomId: roomOf[s.id] || null, roomName: roomById[roomOf[s.id]]?.name || '',
-    teacherId: T.id, meId: me.id, canEdit: r => r.teacher_id === T.id, teacherName: id => id === T.id ? 'أنت' : (teacherName[id] || ''), onSaved: () => { RECS = null; } };
+    teacherId: T.id, meId: me.id, canEdit: r => r.teacher_id === T.id && inWindow(r), lockReason: r => r.teacher_id !== T.id ? 'رصده معلم آخر' : 'انتهت مهلة التعديل (24 ساعة) — للتعديل راسل المشرف',teacherName: id => id === T.id ? 'أنت' : (teacherName[id] || ''), onSaved: () => { RECS = null; } };
 };
 SECTIONS.record = el => {
   el.innerHTML = `<div class="sec-h" style="--c:var(--teal)"><b>رصد جلسة التسميع</b><span>${allStudents.length} طالبًا · طلابي ${students.length}</span></div>

@@ -334,7 +334,7 @@
         ${list.length ? list.map(r => `<div class="hist">
           <div class="row"><b>${dayName(r.rec_date)} ${greg(r.rec_date)}</b>${statusPill(r.status)}</div>
           <div class="small muted">${r.memo_from ? 'الحفظ: ' + +r.memo_from + '–' + +r.memo_to + ' · ' : ''}${r.score != null ? 'الدرجة: ' + fmtNum(r.score, 2) : ''}${r.makes_up_date ? ' · تعويض عن ' + greg(r.makes_up_date) : ''}${ctx.teacherName ? ' · ' + esc(ctx.teacherName(r.teacher_id) || '') : ''}${r.notes ? ' · ' + esc(r.notes) : ''}</div>
-          ${ctx.canEdit(r) ? `<div class="row" style="justify-content:flex-start;gap:6px"><button class="btn ghost sm" data-edit="${r.id}" type="button">تعديل</button>${ctx.canDelete ? `<button class="btn danger sm" data-del="${r.id}" type="button">حذف</button>` : ''}</div>` : '<div class="hint">رصده معلم آخر</div>'}</div>`).join('') : '<div class="empty">لا يوجد رصد سابق</div>'}
+          ${ctx.canEdit(r) ? `<div class="row" style="justify-content:flex-start;gap:6px"><button class="btn ghost sm" data-edit="${r.id}" type="button">تعديل</button>${ctx.canDelete ? `<button class="btn danger sm" data-del="${r.id}" type="button">حذف</button>` : ''}</div>` : `<div class="hint">${esc(ctx.lockReason?.(r) || 'رصده معلم آخر')}</div>`}</div>`).join('') : '<div class="empty">لا يوجد رصد سابق</div>'}
         ${S.hist.length > S.shown ? `<button class="btn ghost block sm" id="rwMore" type="button" style="margin-top:8px">إظهار المزيد</button>` : ''}</div>`;
       $$('[data-edit]', ha).forEach(b => b.onclick = () => startEdit(b.dataset.edit));
       $$('[data-del]', ha).forEach(b => b.onclick = () => ctx.onDelete && ctx.onDelete(S.hist.find(x => x.id === b.dataset.del), async () => { await loadHist(); drawHist(); }));

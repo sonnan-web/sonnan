@@ -276,3 +276,24 @@ drop policy if exists admin_all on public.plan_assignments;
 create policy admin_all on public.plan_assignments for all to authenticated using ((select public.get_current_user_role()) = 'admin') with check ((select public.get_current_user_role()) = 'admin');
 create index if not exists plan_progress_student on public.plan_progress (student_id);
 create index if not exists plan_recitations_student on public.plan_recitations (student_id) where superseded_by is null;
+
+-- مهلة تعديل المعلم: 24 ساعة من أول رصد (لا تتجدد بالتعديل)
+alter table public.plan_recitations add column if not exists origin_at timestamptz not null default now();
+update public.plan_recitations set origin_at = created_at where origin_at <> created_at;
+create or replace function public.rec_origin_guard() returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if tg_op = 'INSERT' then
+    if coalesce(public.get_current_user_role(), '') <> 'admin' then new.origin_at := now(); end if;
+  elsif new.superseded_by is not null and old.superseded_by is null and new.superseded_by <> new.id then
+    update public.plan_recitations set origin_at = old.origin_at where id = new.superseded_by;
+  end if;
+  return new;
+end $$;
+drop trigger if exists rec_origin_ins on public.plan_recitations;
+create trigger rec_origin_ins before insert on public.plan_recitations for each row execute function public.rec_origin_guard();
+drop trigger if exists rec_origin_upd on public.plan_recitations;
+create trigger rec_origin_upd after update of superseded_by on public.plan_recitations for each row execute function public.rec_origin_guard();
+drop policy if exists teacher_rec_supersede on public.plan_recitations;
+create policy teacher_rec_supersede on public.plan_recitations for update to authenticated
+  using (teacher_id = (select public.get_teacher_id_for_current_user()) and superseded_by is null and origin_at > now() - interval '24 hours')
+  with check (teacher_id = (select public.get_teacher_id_for_current_user()));
