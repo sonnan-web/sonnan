@@ -541,6 +541,19 @@
     if (pushSupported() && Notification.permission === 'default' && !snoozed('sonnan-push-snooze')) pushSheet();
   }
 
+  // حقول الجنسية: قائمة اقتراحات بالأسماء الموحدة (قاعدة البيانات توحّد أي صيغة عند الحفظ أيضًا)
+  let natLoaded = false;
+  document.addEventListener('focusin', async e => {
+    const el = e.target;
+    if (!(el instanceof HTMLInputElement) || !/^(pf|sf|tf)Nat$/.test(el.id)) return;
+    el.setAttribute('list', 'natList'); el.autocomplete = 'off';
+    if (natLoaded) return; natLoaded = true;
+    const { data } = await db.from('nationality_names').select('canonical');
+    const dl = document.createElement('datalist'); dl.id = 'natList';
+    [...new Set((data || []).map(x => x.canonical))].sort((a, b) => a.localeCompare(b, 'ar')).forEach(v => { const o = document.createElement('option'); o.value = v; dl.appendChild(o); });
+    document.body.appendChild(dl);
+  });
+
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
     unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, svg };
