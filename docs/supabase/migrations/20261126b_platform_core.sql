@@ -162,3 +162,29 @@ revoke update on public.plan_recitations from authenticated;
 grant update (superseded_by, edit_reason) on public.plan_recitations to authenticated;
 create policy student_sees_teacher on public.users for select to authenticated using (id = public.my_teacher_user_id());
 create policy student_sees_teacher_row on public.teachers for select to authenticated using (user_id = public.my_teacher_user_id());
+
+-- ===== إضافة لاحقة: بيانات الإثبات للمشرف فقط، والأرشفة، وتعديل اسم الحساب وبريده =====
+create table if not exists public.student_private (
+  student_id uuid primary key references public.students(id) on delete cascade,
+  id_number text, id_type text, updated_at timestamptz not null default now());
+alter table public.student_private enable row level security;
+create policy admin_all on public.student_private for all to authenticated
+  using (public.get_current_user_role() = 'admin') with check (public.get_current_user_role() = 'admin');
+drop policy if exists teacher_own_students on public.students;
+create policy teacher_own_students on public.students for select to authenticated
+  using (teacher_id = public.get_teacher_id_for_current_user() and is_archived = false);
+create or replace function public.is_my_student(stu uuid) returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.students s where s.id = stu and s.is_archived = false and s.teacher_id = public.get_teacher_id_for_current_user()) $$;
+create or replace function public.admin_update_account(p_user uuid, p_name text, p_email text)
+returns void language plpgsql security definer set search_path = '' as $$
+declare em text := lower(btrim(p_email));
+begin
+  if public.get_current_user_role() is distinct from 'admin' then raise exception 'للمشرف فقط'; end if;
+  if em !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then raise exception 'بريد غير صالح: %', p_email; end if;
+  if exists (select 1 from public.users where lower(email) = em and id <> p_user) then raise exception 'البريد مستخدم لحساب آخر'; end if;
+  update public.users set name = btrim(p_name), email = em where id = p_user;
+  update auth.users set email = em, updated_at = now() where id = p_user;
+  update auth.identities set identity_data = identity_data || jsonb_build_object('email', em) where user_id = p_user and provider = 'email';
+end $$;
+revoke execute on function public.admin_update_account(uuid, text, text) from anon, public;
+grant execute on function public.admin_update_account(uuid, text, text) to authenticated;

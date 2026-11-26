@@ -178,7 +178,8 @@ async function boot() {
   $('#who').textContent = me.name;
   $('#logout').hidden = false;
   await loadPlans();
-  if (QS.get('id')) await openPlan(QS.get('id'));
+  if (QS.get('tab')) S.tab = QS.get('tab');
+  if (QS.get('id')) { await openPlan(QS.get('id')); if (QS.get('tab')) { S.tab = QS.get('tab'); render(); } }
   else if (QS.get('new') === '1' || !S.plans.length) startNew();
   else await openPlan(S.plans[0].id);
 }
@@ -636,41 +637,63 @@ async function tabAssign() {
   if (!S.plan.id) { $('#tab').innerHTML = '<div class="empty">احفظ الخطة أولًا ثم أسندها للطلاب.</div>'; return; }
   $('#tab').innerHTML = '<div class="empty">جارٍ التحميل…</div>';
   const [st, as] = await Promise.all([
-    db.from('students').select('id, status, users!students_user_id_fkey(name, email)').eq('is_archived', false).order('join_date'),
+    db.from('students').select('id, status, quran_parts, users!students_user_id_fkey(name, email)').eq('is_archived', false),
     db.from('plan_assignments').select('id, student_id, plan_id, start_date, start_day, program_plans(name)').is('ended_at', null)
   ]);
   if (st.error) { $('#tab').innerHTML = `<div class="errbox">${esc(st.error.message)}</div>`; return; }
   const cur = {}; (as.data || []).forEach(a => cur[a.student_id] = a);
+  const planId = S.plan.id;
+  const students = (st.data || []).map(s => ({ id: s.id, name: s.users?.name || '—', email: s.users?.email || '', parts: s.quran_parts, a: cur[s.id] }))
+    .map(s => ({ ...s, here: s.a?.plan_id === planId, other: s.a && s.a.plan_id !== planId, key: norm(s.name + ' ' + s.email + ' ' + (s.parts ?? '')) }))
+    .sort((x, y) => (y.here - x.here) || (x.other - y.other) || x.name.localeCompare(y.name, 'ar'));
+  // الاختيار: المسندون لهذه الخطة محددون ويمكن إلغاؤهم من هنا فقط
+  const sel = new Set(students.filter(s => s.here).map(s => s.id));
+  const before = new Set(sel);
   const today = todayMakkah();
+  let q = '';
   $('#tab').innerHTML = `<div class="grid">
     <div class="g3">
       <label class="f" for="aStart">تبدأ من تاريخ<input id="aStart" type="date" value="${today}"></label>
       <label class="f" for="aDay">من يوم الخطة رقم<input id="aDay" type="number" min="1" value="1"></label>
-      <label class="f" for="aSearch">بحث<input id="aSearch" type="text" placeholder="اسم الطالب أو بريده"></label>
+      <label class="f" for="aSearch">بحث <span class="hint">بالاسم أو البريد أو مقدار حفظ القرآن</span><input id="aSearch" type="search" placeholder="اكتب حرفًا أو رقمًا…" autocomplete="off"></label>
     </div>
-    <p class="hint">إذا كان الطالب على خطة أخرى تُغلق خطته السابقة ويبقى سجله فيها كما هو.</p>
-    <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="aAll" aria-label="تحديد الكل"></th><th>الطالب</th><th>البريد</th><th>الخطة الحالية</th></tr></thead><tbody>
-      ${(st.data || []).map(s => { const a = cur[s.id]; return `<tr data-name="${esc(norm((s.users?.name || '') + ' ' + (s.users?.email || '')))}"><td><input type="checkbox" data-stu="${s.id}"></td><td><b>${esc(s.users?.name || '—')}</b></td><td dir="ltr" style="text-align:right">${esc(s.users?.email || '')}</td><td>${a ? (a.plan_id === S.plan.id ? `<span class="pill ok">هذه الخطة · من يوم ${a.start_day}</span>` : `<span class="pill plain">${esc(a.program_plans?.name || 'خطة أخرى')}</span>`) : '<span class="muted">—</span>'}</td></tr>`; }).join('') || '<tr><td colspan="4" class="empty">لا يوجد طلاب.</td></tr>'}
-    </tbody></table></div>
-    <div class="sticky-save"><button class="btn" type="button" id="doAssign">إسناد الخطة للمحددين</button><span class="muted small" id="selCount">لم يُحدد أحد</span></div>
+    <div class="note">المحدد مسبقًا هم طلاب هذه الخطة، وتستطيع إلغاءهم من هنا. الطالب الرمادي مسند لخطة أخرى (يظهر اسمها أمامه)، ولا يُغيَّر إلا من خطته. التاريخ ورقم اليوم يُطبَّقان على الطلاب الذين تضيفهم الآن.</div>
+    <div class="table-wrap" style="max-height:520px;overflow:auto"><table>
+      <thead><tr><th style="width:36px"><input type="checkbox" id="aAll" aria-label="تحديد كل الظاهرين"></th><th>اسم الطالب</th><th>البريد الإلكتروني</th><th>حفظ القرآن</th><th>الخطة الحالية</th></tr></thead>
+      <tbody id="aBody"></tbody></table></div>
+    <div class="sticky-save"><button class="btn" type="button" id="doAssign">حفظ</button><span class="muted small" id="selCount"></span></div>
   </div>`;
-  const upd = () => { const n = $$('[data-stu]:checked').length; $('#selCount').textContent = n ? `محدد ${n}` : 'لم يُحدد أحد'; };
-  $$('[data-stu]').forEach(c => c.onchange = upd);
-  $('#aAll').onchange = e => { $$('tbody tr').filter(tr => !tr.hidden).forEach(tr => { const c = $('[data-stu]', tr); if (c) c.checked = e.target.checked; }); upd(); };
-  $('#aSearch').oninput = e => { const q = norm(e.target.value); $$('tbody tr[data-name]').forEach(tr => tr.hidden = q && !tr.dataset.name.includes(q)); };
+  const drawRows = () => {
+    const vis = students.filter(s => !q || s.key.includes(q));
+    $('#aBody').innerHTML = vis.map(s => `<tr${s.other ? ' style="opacity:.5;background:var(--track)"' : ''}>
+      <td><input type="checkbox" data-stu="${s.id}"${s.other || sel.has(s.id) ? ' checked' : ''}${s.other ? ' disabled' : ''} aria-label="${esc(s.name)}"></td>
+      <td><b>${esc(s.name)}</b></td><td dir="ltr" style="text-align:right">${esc(s.email)}</td><td class="num">${s.parts == null ? '—' : s.parts + ' جزء'}</td>
+      <td>${s.here ? `<span class="pill ok">هذه الخطة · من يوم ${s.a.start_day}</span>` : s.other ? `<span class="pill plain">${esc(s.a.program_plans?.name || 'خطة أخرى')}</span>` : '<span class="muted">—</span>'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted" style="text-align:center;padding:16px">لا توجد نتائج</td></tr>';
+    $$('[data-stu]').forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.stu) : sel.delete(c.dataset.stu); count(); });
+    const free = vis.filter(s => !s.other);
+    $('#aAll').checked = free.length > 0 && free.every(s => sel.has(s.id));
+    count();
+  };
+  const count = () => {
+    const add = [...sel].filter(id => !before.has(id)).length, rem = [...before].filter(id => !sel.has(id)).length;
+    $('#selCount').textContent = `محدد ${sel.size} · سيُضاف ${add} · سيُزال ${rem}`;
+  };
+  $('#aSearch').addEventListener('input', e => { q = norm(e.target.value); drawRows(); });
+  $('#aAll').onchange = e => { students.filter(s => !s.other && (!q || s.key.includes(q))).forEach(s => e.target.checked ? sel.add(s.id) : sel.delete(s.id)); drawRows(); };
+  drawRows();
   $('#doAssign').onclick = async () => {
     if (S.dirty) return toast('احفظ تغييرات الخطة أولًا', true);
-    const ids = $$('[data-stu]:checked').map(c => c.dataset.stu);
-    if (!ids.length) return toast('حدّد طالبًا واحدًا على الأقل', true);
+    const add = [...sel].filter(id => !before.has(id)), rem = [...before].filter(id => !sel.has(id));
+    if (!add.length && !rem.length) return toast('لا توجد تغييرات', true);
     const startDay = Math.max(1, +$('#aDay').value || 1), startDate = $('#aStart').value || today;
     const btn = $('#doAssign'); btn.disabled = true;
-    const close = await db.from('plan_assignments').update({ ended_at: new Date().toISOString() }).in('student_id', ids).is('ended_at', null);
-    if (close.error) { btn.disabled = false; return toast(close.error.message, true); }
-    const ins = await db.from('plan_assignments').insert(ids.map(id => ({ plan_id: S.plan.id, student_id: id, start_date: startDate, start_day: startDay, assigned_by: S.user.id })));
-    btn.disabled = false;
-    if (ins.error) return toast(ins.error.message, true);
-    toast(`أُسندت الخطة إلى ${ids.length} طالب`);
-    tabAssign();
+    try {
+      if (rem.length) { const r = await db.from('plan_assignments').update({ ended_at: new Date().toISOString() }).eq('plan_id', planId).in('student_id', rem).is('ended_at', null); if (r.error) throw r.error; }
+      if (add.length) { const r = await db.from('plan_assignments').insert(add.map(id => ({ plan_id: planId, student_id: id, start_date: startDate, start_day: startDay, assigned_by: S.user.id }))); if (r.error) throw r.error; }
+      toast(`حُفظ: أُضيف ${add.length} وأُزيل ${rem.length}`);
+      tellParent('saved', { id: planId });
+      tabAssign();
+    } catch (e) { toast(e.message, true); btn.disabled = false; }
   };
 }
 

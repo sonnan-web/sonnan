@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ملف الطالب — منصة سنن</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+<style>
+body{background:#DDE5E5}
+.toolbar{position:sticky;top:0;z-index:5;background:linear-gradient(110deg,var(--primary),var(--secondary));border-bottom:2px solid var(--gold);padding:8px max(16px,env(safe-area-inset-left,0px));display:flex;justify-content:space-between;align-items:center;gap:10px;color:#fff}
+.sheet{max-width:900px;margin:18px auto;background:#fff;border-radius:6px;box-shadow:0 6px 30px rgba(15,47,51,.15);padding:30px 36px 40px}
+@media (max-width:700px){.sheet{margin:0;border-radius:0;padding:18px 16px 30px}}
+.letterhead{display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:3px double var(--gold);padding-bottom:14px}
+.letterhead .org{display:flex;align-items:center;gap:12px}
+.letterhead .seal{width:58px;height:58px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--secondary));color:var(--gold);display:grid;place-items:center;font-weight:800;font-size:18px;flex:none}
+.letterhead h1{font-size:19px;color:var(--primary)}.letterhead p{color:var(--muted);font-size:12px}
+.letterhead .doc{text-align:left;font-size:12px;color:var(--muted);line-height:1.8}
+.title{text-align:center;margin:18px 0 6px}
+.title h2{font-size:22px;color:var(--primary);display:inline-block;border-bottom:2px solid var(--gold);padding:0 18px 6px}
+.idline{text-align:center;color:var(--muted);font-size:12.5px;margin-bottom:18px}
+.block{margin-top:18px;break-inside:avoid}
+.block h3{font-size:14.5px;color:#fff;background:linear-gradient(110deg,var(--primary),var(--secondary));border-right:5px solid var(--gold);padding:6px 12px;border-radius:6px;margin-bottom:10px}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:8px;overflow:hidden}
+@media (max-width:700px){.facts{grid-template-columns:1fr 1fr}}
+.facts div{padding:8px 11px;border-bottom:1px solid var(--soft-line);border-left:1px solid var(--soft-line);min-width:0}
+.facts small{display:block;color:var(--muted);font-size:11px;font-weight:700}.facts b{display:block;font-size:13.5px;overflow-wrap:anywhere;margin-top:2px}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+@media (max-width:700px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{border:1px solid var(--line);border-top:3px solid var(--c);border-radius:8px;padding:9px;text-align:center}
+.kpi small{display:block;color:var(--muted);font-size:11px;font-weight:700}.kpi b{display:block;font-size:20px;color:var(--c);margin-top:3px;font-variant-numeric:tabular-nums}
+.sheet table{font-size:11.5px}
+.sheet th{position:static}
+.sheet .tbl-wrap{max-height:none;border-radius:8px}
+.sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:34px;text-align:center;font-size:12.5px;color:var(--muted)}
+.sign div{border-top:1px solid var(--line);padding-top:8px}
+.foot{margin-top:24px;text-align:center;font-size:10.5px;color:var(--muted)}
+@media print{
+  @page{size:A4;margin:12mm}
+  body{background:#fff}
+  .toolbar{display:none}
+  .sheet{box-shadow:none;margin:0;padding:0;max-width:none}
+  .block h3,.letterhead .seal{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .pill,.kpi{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  tr{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<div class="toolbar"><b>ملف الطالب</b><div class="row"><button class="btn gold sm" id="print" type="button">طباعة</button><a class="pillbtn" href="admin.html#students">رجوع</a></div></div>
+<main class="sheet" id="sheet"><div class="loading">جارٍ التحميل…</div></main>
+<script>
+(async () => {
+'use strict';
+const A = App, { db, $, esc, fmtNum, statusPill, STATUS, STU_STATUS } = A;
+const me = await A.requireRole(['admin']);
+if (!me) return;
+$('#print').onclick = () => window.print();
+const id = new URLSearchParams(location.search).get('id');
+const TODAY = A.todayMakkah();
+const { data: s, error } = await db.from('students').select('*').eq('id', id).maybeSingle();
+if (error || !s) { $('#sheet').innerHTML = '<div class="error">لم يُعثر على الطالب.</div>'; return; }
+const [u, priv, prog, asg, ra, recs, lv, de, fa, ex, teachers, users] = await Promise.all([
+  db.from('users').select('name, email, phone, created_at').eq('id', s.user_id).maybeSingle().then(r => r.data || {}),
+  db.from('student_private').select('*').eq('student_id', id).maybeSingle().then(r => r.data || {}),
+  s.program_id ? db.from('programs').select('name').eq('id', s.program_id).maybeSingle().then(r => r.data) : null,
+  db.from('plan_assignments').select('*, program_plans(*)').eq('student_id', id).order('assigned_at', { ascending: false }).then(r => r.data || []),
+  db.from('room_assignments').select('audio_rooms(*)').eq('assignee_type', 'student').eq('assignee_id', id).then(r => r.data || []),
+  A.fetchAll(() => db.from('plan_recitations').select('*').eq('student_id', id).is('superseded_by', null).order('rec_date', { ascending: false })),
+  db.from('leave_requests').select('*').eq('student_id', id).order('date_from', { ascending: false }).then(r => r.data || []),
+  db.from('discipline_events').select('*').eq('student_id', id).order('event_date', { ascending: false }).then(r => r.data || []),
+  db.from('follow_up_actions').select('*').eq('student_id', id).order('case_date', { ascending: false }).then(r => r.data || []),
+  db.from('periodic_exams').select('*').eq('student_id', id).order('date', { ascending: false }).then(r => r.data || []),
+  db.from('teachers').select('id, user_id').then(r => r.data || []),
+  db.from('users').select('id, name').eq('role', 'teacher').then(r => r.data || [])
+]);
+const tName = Object.fromEntries(teachers.map(t => [t.id, users.find(x => x.id === t.user_id)?.name || '—']));
+const cur = asg.find(a => !a.ended_at); const P = cur?.program_plans;
+const rooms = ra.map(x => x.audio_rooms).filter(Boolean);
+// الإحصاءات
+const wd = P?.workdays || [0, 1, 2, 3, 4];
+const startD = cur?.start_date || s.join_date;
+const expected = A.workdaysBetween(startD, A.addDays(TODAY, -1), wd);
+const achDays = new Set(recs.filter(r => ['present', 'makeup', 'review_only'].includes(r.status) && r.rec_date < TODAY).map(r => r.rec_date)).size;
+const excDays = new Set(recs.filter(r => r.status === 'excused').map(r => r.rec_date)).size;
+const base = Math.max(0, expected - excDays);
+const pct = base ? Math.min(100, Math.round(achDays / base * 100)) : null;
+const sc = recs.filter(r => r.score != null).map(r => +r.score);
+const avg = sc.length ? sc.reduce((a, b) => a + b, 0) / sc.length : null;
+const mem = A.unionCount(recs.filter(r => ['present', 'makeup'].includes(r.status)).map(r => [r.memo_from == null ? null : +r.memo_from, r.memo_to == null ? null : +r.memo_to]));
+// التنفيذ
+let execPct = null;
+if (P && P.student_execution !== 'none') {
+  const [cols, days, prog2] = await Promise.all([db.from('plan_columns').select('*').eq('plan_id', P.id).order('seq').then(r => r.data || []), A.fetchAll(() => db.from('plan_days').select('id, day_number, vals').eq('plan_id', P.id)), db.from('plan_progress').select('plan_day_id, column_id').eq('student_id', id).then(r => r.data || [])]);
+  const dm = Object.fromEntries(days.map(d => [d.day_number, d])); const done = new Set(prog2.map(p => p.plan_day_id + '|' + p.column_id));
+  const curDay = A.planDayFor(cur, P, days.length, A.addDays(TODAY, -1));
+  const tasks = A.groupTasks(cols, c => c.executor === 'student' || c.executor === 'both');
+  let e = 0, d = 0;
+  for (let k = cur.start_day; k <= curDay; k++) { const day = dm[k]; if (!day) continue; tasks.forEach(t => { if (A.fmtTaskVal(t, day.vals) == null) return; e++; if (t.cols.some(c => done.has(day.id + '|' + c.id))) d++; }); }
+  execPct = e ? Math.round(d / e * 100) : null;
+}
+let evalScore = null;
+if (P) { const max = +(P.score_rules?.max || 10); const rec = P.recitation_mode !== 'none' && avg != null ? avg / max * 100 : null;
+  if (P.student_execution === 'counts' && P.recitation_mode !== 'none') evalScore = rec != null && execPct != null && P.execution_weight != null && P.recitation_weight != null ? (rec * P.recitation_weight + execPct * P.execution_weight) / 100 : null;
+  else if (P.student_execution === 'counts') evalScore = execPct; else evalScore = rec; }
+const st = s.is_archived ? 'مؤرشف' : (STU_STATUS[s.status] || [s.status])[0];
+const fact = (l, v, ltr) => `<div><small>${l}</small><b${ltr ? ' dir="ltr" style="text-align:right"' : ''}>${v == null || v === '' ? '—' : esc(v)}</b></div>`;
+const c = { present: 0, makeup: 0, review_only: 0, excused: 0, absent: 0 }; recs.forEach(r => c[r.status]++);
+document.title = 'ملف الطالب: ' + u.name;
+$('#sheet').innerHTML = `
+  <header class="letterhead"><div class="org"><span class="seal">سنن</span><div><h1>جمعية سنن التعليمية</h1><p>قسم التعليم عن بعد</p></div></div>
+    <div class="doc">تاريخ الإصدار: ${A.greg(TODAY)}<br>${A.hijri(TODAY)}</div></header>
+  <div class="title"><h2>ملف الطالب</h2></div>
+  <p class="idline">${esc(u.name)} · ${esc(prog?.name || P?.book_name || '')} · الحالة: ${esc(st)}</p>
+
+  <section class="block"><h3>البيانات الشخصية</h3><div class="facts">
+    ${fact('الاسم', u.name)}${fact('البريد الإلكتروني', u.email, true)}${fact('رقم الجوال', s.phone || u.phone, true)}
+    ${fact('الجنسية', s.nationality)}${fact('مكان الإقامة', s.residence)}${fact('الجنس', s.gender)}
+    ${fact('نوع الإثبات', priv.id_type)}${fact('رقم الإثبات', priv.id_number, true)}${fact('تاريخ الميلاد', s.birth_date ? A.greg(s.birth_date) : null)}
+    ${fact('التعليم', s.education)}${fact('حفظ القرآن', s.quran_parts != null ? fmtNum(s.quran_parts, 1) + ' جزء' : null)}${fact('حالة القبول', s.app_status)}
+  </div></section>
+
+  <section class="block"><h3>البرنامج والإسناد</h3><div class="facts">
+    ${fact('البرنامج', prog?.name)}${fact('الخطة', P?.name)}${fact('بداية الخطة', cur ? A.greg(cur.start_date) + ' · من اليوم ' + cur.start_day : null)}
+    ${fact('المعلم', s.teacher_id ? tName[s.teacher_id] : null)}${fact('الفترة / الغرفة الصوتية', rooms.map(r => r.name + ' (' + (r.start_time || '').slice(0, 5) + '–' + (r.end_time || '').slice(0, 5) + ')').join('، '))}${fact('تاريخ الانضمام', s.join_date ? A.greg(s.join_date) : null)}
+  </div>${s.notes ? `<p class="note">ملاحظات: ${esc(s.notes)}</p>` : ''}</section>
+
+  <section class="block"><h3>ملخص الإنجاز</h3><div class="kpis">
+    <div class="kpi" style="--c:var(--teal)"><small>مستوى الإنجاز</small><b>${pct == null ? '—' : pct + '٪'}</b></div>
+    <div class="kpi" style="--c:var(--green)"><small>الأحاديث المحفوظة</small><b>${fmtNum(mem, 1)}</b></div>
+    <div class="kpi" style="--c:var(--blue)"><small>متوسط درجة التسميع</small><b>${avg == null ? '—' : fmtNum(avg, 2)}</b></div>
+    <div class="kpi" style="--c:var(--violet)"><small>نسبة التنفيذ</small><b>${execPct == null ? '—' : execPct + '٪'}</b></div>
+    <div class="kpi" style="--c:var(--orange)"><small>التقييم المركب</small><b>${evalScore == null ? '—' : fmtNum(evalScore, 1) + '٪'}</b></div>
+  </div>
+  <p class="note">أيام الخطة حتى أمس: ${expected} · أيام الإنجاز: ${achDays} · حضور ${c.present} · تعويض ${c.makeup} · ربط ومراجعة ${c.review_only} · استئذان ${c.excused} · غياب تقديري ${Math.max(0, base - achDays)}.
+  ${P ? `التقييم المركب = ${P.recitation_mode !== 'none' ? 'درجة التسميع' : ''}${P.student_execution === 'counts' && P.recitation_mode !== 'none' ? ` (${P.recitation_weight ?? '؟'}٪) + التنفيذ (${P.execution_weight ?? '؟'}٪)` : P.student_execution === 'counts' ? 'نسبة التنفيذ' : ''} حسب أوزان الخطة.` : ''}</p></section>
+
+  <section class="block"><h3>سجل رصد المعلمين (${recs.length})</h3><div class="tbl-wrap"><table><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحفظ</th><th>الأخطاء</th><th>الدرجة</th><th>المعلم</th><th>ملاحظات</th></tr></thead><tbody>
+    ${recs.map(r => `<tr><td>${A.dayName(r.rec_date)} ${A.greg(r.rec_date)}</td><td>${statusPill(r.status)}${r.makes_up_date ? '<br><span class="hint">عن ' + A.greg(r.makes_up_date) + '</span>' : ''}</td><td>${r.memo_from ? +r.memo_from + '–' + +r.memo_to : '—'}</td><td class="num">${r.errors_total ?? '—'}</td><td class="num">${r.score != null ? fmtNum(r.score, 2) : '—'}</td><td>${esc(tName[r.teacher_id] || '—')}</td><td style="white-space:normal">${esc(r.notes || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">لا يوجد</td></tr>'}</tbody></table></div></section>
+
+  ${lv.length ? `<section class="block"><h3>الاستئذانات (${lv.length})</h3><div class="tbl-wrap"><table><thead><tr><th>من</th><th>إلى</th><th>السبب</th><th>الحالة</th></tr></thead><tbody>${lv.map(l => `<tr><td>${A.greg(l.date_from)}</td><td>${A.greg(l.date_to)}</td><td>${esc(l.reason)}</td><td>${{ pending: 'بانتظار القرار', approved: 'مقبول', rejected: 'مرفوض', cancelled: 'ملغى' }[l.status]}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+  ${de.length || fa.length ? `<section class="block"><h3>الانضباط والمتابعة</h3>
+    ${de.length ? `<div class="tbl-wrap"><table><thead><tr><th>التاريخ</th><th>النوع</th><th>السبب</th></tr></thead><tbody>${de.map(d => `<tr><td>${A.greg(d.event_date)}</td><td>${{ alert: 'تنبيه', warning: 'إنذار', dismissal: 'إحالة للفصل' }[d.kind]}</td><td style="white-space:normal">${esc(d.reason || '')}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    ${fa.length ? `<div class="tbl-wrap" style="margin-top:8px"><table><thead><tr><th>تاريخ الحالة</th><th>سبب التعثر</th><th>الإجراء</th><th>رد الطالب</th><th>الحالة</th></tr></thead><tbody>${fa.map(f => `<tr><td>${A.greg(f.case_date)}</td><td style="white-space:normal">${esc(f.reason || '')}</td><td style="white-space:normal">${esc(f.action_summary || '')}</td><td style="white-space:normal">${esc(f.student_reply || '')}</td><td>${esc(f.status)}</td></tr>`).join('')}</tbody></table></div>` : ''}</section>` : ''}
+  ${ex.length ? `<section class="block"><h3>الاختبارات المرحلية</h3><div class="tbl-wrap"><table><thead><tr><th>الاختبار</th><th>المجلد</th><th>المرحلة</th><th>الدرجة</th><th>التاريخ</th></tr></thead><tbody>${ex.map(x => `<tr><td>${esc(x.exam_name)}</td><td>${esc(x.volume || '')}</td><td>${x.stage ?? ''}</td><td>${x.score != null ? fmtNum(x.score, 2) : '—'}</td><td>${A.greg(x.date)}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+  ${asg.length > 1 ? `<section class="block"><h3>سجل الخطط</h3><div class="tbl-wrap"><table><thead><tr><th>الخطة</th><th>من</th><th>انتهت</th></tr></thead><tbody>${asg.map(a => `<tr><td>${esc(a.program_plans?.name || '—')}</td><td>${A.greg(a.start_date)}</td><td>${a.ended_at ? A.greg(a.ended_at.slice(0, 10)) : 'حالية'}</td></tr>`).join('')}</tbody></table></div></section>` : ''}
+  <div class="sign"><div>المعلم</div><div>مشرف البرنامج</div></div>
+  <p class="foot">صدر هذا الملف من منصة سنن للتعليم عن بعد · ${A.greg(TODAY)}</p>`;
+})();
+</script>
+</body>
+</html>

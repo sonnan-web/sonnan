@@ -64,6 +64,7 @@ $('#logout').onclick = A.logout;
 
 const { data: stu } = await db.from('students').select('*').eq('user_id', me.id).maybeSingle();
 if (!stu) { $('#main').innerHTML = '<div class="error">حسابك غير مرتبط بملف طالب. تواصل مع إدارة البرنامج.</div>'; return; }
+if (stu.is_archived) { $('#main').innerHTML = '<div class="error">حسابك مؤرشف ولا يمكن استخدام المنصة حاليًا. تواصل مع إدارة البرنامج.</div>'; $('#tabbar').hidden = true; return; }
 const [asg, ra, recsR, teacherR, memR, unread] = await Promise.all([
   db.from('plan_assignments').select('*').eq('student_id', stu.id).is('ended_at', null).maybeSingle().then(r => r.data),
   db.from('room_assignments').select('room_id').eq('assignee_type', 'student').eq('assignee_id', stu.id).then(r => r.data || []),
