@@ -544,8 +544,13 @@ function parseSheet(fileName, aoa) {
   headers.forEach((h, i) => {
     if (!h) return;
     if (DAY_HEADERS.map(norm).includes(norm(h)) && dayIdx < 0) { dayIdx = i; return; }
-    const c = S.cols.find(c => norm(c.header) === norm(h));
-    if (c) { if (map[c.id] != null) problems.push('العمود «' + h + '» مكرر في الملف.'); map[c.id] = i; matched.push(h); } else unknown.push(h);
+    // الرؤوس المتشابهة (مثل «نص الحديث» مرتين لبداية النطاق ونهايته) تُطابَق بالترتيب: الأول للأول والثاني للثاني
+    const same = S.cols.filter(c => norm(c.header) === norm(h));
+    const free = same.filter(c => map[c.id] == null);
+    const c = free.find(c => c.header.trim() === h) || free[0];
+    if (c) { map[c.id] = i; matched.push(h); }
+    else if (same.length) problems.push('العمود «' + h + '» مكرر في الملف أكثر من عدد أعمدته في الخطة.');
+    else unknown.push(h);
   });
   const missing = S.cols.filter(c => map[c.id] == null).map(c => c.header);
   if (!matched.length) problems.push('لا يوجد في الملف أي عمود يطابق أسماء أعمدة الخطة. تأكد أن الصف الأول فيه رؤوس الأعمدة بنفس الأسماء.');
