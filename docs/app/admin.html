@@ -57,7 +57,7 @@ $('#menuBtn').onclick = () => $('#side').classList.toggle('open');
 
 // ============ القائمة ============
 const NAV = [
-  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية', 'chart'], ['recs', 'سجل رصد المعلم', 'list'], ['srecs', 'سجل رصد الطالب', 'exam']]],
+  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية للتسميع', 'mic'], ['dexec', 'المتابعة اليومية للواجب', 'exam'], ['recs', 'سجل رصد المعلم', 'list'], ['srecs', 'سجل رصد الطالب', 'book']]],
   ['الطلاب', [['students', 'الطلاب وملفاتهم', 'users'], ['leaves', 'الاستئذان', 'leave'], ['discipline', 'الانضباط والمتابعة', 'alert'], ['exams', 'الاختبارات المرحلية', 'exam'], ['honor', 'لوحة الشرف', 'star']]],
   ['البرامج', [['plans', 'خطط البرامج', 'plan']]],
   ['المعلمون والفترات', [['teachers', 'المعلمون', 'teacher'], ['rooms', 'الفترات والغرف الصوتية', 'room']]],
@@ -202,32 +202,185 @@ SECTIONS.home = async el => {
   $$('[data-stu]', el).forEach(tr => tr.onclick = () => studentFile(tr.dataset.stu));
 };
 
-// ============ المتابعة اليومية ============
-SECTIONS.daily = async el => {
+// ============ المتابعة اليومية: للتسميع، وللواجب (تنفيذ الطالب) ============
+SECTIONS.daily = el => followSection(el, 'rec');
+SECTIONS.dexec = el => followSection(el, 'exec');
+const FOL = { plan: '', mode: 'day', date: TODAY, from: A.addDays(TODAY, -13), to: TODAY };
+const PROG_CACHE = {};
+async function planProgress(planId) {
+  if (PROG_CACHE[planId]) return PROG_CACHE[planId];
+  const P = PLANS_FULL[planId];
+  const dayOf = {}; Object.values(P.days).forEach(d => dayOf[d.id] = d.day_number);
+  const ids = actives().filter(s => s.assign?.plan_id === planId).map(s => s.id);
+  const by = {};
+  // دفعات من الطلاب حتى لا يطول الطلب
+  for (let i = 0; i < ids.length; i += 60) {
+    const rows = await fetchAll(() => db.from('plan_progress').select('student_id, plan_day_id, column_id').in('student_id', ids.slice(i, i + 60)));
+    rows.forEach(x => { const dn = dayOf[x.plan_day_id]; if (dn == null) return; ((by[x.student_id] ||= {})[dn] ||= new Set()).add(x.column_id); });
+  }
+  return (PROG_CACHE[planId] = by);
+}
+const isWork = (P, d) => (P.workdays || []).includes(new Date(d + 'T12:00:00Z').getUTCDay());
+function datesBetween(a, b) { const out = []; for (let d = a; d <= b && out.length < 400; d = A.addDays(d, 1)) out.push(d); return out; }
+async function followSection(el, kind) {
   await loadRecs();
-  let date = SECTIONS.daily.date || TODAY;
-  const draw = () => {
-    const recs = D.recs.filter(r => r.rec_date === date);
-    const byStu = {}; recs.forEach(r => (byStu[r.student_id] ||= []).push(r));
-    const rows = actives().map(s => { const rs = byStu[s.id] || []; const r = rs[0]; const pd = s.assign && s.planObj ? A.planDayFor(s.assign, s.planObj, 9999, date) : null;
-      return { s, name: s.name, teacher: s.teacher, room: s.room, plan: s.plan, day: pd, status: r ? r.status : 'none', statusLabel: STATUS[r ? r.status : 'none'].label, score: r?.score != null ? +r.score : null, memo: r?.memo_from ? `${+r.memo_from}–${+r.memo_to}` : '', more: rs.length > 1 ? rs.length : '' }; });
-    const cnt = k => rows.filter(r => r.status === k).length;
-    el.innerHTML = `${secHead('المتابعة اليومية', A.dayName(date) + ' · ' + A.hijri(date) + ' · ' + A.greg(date), 'teal', `<input type="date" id="dDate" value="${date}" style="width:auto"><button class="btn ghost sm" id="dPrev">اليوم السابق</button><button class="btn ghost sm" id="dNext">اليوم التالي</button>`)}
-      <div class="card" style="--a:var(--teal);margin-bottom:10px"><div class="minis">
-        ${mini('منتظمون', fmtNum(rows.length), 'teal')}${['present', 'makeup', 'review_only', 'excused', 'absent', 'none'].map(k => mini(STATUS[k].label, fmtNum(cnt(k)), { present: 'green', makeup: 'amber', review_only: 'blue', excused: 'violet', absent: 'red', none: 'slate' }[k])).join('')}
-      </div></div>
-      <div class="card c-teal" id="dCard"><div class="head"><h3>حالة كل طالب في اليوم</h3></div><div id="dTbl"></div></div>`;
-    dataTable($('#dTbl'), { rows, sortKey: 'statusLabel', pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+  const PL = await plansFull();
+  const usable = D.plans.filter(p => p.status !== 'archived');
+  if (!FOL.plan || !PL[FOL.plan]) FOL.plan = (usable.find(p => p.status === 'active') || usable[0])?.id || '';
+  const P = PL[FOL.plan];
+  const isR = kind === 'rec';
+  const color = isR ? 'teal' : 'violet';
+  const title = isR ? 'المتابعة اليومية للتسميع' : 'المتابعة اليومية للواجب';
+  const day = FOL.date, from = FOL.from, to = [FOL.to, TODAY].sort()[0];
+  el.innerHTML = `${secHead(title, P ? esc(P.name) : '', color, `<button class="btn ghost sm" id="fExport">تصدير إلى إكسل</button>`)}
+    <div class="card" style="--a:var(--${color});margin-bottom:10px"><div class="tbl-tools" style="margin:0">
+      <label class="small">الخطة <select id="fPlan" style="width:auto">${usable.map(p => opt(p.id, p.name, p.id === FOL.plan)).join('')}</select></label>
+      <div class="seg"><button type="button" data-m="day" aria-pressed="${FOL.mode === 'day'}">يوم</button><button type="button" data-m="range" aria-pressed="${FOL.mode === 'range'}">فترة</button></div>
+      ${FOL.mode === 'day' ? `<button class="btn ghost sm" id="fPrev" type="button">السابق</button><input type="date" id="fDate" value="${day}" style="width:auto"><button class="btn ghost sm" id="fNext" type="button">التالي</button><span class="small muted">${A.dayName(day)} · ${A.hijri(day)}</span>`
+        : `<label class="small">من <input type="date" id="fFrom" value="${from}" style="width:auto"></label><label class="small">إلى <input type="date" id="fTo" value="${FOL.to}" style="width:auto"></label>`}
+    </div></div>
+    <div class="card" style="--a:var(--${color});margin-bottom:10px" id="fKpi"></div>
+    <div class="card c-${color}" id="fCard"><div class="head"><h3 id="fTitle"></h3><span class="hint" id="fHint"></span></div><div id="fTbl"></div></div>`;
+  $('#fPlan').onchange = e => { FOL.plan = e.target.value; route(); };
+  $$('[data-m]', el).forEach(b => b.onclick = () => { FOL.mode = b.dataset.m; route(); });
+  $('#fDate') && ($('#fDate').onchange = e => { FOL.date = e.target.value || TODAY; route(); });
+  $('#fPrev') && ($('#fPrev').onclick = () => { FOL.date = A.addDays(day, -1); route(); });
+  $('#fNext') && ($('#fNext').onclick = () => { FOL.date = A.addDays(day, 1); route(); });
+  $('#fFrom') && ($('#fFrom').onchange = e => { FOL.from = e.target.value; route(); });
+  $('#fTo') && ($('#fTo').onchange = e => { FOL.to = e.target.value; route(); });
+  cardFull($('#fCard'));
+  if (!P) { $('#fTbl').innerHTML = '<div class="empty">لا توجد خطط.</div>'; $('#fKpi').hidden = true; return; }
+  if (isR && P.recitation_mode === 'none') { $('#fKpi').hidden = true; $('#fTbl').innerHTML = '<div class="empty">هذه الخطة بلا تسميع. اختر خطة فيها تسميع، أو افتح «المتابعة اليومية للواجب».</div>'; return; }
+  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
+  if (!isR && (P.student_execution === 'none' || !tasksE.length)) { $('#fKpi').hidden = true; $('#fTbl').innerHTML = '<div class="empty">هذه الخطة بلا تنفيذ عند الطالب. اختر خطة فيها واجب يعلّم عليه الطالب.</div>'; return; }
+  const studs = actives().filter(s => s.assign?.plan_id === P.id);
+  const { data: lv } = await db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').lte('date_from', FOL.mode === 'day' ? day : to).gte('date_to', FOL.mode === 'day' ? day : from);
+  const leaveOn = (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d);
+  const base = s => ({ s, name: s.name, email: s.email || '', teacher: s.teacher, room: s.room });
+  const kpi = items => { $('#fKpi').innerHTML = `<div class="minis">${items.map(([l, v, c]) => mini(l, fmtNum(v), c)).join('')}</div>`; };
+  const pctColor = v => v == null ? '' : v >= 90 ? 'var(--green)' : v >= 70 ? 'var(--teal)' : v >= 50 ? '#9A6A08' : 'var(--red)';
+  const pctHtml = v => v == null ? '—' : `<b style="color:${pctColor(v)}">${v}٪</b>`;
+  let tbl, expCols;
+
+  if (isR && FOL.mode === 'day') {
+    // ===== التسميع: يوم واحد =====
+    const tasks = A.groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both');
+    const work = isWork(P, day), recD = A.isRecitationDay(P, day);
+    const ST = { done: 'سمّع', makeup: 'عوّض', review: 'ربط ومراجعة', excused: 'مستأذن', absent: 'غائب', none: 'لم يُرصد', off: 'ليس يوم تسميع' };
+    const rows = studs.map(s => {
+      const rs = (D.recsByStudent[s.id] || []).filter(r => r.rec_date === day && r.plan_id === P.id);
+      const r = rs[0];
+      let k = !r ? (leaveOn(s.id, day) ? 'excused' : recD ? 'none' : 'off') : r.status === 'present' ? 'done' : r.status === 'makeup' ? 'makeup' : r.status === 'review_only' ? 'review' : r.status;
+      const o = { ...base(s), r, k, state: ST[k], pday: A.planDayFor(s.assign, P, Object.keys(P.days).length, day), score: r?.score != null ? +r.score : null, notes: r?.notes || '' };
+      tasks.forEach(t => { const v = r ? A.fmtTaskVal(t, r.vals) : null; o['t_' + t.key] = v ? v.replace(/^من (.+) إلى (.+)$/, '$1–$2') : ''; });
+      return o;
+    });
+    const n = k => rows.filter(r => r.k === k).length;
+    kpi([['طلاب الخطة', rows.length, 'slate'], ['سمّع', n('done'), 'green'], ['عوّض', n('makeup'), 'amber'], ['ربط ومراجعة', n('review'), 'blue'], ['مستأذن', n('excused'), 'violet'], ['لم يُرصد', n('none'), 'red']]);
+    $('#fTitle').textContent = 'حالة التسميع لكل طالب';
+    $('#fHint').textContent = !work ? 'هذا اليوم ليس من أيام الخطة.' : !recD ? 'هذا اليوم ليس من أيام التسميع في الخطة.' : 'اضغط «رصد» لرصد طالب لم يُرصد.';
+    const pill = { done: 'ok', makeup: 'gold', review: 'info', excused: 'violet', absent: 'bad', none: 'bad', off: 'plain' };
+    tbl = dataTable($('#fTbl'), { rows, sortKey: 'state', pageSize: 300, cols: [
+      { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'pday', label: 'يوم الخطة', num: true },
+      { key: 'state', label: 'الحالة', filter: true, html: x => `<span class="pill ${pill[x.k]}">${x.state}</span>` },
+      ...tasks.map(t => ({ key: 't_' + t.key, label: t.name, html: x => x['t_' + t.key] ? esc(x['t_' + t.key]) : '<span class="muted">—</span>' })),
+      { key: 'score', label: 'الدرجة', num: true, html: x => x.score == null ? '—' : fmtNum(x.score, 2) }, { key: 'notes', label: 'ملاحظات' },
+      { key: 'act', label: '', html: x => `<button class="btn ${x.r ? 'ghost' : ''} sm" data-rec="${x.s.id}">${x.r ? 'عرض' : 'رصد'}</button>` }],
+      after: root => $$('[data-rec]', root).forEach(b => b.onclick = () => adminRecord(b.dataset.rec)) });
+    expCols = [['التاريخ', () => day], ['الطالب', x => x.name], ['البريد', x => x.email], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['يوم الخطة', x => x.pday], ['الحالة', x => x.state], ...tasks.map(t => [t.name, x => x['t_' + t.key]]), ['الدرجة', x => x.score], ['ملاحظات', x => x.notes]];
+  }
+
+  else if (isR) {
+    // ===== التسميع: فترة (مثل «لوحة متابعة إنجاز الطلاب حسب الفترة») =====
+    const R = P.discipline_rules || {};
+    const dates = datesBetween(from, to).filter(d => A.isRecitationDay(P, d));
+    const rows = studs.map(s => {
+      const start = [s.assign.start_date, s.join_date].filter(Boolean).sort().pop();
+      const my = dates.filter(d => d >= start);
+      const rs = (D.recsByStudent[s.id] || []).filter(r => r.plan_id === P.id && r.rec_date >= from && r.rec_date <= to);
+      const day = st => new Set(rs.filter(r => st.includes(r.status)).map(r => r.rec_date));
+      const done = day(['present']), mk = day(['makeup']), rev = day(['review_only']), exc = day(['excused']);
+      my.forEach(d => { if (leaveOn(s.id, d)) exc.add(d); });
+      rs.filter(r => r.status === 'makeup' && r.makes_up_date).forEach(r => done.add(r.makes_up_date));
+      const covered = new Set([...done, ...rev, ...exc, ...mk]);
+      const behind = my.filter(d => !covered.has(d) && d < TODAY).length;
+      const baseN = my.filter(d => d < TODAY || covered.has(d)).length - exc.size;
+      const pct = baseN > 0 ? Math.min(100, Math.round((done.size + mk.size + rev.size) / baseN * 100)) : null;
+      const follow = R.warning_after && behind >= R.warning_after ? 'إنذار مستحق' : R.alert_after && behind >= R.alert_after ? 'تنبيه مستحق' : behind ? 'متأخر' : 'منتظم';
+      return { ...base(s), days: my.length, done: done.size, makeup: mk.size, review: rev.size, excused: exc.size, behind, pct, follow, last: (D.recsByStudent[s.id] || [])[0]?.rec_date || null };
+    });
+    const sum = k => rows.reduce((a, r) => a + r[k], 0);
+    kpi([['طلاب الخطة', rows.length, 'slate'], ['أيام التسميع في الفترة', dates.length, 'teal'], ['منجز', sum('done'), 'green'], ['تعويض', sum('makeup'), 'amber'], ['ربط ومراجعة', sum('review'), 'blue'], ['مستأذن', sum('excused'), 'violet'], ['متخلّف', sum('behind'), 'red']]);
+    $('#fTitle').textContent = 'متابعة التسميع للفترة';
+    $('#fHint').textContent = `${A.greg(from)} – ${A.greg(to)} · «متخلّف» يوم تسميع مضى بلا رصد ولا استئذان ولا تعويض`;
+    const fp = { 'منتظم': 'ok', 'متأخر': 'warn', 'تنبيه مستحق': 'warn', 'إنذار مستحق': 'bad' };
+    tbl = dataTable($('#fTbl'), { rows, sortKey: 'behind', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
       { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
-      { key: 'statusLabel', label: 'الحالة', filter: true, html: r => statusPill(r.status) }, { key: 'day', label: 'يوم الخطة', num: true },
-      { key: 'memo', label: 'الحفظ المسمَّع' }, { key: 'score', label: 'الدرجة', num: true, html: r => r.score == null ? '—' : fmtNum(r.score, 2) }, { key: 'plan', label: 'الخطة', filter: true }] });
-    cardFull($('#dCard'));
-    $('#dDate').onchange = e => { date = SECTIONS.daily.date = e.target.value || TODAY; draw(); };
-    $('#dPrev').onclick = () => { date = SECTIONS.daily.date = A.addDays(date, -1); draw(); };
-    $('#dNext').onclick = () => { date = SECTIONS.daily.date = A.addDays(date, 1); draw(); };
-  };
-  draw();
-};
+      { key: 'days', label: 'أيام التسميع', num: true }, { key: 'done', label: 'منجز', num: true }, { key: 'makeup', label: 'تعويض', num: true }, { key: 'review', label: 'ربط ومراجعة', num: true }, { key: 'excused', label: 'مستأذن', num: true },
+      { key: 'behind', label: 'متخلّف', num: true, html: x => x.behind ? `<b style="color:var(--red)">${x.behind}</b>` : '0' }, { key: 'pct', label: 'نسبة الإنجاز', num: true, html: x => pctHtml(x.pct) },
+      { key: 'follow', label: 'المتابعة', filter: true, html: x => `<span class="pill ${fp[x.follow]}">${x.follow}</span>` }, { key: 'last', label: 'آخر رصد', html: x => x.last ? A.greg(x.last) : '—' }] });
+    expCols = [['الطالب', x => x.name], ['البريد', x => x.email], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['أيام التسميع', x => x.days], ['منجز', x => x.done], ['تعويض', x => x.makeup], ['ربط ومراجعة', x => x.review], ['مستأذن', x => x.excused], ['متخلّف', x => x.behind], ['نسبة الإنجاز ٪', x => x.pct], ['المتابعة', x => x.follow], ['آخر رصد', x => x.last]];
+  }
+
+  else if (FOL.mode === 'day') {
+    // ===== الواجب: يوم واحد — مهام يوم الخطة لكل طالب =====
+    const prog = await planProgress(P.id);
+    const nDays = Object.keys(P.days).length, work = isWork(P, day);
+    const rows = studs.map(s => {
+      const dn = A.planDayFor(s.assign, P, nDays, day), dv = P.days[dn]?.vals || {}, done = prog[s.id]?.[dn] || new Set();
+      const o = { ...base(s), pday: dn };
+      let need = 0, ok = 0;
+      tasksE.forEach(t => { const req = A.fmtTaskVal(t, dv) != null; const d = t.cols.some(c => done.has(c.id)); o['t_' + t.key] = !req ? '' : d ? '✓' : '✗'; if (req) { need++; if (d) ok++; } });
+      o.pct = need ? Math.round(ok / need * 100) : null;
+      o.k = !work ? 'off' : leaveOn(s.id, day) ? 'excused' : !need ? 'off' : ok === need ? 'full' : ok ? 'part' : 'none';
+      o.state = { off: 'لا واجب', excused: 'مستأذن', full: 'أنجز الواجب', part: 'أنجز جزءًا', none: 'لم ينفّذ' }[o.k];
+      return o;
+    });
+    const n = k => rows.filter(r => r.k === k).length;
+    kpi([['طلاب الخطة', rows.length, 'slate'], ['أنجز الواجب', n('full'), 'green'], ['أنجز جزءًا', n('part'), 'amber'], ['لم ينفّذ', n('none'), 'red'], ['مستأذن', n('excused'), 'violet']]);
+    $('#fTitle').textContent = 'تنفيذ الواجب لكل طالب';
+    $('#fHint').textContent = work ? 'الواجب = مهام يوم الخطة التي يعلّم عليها الطالب. ✓ أنجزها، ✗ لم يعلّم عليها.' : 'هذا اليوم ليس من أيام الخطة.';
+    const pill = { full: 'ok', part: 'warn', none: 'bad', excused: 'violet', off: 'plain' };
+    tbl = dataTable($('#fTbl'), { rows, sortKey: 'state', pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+      { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'pday', label: 'يوم الخطة', num: true },
+      ...tasksE.map(t => ({ key: 't_' + t.key, label: t.name, filter: true, html: x => x['t_' + t.key] === '✓' ? '<b style="color:var(--green)">✓</b>' : x['t_' + t.key] === '✗' ? '<b style="color:var(--red)">✗</b>' : '<span class="muted">—</span>' })),
+      { key: 'pct', label: 'الإنجاز', num: true, html: x => pctHtml(x.pct) }, { key: 'state', label: 'الحالة', filter: true, html: x => `<span class="pill ${pill[x.k]}">${x.state}</span>` }] });
+    expCols = [['التاريخ', () => day], ['الطالب', x => x.name], ['البريد', x => x.email], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['يوم الخطة', x => x.pday], ...tasksE.map(t => [t.name, x => x['t_' + t.key]]), ['الإنجاز ٪', x => x.pct], ['الحالة', x => x.state]];
+  }
+
+  else {
+    // ===== الواجب: فترة =====
+    const prog = await planProgress(P.id);
+    const nDays = Object.keys(P.days).length;
+    const dates = datesBetween(from, to).filter(d => isWork(P, d) && d < TODAY);
+    const rows = studs.map(s => {
+      const start = [s.assign.start_date, s.join_date].filter(Boolean).sort().pop();
+      let full = 0, part = 0, none = 0, exc = 0, need = 0, ok = 0, streak = 0, cur = 0;
+      dates.filter(d => d >= start).forEach(d => {
+        if (leaveOn(s.id, d)) { exc++; return; }
+        const dn = A.planDayFor(s.assign, P, nDays, d), dv = P.days[dn]?.vals || {}, done = prog[s.id]?.[dn] || new Set();
+        let n = 0, k = 0; tasksE.forEach(t => { if (A.fmtTaskVal(t, dv) == null) return; n++; if (t.cols.some(c => done.has(c.id))) k++; });
+        if (!n) return;
+        need += n; ok += k;
+        if (k === n) { full++; cur = 0; } else { k ? part++ : none++; cur++; streak = Math.max(streak, cur); }
+      });
+      const days = full + part + none;
+      return { ...base(s), days, full, part, none, exc, pct: need ? Math.round(ok / need * 100) : null, streak, follow: none >= 3 && !full ? 'لا ينفّذ' : streak >= 3 ? 'متقطع' : 'منتظم' };
+    });
+    const sum = k => rows.reduce((a, r) => a + r[k], 0);
+    kpi([['طلاب الخطة', rows.length, 'slate'], ['أيام الخطة في الفترة', dates.length, 'teal'], ['أيام مكتملة', sum('full'), 'green'], ['أيام جزئية', sum('part'), 'amber'], ['أيام بلا تنفيذ', sum('none'), 'red'], ['أيام استئذان', sum('exc'), 'violet']]);
+    $('#fTitle').textContent = 'متابعة الواجب للفترة';
+    $('#fHint').textContent = `${A.greg(from)} – ${A.greg(to)} · حتى أمس`;
+    const fp = { 'منتظم': 'ok', 'متقطع': 'warn', 'لا ينفّذ': 'bad' };
+    tbl = dataTable($('#fTbl'), { rows, sortKey: 'pct', dir: 1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+      { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
+      { key: 'days', label: 'أيام الواجب', num: true }, { key: 'full', label: 'مكتمل', num: true }, { key: 'part', label: 'جزئي', num: true }, { key: 'none', label: 'لم ينفّذ', num: true, html: x => x.none ? `<b style="color:var(--red)">${x.none}</b>` : '0' }, { key: 'exc', label: 'مستأذن', num: true },
+      { key: 'streak', label: 'أطول انقطاع', num: true, html: x => x.streak ? x.streak + ' يوم' : '—' }, { key: 'pct', label: 'نسبة التنفيذ', num: true, html: x => pctHtml(x.pct) },
+      { key: 'follow', label: 'المتابعة', filter: true, html: x => `<span class="pill ${fp[x.follow]}">${x.follow}</span>` }] });
+    expCols = [['الطالب', x => x.name], ['البريد', x => x.email], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['أيام الواجب', x => x.days], ['مكتمل', x => x.full], ['جزئي', x => x.part], ['لم ينفّذ', x => x.none], ['مستأذن', x => x.exc], ['أطول انقطاع', x => x.streak], ['نسبة التنفيذ ٪', x => x.pct], ['المتابعة', x => x.follow]];
+  }
+  $('#fExport').onclick = () => A.exportXlsx(`${title} - ${P.name} - ${FOL.mode === 'day' ? day : from + ' إلى ' + to}`, title, expCols, tbl.getRows());
+}
 
 // ============ سجل الرصد ============
 let PLANS_FULL = null;

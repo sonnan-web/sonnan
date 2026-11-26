@@ -258,3 +258,21 @@ create policy teacher_rec_insert on public.plan_recitations for insert to authen
 drop policy if exists teacher_rec_supersede on public.plan_recitations;
 create policy teacher_rec_supersede on public.plan_recitations for update to authenticated
   using (teacher_id = public.get_teacher_id_for_current_user() and superseded_by is null) with check (teacher_id = public.get_teacher_id_for_current_user());
+
+-- أداء RLS: دوال الصلاحيات تُحسب مرة لكل طلب (select داخل السياسة) + فهارس
+drop policy if exists admin_all on public.plan_progress;
+create policy admin_all on public.plan_progress for all to authenticated using ((select public.get_current_user_role()) = 'admin') with check ((select public.get_current_user_role()) = 'admin');
+drop policy if exists student_progress_read on public.plan_progress;
+create policy student_progress_read on public.plan_progress for select to authenticated using (student_id = (select public.get_student_id_for_current_user()));
+drop policy if exists student_progress_delete on public.plan_progress;
+create policy student_progress_delete on public.plan_progress for delete to authenticated using (student_id = (select public.get_student_id_for_current_user()));
+drop policy if exists teacher_progress_read on public.plan_progress;
+create policy teacher_progress_read on public.plan_progress for select to authenticated using ((select public.is_teacher()));
+drop policy if exists admin_all on public.plan_recitations;
+create policy admin_all on public.plan_recitations for all to authenticated using ((select public.get_current_user_role()) = 'admin') with check ((select public.get_current_user_role()) = 'admin');
+drop policy if exists student_rec_read on public.plan_recitations;
+create policy student_rec_read on public.plan_recitations for select to authenticated using (student_id = (select public.get_student_id_for_current_user()));
+drop policy if exists admin_all on public.plan_assignments;
+create policy admin_all on public.plan_assignments for all to authenticated using ((select public.get_current_user_role()) = 'admin') with check ((select public.get_current_user_role()) = 'admin');
+create index if not exists plan_progress_student on public.plan_progress (student_id);
+create index if not exists plan_recitations_student on public.plan_recitations (student_id) where superseded_by is null;
