@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>صفحة المعلم — منصة سنن</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+<style>
+.wrap{max-width:1200px;margin:0 auto;padding:12px max(16px,env(safe-area-inset-left,0px)) 30px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.tabs a{background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 14px;font-weight:700;text-decoration:none;color:var(--muted)}
+.tabs a[aria-current="page"]{background:var(--primary);border-color:var(--primary);color:#fff}
+.search{position:relative}
+.search .dd{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--line);border-radius:10px;max-height:320px;overflow:auto;z-index:10;box-shadow:0 10px 30px rgba(15,47,51,.12)}
+.search .dd button{display:flex;justify-content:space-between;width:100%;text-align:right;background:none;border:0;border-bottom:1px dashed var(--soft-line);padding:8px 12px}
+.search .dd button:hover,.search .dd button:focus{background:#F2F6F6}
+.task{border:1px solid var(--line);border-radius:10px;padding:9px 11px;display:grid;gap:6px;background:#fff}
+.task.ref{background:#F4F6F6}
+.task b{color:var(--primary)}
+.ded{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--soft-line)}
+.ded .ctl{display:flex;align-items:center;gap:8px}
+.ded .ctl button{width:30px;height:30px;border-radius:8px;border:1px solid var(--line);background:#fff;font-weight:800;font-size:15px}
+.ded .ctl b{min-width:20px;text-align:center;font-variant-numeric:tabular-nums}
+.score{font-size:28px;font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums}
+.room{border:1px solid var(--line);border-radius:10px;padding:11px 13px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.hist{border-bottom:1px dashed var(--soft-line);padding:7px 0;display:grid;gap:3px}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="mark">سنن</span><h1>صفحة المعلم<span class="sep">|</span><span class="prog" id="who"></span></h1></div>
+  <div class="tools"><span id="today"></span><button class="pillbtn" type="button" id="logout">خروج</button></div>
+</header>
+<div class="wrap">
+  <nav class="tabs" aria-label="الأقسام"><a href="#record">رصد جلسة التسميع</a><a href="#rooms">غرفي الصوتية</a><a href="#profile">ملفي الشخصي</a></nav>
+  <div id="main"><div class="loading">جارٍ التحميل…</div></div>
+</div>
+<script>
+(async () => {
+'use strict';
+const A = App, { db, $, $$, esc, norm, fmtNum, toast, fetchAll, statusPill, STATUS } = A;
+const me = await A.requireRole(['teacher']);
+if (!me) return;
+const TODAY = A.todayMakkah();
+$('#who').textContent = me.name;
+$('#today').textContent = A.dayName(TODAY) + ' · ' + A.hijri(TODAY);
+$('#logout').onclick = A.logout;
+
+const { data: T } = await db.from('teachers').select('*').eq('user_id', me.id).maybeSingle();
+if (!T) { $('#main').innerHTML = '<div class="error">حسابك غير مرتبط بملف معلم. تواصل مع المشرف.</div>'; return; }
+if (T.is_archived) { $('#main').innerHTML = '<div class="error">حسابك موقوف مؤقتًا. تواصل مع المشرف.</div>'; return; }
+
+const [studs, users, assigns, ra, rooms] = await Promise.all([
+  db.from('students').select('*').eq('teacher_id', T.id).eq('is_archived', false).then(r => r.data || []),
+  db.from('users').select('id, name, email').then(r => r.data || []),
+  db.from('plan_assignments').select('*').is('ended_at', null).then(r => r.data || []),
+  db.from('room_assignments').select('*').then(r => r.data || []),
+  db.from('audio_rooms').select('*').order('sort').then(r => r.data || [])
+]);
+const uById = Object.fromEntries(users.map(u => [u.id, u]));
+const assignOf = Object.fromEntries(assigns.map(a => [a.student_id, a]));
+const roomOf = Object.fromEntries(ra.filter(a => a.assignee_type === 'student').map(a => [a.assignee_id, a.room_id]));
+const roomById = Object.fromEntries(rooms.map(r => [r.id, r]));
+const students = studs.map(s => ({ ...s, name: uById[s.user_id]?.name || '—', email: uById[s.user_id]?.email || '' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+const planIds = [...new Set(assigns.map(a => a.plan_id))];
+const PLANS = {};
+if (planIds.length) {
+  const [p, c, d] = await Promise.all([
+    db.from('program_plans').select('*').in('id', planIds),
+    db.from('plan_columns').select('*').in('plan_id', planIds).order('seq'),
+    fetchAll(() => db.from('plan_days').select('id, plan_id, day_number, vals').in('plan_id', planIds))
+  ]);
+  (p.data || []).forEach(x => PLANS[x.id] = { ...x, cols: [], days: {} });
+  (c.data || []).forEach(x => PLANS[x.plan_id]?.cols.push(x));
+  d.forEach(x => { if (PLANS[x.plan_id]) PLANS[x.plan_id].days[x.day_number] = x; });
+}
+
+const S = { stu: null, status: 'present', ded: {}, editing: null, makeup: null, draft: null, hist: [] };
+const SECTIONS = {};
+
+// ============ الرصد ============
+SECTIONS.record = el => {
+  el.innerHTML = `<div class="grid">
+    <div class="span12"><div class="sec-h" style="--c:var(--teal)"><b>رصد جلسة التسميع</b><span>${students.length} طالبًا مسندًا إليك</span></div></div>
+    <div class="card c-teal span12"><label class="f" for="q">اختر الطالب
+      <div class="search"><input id="q" type="search" placeholder="اكتب اسم الطالب أو بريده…" autocomplete="off" value="${esc(S.stu?.name || '')}"><div class="dd" id="dd" hidden></div></div></label></div>
+    <div id="formArea" class="span7"></div>
+    <div id="histArea" class="span5"></div>
+  </div>`;
+  const q = $('#q'), dd = $('#dd');
+  const showList = () => {
+    const t = norm(q.value);
+    const list = students.filter(s => !t || norm(s.name + ' ' + s.email).includes(t)).slice(0, 60);
+    dd.innerHTML = list.map(s => `<button type="button" data-id="${s.id}"><span>${esc(s.name)}</span><span class="small muted">${esc(roomById[roomOf[s.id]]?.name || '')}</span></button>`).join('') || '<div class="muted small" style="padding:10px">لا يوجد طالب بهذا الاسم ضمن طلابك</div>';
+    dd.hidden = false;
+    $$('button', dd).forEach(b => b.onclick = () => { dd.hidden = true; pick(b.dataset.id); });
+  };
+  q.addEventListener('focus', showList);
+  q.addEventListener('input', showList);
+  document.addEventListener('click', e => { if (!e.target.closest('.search')) dd.hidden = true; });
+  if (S.stu) renderStudent();
+};
+function pick(id) { S.stu = students.find(s => s.id === id); S.status = 'present'; S.ded = {}; S.editing = null; S.makeup = null; S.draft = null; $('#q').value = S.stu.name; loadHist().then(renderStudent); }
+async function loadHist() {
+  const { data } = await db.from('plan_recitations').select('*').eq('student_id', S.stu.id).is('superseded_by', null).order('rec_date', { ascending: false }).order('created_at', { ascending: false }).limit(15);
+  S.hist = data || [];
+}
+
+function renderStudent() {
+  const s = S.stu, a = assignOf[s.id], P = a ? PLANS[a.plan_id] : null;
+  const fa = $('#formArea'), ha = $('#histArea');
+  ha.innerHTML = `<div class="card c-blue"><div class="head"><h3>آخر ما رُصد للطالب</h3></div>
+    ${S.hist.length ? S.hist.map(r => `<div class="hist">
+      <div class="row"><b>${A.dayName(r.rec_date)} ${A.greg(r.rec_date)}</b>${statusPill(r.status)}</div>
+      <div class="small muted">${r.memo_from ? 'الحفظ: ' + +r.memo_from + '–' + +r.memo_to + ' · ' : ''}${r.score != null ? 'الدرجة: ' + fmtNum(r.score, 2) : ''}${r.makes_up_date ? ' · تعويض عن ' + A.greg(r.makes_up_date) : ''}${r.notes ? ' · ' + esc(r.notes) : ''}</div>
+      ${r.teacher_id === T.id ? `<div><button class="btn ghost sm" data-edit="${r.id}">تعديل هذا الرصد</button></div>` : '<div class="hint">رصده معلم آخر</div>'}</div>`).join('') : '<div class="empty">لا يوجد رصد سابق</div>'}</div>`;
+  $$('[data-edit]', ha).forEach(b => b.onclick = () => startEdit(b.dataset.edit));
+
+  if (!P) { fa.innerHTML = '<div class="card c-red"><div class="error" style="margin:0">لم تُسند للطالب خطة بعد، فلا يظهر نموذج الرصد. اطلب من المشرف إسناد خطة له.</div></div>'; return; }
+  if (P.recitation_mode === 'none') { fa.innerHTML = `<div class="card"><div class="hintbox">خطة الطالب «${esc(P.name)}» بلا تسميع، فلا يُرصد له تسميع.</div></div>`; return; }
+  const nDays = Object.keys(P.days).length;
+  const dayN = A.planDayFor(a, P, nDays);
+  const recDay = A.isRecitationDay(P, TODAY);
+  const recDays = P.recitation_mode === 'daily' ? P.workdays : P.recitation_days;
+  const mkWin = P.discipline_rules?.makeup_within_days ?? 14;
+  const done = new Set(S.hist.filter(r => ['present', 'makeup', 'review_only', 'excused'].includes(r.status)).map(r => r.rec_date));
+  S.hist.filter(r => r.makes_up_date).forEach(r => done.add(r.makes_up_date));
+  const missed = [];
+  for (let i = 1, d = A.addDays(TODAY, -1); i <= Math.max(mkWin, 1) && d >= a.start_date; i++, d = A.addDays(d, -1)) if (A.isRecitationDay(P, d) && !done.has(d)) missed.push(d);
+  const ed = S.editing, st = S.status;
+  const targetDayN = st === 'makeup' && S.makeup ? A.planDayFor(a, P, nDays, S.makeup) : dayN;
+  const day = P.days[targetDayN];
+  const vals = Object.assign({}, ed ? (ed.vals || {}) : (day?.vals || {}), S.draft || {});
+  const tTasks = A.groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both');
+  const refTasks = A.groupTasks(P.cols, c => c.executor === 'info');
+  const showFields = ['present', 'makeup', 'review_only'].includes(st);
+  const reviewOnly = st === 'review_only';
+  const R = P.score_rules || { max: 10, deductions: [] };
+  const score = Math.max(0, (R.max || 0) - (R.deductions || []).reduce((x, d) => x + (S.ded[d.key] || 0) * (+d.value || 0), 0));
+  const field = c => {
+    const v = vals[c.id];
+    if (c.value_type === 'bool') return `<label class="chips"><label><input type="checkbox" data-c="${c.id}"${v ? ' checked' : ''}>${esc(c.header)}</label></label>`;
+    return `<label class="f small">${esc(c.header)}<input data-c="${c.id}" type="${c.value_type === 'number' ? 'number' : 'text'}" ${c.value_type === 'number' ? 'step="0.5" inputmode="decimal"' : ''} value="${esc(v ?? '')}"></label>`;
+  };
+  fa.innerHTML = `<div class="card c-teal">
+    <div class="row"><div><h2>${esc(s.name)}</h2><p class="small muted">${esc(P.name)} · الفترة: ${esc(roomById[roomOf[s.id]]?.name || '—')}</p></div>
+      <div style="text-align:left"><span class="pill gold">اليوم ${dayN} من الخطة</span><div class="hint" style="margin-top:3px">${recDay ? 'اليوم يوم تسميع' : 'اليوم ليس من أيام التسميع (' + recDays.map(i => A.DAYS[i]).join('، ') + ')'}</div></div></div>
+    ${ed ? `<div class="hintbox" style="margin-top:8px">تعدّل رصد يوم ${A.greg(ed.rec_date)}. يُحفظ التعديل سجلًا جديدًا ويبقى القديم في التاريخ. <button class="btn ghost sm" id="cancelEdit">إلغاء التعديل</button></div>` : ''}
+    <div style="margin-top:10px"><b class="small">حالة الطالب</b><div class="seg" style="margin-top:6px">${['present', 'makeup', 'review_only', 'excused', 'absent'].map(k => `<button type="button" data-st="${k}" aria-pressed="${st === k}">${STATUS[k].label}</button>`).join('')}</div></div>
+    ${st === 'makeup' ? `<label class="f" for="mk" style="margin-top:10px">تعويض عن يوم <span class="hint">أيام تسميع فاتته خلال ${mkWin} يومًا ولم تُعوَّض</span><select id="mk">${(ed?.makes_up_date && !missed.includes(ed.makes_up_date) ? [ed.makes_up_date] : []).concat(missed).map(d => `<option value="${d}"${S.makeup === d ? ' selected' : ''}>${A.dayName(d)} ${A.greg(d)}</option>`).join('') || '<option value="">لا توجد أيام فائتة</option>'}</select></label>` : ''}
+    ${showFields ? `<div class="stack" style="margin-top:12px">
+      ${tTasks.filter(t => !reviewOnly || t.task !== 'memo').map(t => `<div class="task"><div class="row"><b>${esc(t.name)}</b><span class="hint">المقرر${st === 'makeup' ? ' ليوم التعويض' : ''}: ${esc(A.fmtTaskVal(t, day?.vals) ?? '—')}</span></div><div class="g2">${t.cols.map(field).join('')}</div></div>`).join('') || '<div class="hint">لا توجد أعمدة يرصدها المعلم في هذه الخطة.</div>'}
+      ${refTasks.map(t => { const v = A.fmtTaskVal(t, day?.vals); return v == null ? '' : `<div class="task ref"><b>${esc(t.name)} <span class="hint">للعرض</span></b><span class="small">${t.cols[0].value_type === 'url' ? `<a href="${esc(day.vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(v)}</span></div>`; }).join('')}
+    </div>
+    ${!reviewOnly && (R.deductions || []).length ? `<div class="card" style="--a:var(--violet);margin-top:12px;padding:8px 12px"><b>الأخطاء</b>
+      ${R.deductions.map(d => `<div class="ded"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ctl"><button type="button" data-d="${esc(d.key)}" data-v="-1" aria-label="إنقاص">−</button><b>${S.ded[d.key] || 0}</b><button type="button" data-d="${esc(d.key)}" data-v="1" aria-label="زيادة">+</button></span></div>`).join('')}
+      <div class="row" style="margin-top:6px"><span>الدرجة</span><span class="score">${fmtNum(score, 2)} <span class="hint">من ${R.max}</span></span></div></div>` : ''}`
+    : `<div class="hintbox" style="margin-top:10px">${st === 'excused' ? 'يُسجَّل الطالب مستأذنًا لهذا اليوم، ولا يُحسب غيابًا.' : 'يُسجَّل الطالب غائبًا لهذا اليوم، ويدخل في حساب التنبيهات والإنذارات.'}</div>`}
+    <label class="f" for="notes" style="margin-top:10px">ملاحظاتك على الطالب <span class="hint">اختياري</span><textarea id="notes">${esc(S.notes ?? ed?.notes ?? '')}</textarea></label>
+    ${ed ? `<label class="f" for="reason" style="margin-top:8px">سبب التعديل<input id="reason" type="text"></label>` : ''}
+    <button class="btn block" id="save" style="margin-top:12px">${ed ? 'حفظ التعديل' : 'رصد الجلسة'}</button>
+  </div>`;
+  const keepDraft = () => { S.draft = {}; $$('[data-c]', fa).forEach(i => { S.draft[i.dataset.c] = i.type === 'checkbox' ? i.checked : (i.value === '' ? null : (i.type === 'number' ? Number(i.value) : i.value)); }); S.notes = $('#notes').value; };
+  $$('[data-st]', fa).forEach(b => b.onclick = () => { keepDraft(); S.status = b.dataset.st; if (S.status === 'makeup' && !S.makeup) { S.makeup = missed[0] || null; S.draft = null; } renderStudent(); });
+  $('#mk') && ($('#mk').onchange = e => { S.makeup = e.target.value; S.draft = null; renderStudent(); });
+  $$('[data-d]', fa).forEach(b => b.onclick = () => { keepDraft(); const k = b.dataset.d; S.ded[k] = Math.max(0, (S.ded[k] || 0) + +b.dataset.v); renderStudent(); });
+  $('#cancelEdit') && ($('#cancelEdit').onclick = () => { S.editing = null; S.ded = {}; S.status = 'present'; S.draft = null; S.notes = null; S.makeup = null; renderStudent(); });
+  $('#save').onclick = () => save(P, day, score);
+}
+
+function startEdit(id) {
+  const r = S.hist.find(x => x.id === id); if (!r) return;
+  S.editing = r; S.status = r.status; S.ded = { ...(r.deductions || {}) }; S.makeup = r.makes_up_date; S.draft = null; S.notes = null;
+  renderStudent(); window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function save(P, day, score) {
+  const s = S.stu, st = S.status, ed = S.editing, btn = $('#save');
+  if (st === 'makeup' && !S.makeup) return toast('لا يوجد يوم فائت للتعويض عنه', true);
+  if (ed && !$('#reason').value.trim()) return toast('اكتب سبب التعديل', true);
+  const vals = {};
+  $$('[data-c]').forEach(i => { const c = P.cols.find(x => x.id === i.dataset.c); if (!c) return; if (c.value_type === 'bool') vals[c.id] = i.checked; else if (i.value !== '') vals[c.id] = c.value_type === 'number' ? Number(i.value) : i.value; });
+  for (const c of P.cols.filter(c => c.range_role === 'start' && c.value_type === 'number')) { const e = P.cols.find(x => x.id === c.pair_column_id); if (e && vals[c.id] != null && vals[e.id] != null && vals[c.id] > vals[e.id]) return toast(`«${c.header}» أكبر من «${e.header}»`, true); }
+  const mF = P.cols.find(c => c.task === 'memo' && c.range_role === 'start'), mT = P.cols.find(c => c.task === 'memo' && c.range_role === 'end');
+  const withScore = ['present', 'makeup'].includes(st);
+  const row = {
+    student_id: s.id, teacher_id: T.id, plan_id: P.id, plan_day_id: day?.id || null,
+    rec_date: ed ? ed.rec_date : TODAY, status: st, makes_up_date: st === 'makeup' ? S.makeup : null,
+    vals: ['present', 'makeup', 'review_only'].includes(st) ? vals : {}, deductions: withScore ? S.ded : {},
+    score: withScore ? score : null, errors_total: withScore ? Object.values(S.ded).reduce((x, y) => x + y, 0) : null,
+    memo_from: withScore && mF ? (vals[mF.id] ?? null) : null, memo_to: withScore && mT ? (vals[mT.id] ?? null) : null,
+    notes: $('#notes').value.trim() || null, room_id: roomOf[s.id] || null, created_by: me.id
+  };
+  btn.disabled = true; btn.textContent = 'جارٍ الحفظ…';
+  const { data: ins, error } = await db.from('plan_recitations').insert(row).select('id').single();
+  if (error) { btn.disabled = false; btn.textContent = ed ? 'حفظ التعديل' : 'رصد الجلسة'; return toast('لم يُحفظ: ' + error.message, true); }
+  if (ed) {
+    const { error: e2 } = await db.from('plan_recitations').update({ superseded_by: ins.id, edit_reason: $('#reason').value.trim() }).eq('id', ed.id);
+    if (e2) toast('حُفظ الرصد الجديد لكن تعذّر ربطه بالقديم: ' + e2.message, true);
+  }
+  toast(ed ? 'حُفظ التعديل' : 'رُصدت الجلسة');
+  S.editing = null; S.ded = {}; S.draft = null; S.notes = null; S.status = 'present'; S.makeup = null;
+  await loadHist(); renderStudent();
+}
+
+// ============ الغرف ============
+SECTIONS.rooms = el => {
+  const mine = ra.filter(x => x.assignee_type === 'teacher' && x.assignee_id === T.id).map(x => roomById[x.room_id]).filter(Boolean);
+  const now = A.nowMakkahHM(), dn = A.DAYS[A.dowMakkah()];
+  el.innerHTML = `<div class="sec-h" style="--c:var(--blue)"><b>غرفي الصوتية</b><span>الأوقات بتوقيت مكة · الآن ${now}</span></div>
+    <div class="stack">${mine.map(r => {
+      const live = r.active && (r.days || []).includes(dn) && r.start_time && now >= r.start_time.slice(0, 5) && now <= (r.end_time || '23:59').slice(0, 5);
+      const n = ra.filter(x => x.room_id === r.id && x.assignee_type === 'student' && students.some(s => s.id === x.assignee_id)).length;
+      return `<div class="room"><div><b>${esc(r.name)}</b> ${live ? '<span class="pill ok">الآن</span>' : ''}<div class="small muted">${(r.days || []).join('، ')} · ${(r.start_time || '').slice(0, 5)} – ${(r.end_time || '').slice(0, 5)} · ${n} من طلابك</div></div>
+        ${r.meet_url && (live || r.outside_behavior === 'always_visible') ? `<a class="btn" href="${esc(r.meet_url)}" target="_blank" rel="noopener">ادخل الغرفة</a>` : r.outside_behavior === 'hidden' ? '' : '<button class="btn" disabled title="يُفتح في وقت الفترة">ادخل الغرفة</button>'}</div>`; }).join('') || '<div class="empty">لا توجد غرف مسندة إليك</div>'}</div>`;
+};
+
+// ============ الملف الشخصي ============
+SECTIONS.profile = async el => {
+  const { data: p } = await db.from('user_profiles').select('*').eq('id', me.id).maybeSingle();
+  el.innerHTML = `<div class="sec-h" style="--c:var(--gold)"><b>ملفي الشخصي</b><span>${esc(me.email)}</span></div>
+    <div class="grid"><div class="card span7"><div class="head"><h3>بياناتي</h3></div>
+      <dl class="dl"><dt>الاسم</dt><dd>${esc(me.name)}</dd><dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(me.email)}</dd><dt>عدد طلابي</dt><dd>${students.length}</dd></dl>
+      <div class="g2" style="margin-top:10px"><label class="f" for="pc">المدينة<input id="pc" type="text" value="${esc(p?.city || '')}"></label><label class="f" for="pq">المؤهل<input id="pq" type="text" value="${esc(p?.qualifications || '')}"></label>
+      <label class="f" for="pm">حفظ القرآن<input id="pm" type="text" value="${esc(p?.quran_memorization || '')}"></label><label class="f" for="pw2">جهة العمل<input id="pw2" type="text" value="${esc(p?.workplace || '')}"></label></div>
+      <label class="f" for="pb" style="margin-top:8px">نبذة<textarea id="pb">${esc(p?.bio || '')}</textarea></label>
+      <button class="btn" id="ps" style="margin-top:10px">حفظ</button></div>
+    <div class="card span5 c-red"><div class="head"><h3>تغيير كلمة المرور</h3></div><label class="f" for="np">كلمة المرور الجديدة <span class="hint">8 أحرف على الأقل</span><input id="np" type="password" dir="ltr" autocomplete="new-password"></label><button class="btn" id="npg" style="margin-top:10px">تغيير</button></div></div>`;
+  $('#ps').onclick = async () => { const { error } = await db.from('user_profiles').upsert({ id: me.id, city: $('#pc').value || null, qualifications: $('#pq').value || null, quran_memorization: $('#pm').value || null, workplace: $('#pw2').value || null, bio: $('#pb').value || null, updated_at: new Date().toISOString() }); if (error) return toast(error.message, true); toast('حُفظ'); };
+  $('#npg').onclick = async () => { const v = $('#np').value; if (v.length < 8) return toast('8 أحرف على الأقل', true); const { error } = await db.auth.updateUser({ password: v }); if (error) return toast(error.message, true); $('#np').value = ''; toast('تغيّرت كلمة المرور'); };
+};
+
+function route() {
+  const k = (location.hash || '#record').slice(1);
+  const key = SECTIONS[k] ? k : 'record';
+  $$('.tabs a').forEach(a => a.setAttribute('aria-current', a.getAttribute('href') === '#' + key ? 'page' : 'false'));
+  SECTIONS[key]($('#main'));
+}
+window.addEventListener('hashchange', route);
+route();
+})();
+</script>
+</body>
+</html>
