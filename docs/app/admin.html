@@ -164,6 +164,9 @@ function donut(parts, centerLabel) {
   return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${grad || 'var(--track) 0deg 360deg'})"><div class="mid"><b>${fmtNum(total === 1 && !parts.some(p => p[1]) ? 0 : total)}</b><span>${esc(centerLabel)}</span></div></div>
     <div class="legend">${parts.map(([l, v, c]) => `<div class="lg"><i style="background:${c}"></i><em>${esc(l)}</em><span class="n">${fmtNum(v)}</span><span class="p">${(v / total * 100).toFixed(0)}٪</span></div>`).join('')}</div></div>`;
 }
+// أعمدة التصدير لمهام الخطة: كل قيمة في عمود مستقل (النطاق «من» و«إلى» عمودان، والأرقام أرقام)
+const expVal = (c, v) => v == null || v === '' ? null : c.value_type === 'number' && !isNaN(+v) ? +v : c.value_type === 'bool' ? (v ? 'نعم' : 'لا') : v;
+const taskExpCols = (tasks, valsOf) => tasks.flatMap(t => (t.single ? [t.single] : [t.from, t.to]).map(c => [String(c.header).trim(), x => expVal(c, (valsOf(x) || {})[c.id])]));
 const opt = (v, l, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(l)}</option>`;
 const teacherOpts = sel => D.teachers.filter(t => !t.is_archived).map(t => opt(t.id, t.name, t.id === sel)).join('');
 const roomOpts = sel => D.rooms.map(r => opt(r.id, r.name + (r.start_time ? ' (' + r.start_time.slice(0, 5) + ')' : ''), r.id === sel)).join('');
@@ -293,7 +296,7 @@ async function followSection(el, kind) {
       { key: 'score', label: 'الدرجة', num: true, html: x => x.score == null ? '—' : fmtNum(x.score, 2) }, { key: 'notes', label: 'ملاحظات' },
       { key: 'act', label: '', html: x => `<button class="btn ${x.r ? 'ghost' : ''} sm" data-rec="${x.s.id}">${x.r ? 'عرض' : 'رصد'}</button>` }],
       after: root => $$('[data-rec]', root).forEach(b => b.onclick = () => adminRecord(b.dataset.rec)) });
-    expCols = [['التاريخ', () => day], ['الطالب', x => x.name], ['البريد', x => x.email], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['يوم الخطة', x => x.pday], ['الحالة', x => x.state], ...tasks.map(t => [t.name, x => x['t_' + t.key]]), ['الدرجة', x => x.score], ['ملاحظات', x => x.notes]];
+    expCols = [['التاريخ', () => day], ['الطالب', x => x.name], ['البريد', x => x.email], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['يوم الخطة', x => x.pday], ['الحالة', x => x.state], ...taskExpCols(tasks, x => x.r?.vals), ['الدرجة', x => x.score], ['ملاحظات', x => x.notes]];
   }
 
   else if (isR) {
@@ -459,7 +462,7 @@ async function recsSection(el, kind) {
       after: root => { $$('[data-cancel]', root).forEach(b => b.onclick = () => cancelRec(b.dataset.cancel)); $$('[data-ed]', root).forEach(b => b.onclick = () => adminRecord(b.dataset.s, b.dataset.ed)); } });
     $('#rExport').onclick = () => A.exportXlsx(`سجل رصد المعلم - ${P.name} - ${st.from} إلى ${st.to}`, 'سجل رصد المعلم',
       [['التاريخ', x => x.date], ['الطالب', x => x.name], ['البريد', x => x.email], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['الحالة', x => x.statusLabel], ['تعويض عن', x => x.mk],
-       ...tasks.map(t => [t.name, x => x['t_' + t.key]]), ...(withScore ? [['الدرجة', x => x.score]] : []), ['ملاحظات', x => x.notes]], tbl.getRows());
+       ...taskExpCols(tasks, x => x.r?.vals), ...(withScore ? [['الدرجة', x => x.score]] : []), ['ملاحظات', x => x.notes]], tbl.getRows());
     return;
   }
 
@@ -1282,7 +1285,7 @@ SECTIONS.reports = async el => {
 // الحفظ/الربط/المراجعة/التكرار: من تنفيذ الطالب إن كانت الخطة فيها تنفيذ له، وإلا من رصد المعلم.
 // التسميع: مجموع ما سمّعه الطالب للمعلم. الالتزام يُحسب حسب نوع الخطة.
 const SUM_ST = { preset: 'all', from: '', to: TODAY, plan: '', teacher: '', room: '', nat: '' };
-const rangeLen = (a, b) => (a == null || b == null || a === '' || b === '' || a === false || b === false) ? 0 : Math.abs(+b - +a) + 1;
+const rangeLen = (a, b) => (a == null || b == null || a === '' || b === '' || a === false || b === false || !+a || !+b) ? 0 : Math.abs(+b - +a) + 1;
 SECTIONS.summary = async el => {
   await loadRecs();
   const PL = await plansFull();

@@ -18,6 +18,9 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="app.js"></script>
 <style>
+.pwbox{position:relative;display:block}.pwbox input{padding-left:44px}
+.pweye{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:0;background:transparent;color:#5b6b6d;cursor:pointer;display:grid;place-items:center;border-radius:8px}
+.pweye:hover,.pweye:focus-visible{background:#eef2f2;color:#0F2F33}
 body{min-height:100vh;display:flex;flex-direction:column;background:linear-gradient(145deg,var(--primary),var(--secondary))}
 .wrap{flex:1;display:grid;place-items:center;padding:24px max(16px,env(safe-area-inset-left,0px))}
 .box{width:100%;max-width:420px;display:grid;gap:16px}
@@ -36,7 +39,7 @@ body{min-height:100vh;display:flex;flex-direction:column;background:linear-gradi
   <form class="card" id="f" novalidate>
     <div class="error" id="err" hidden></div>
     <label class="f" for="email">البريد الإلكتروني<input id="email" type="email" dir="ltr" autocomplete="email" required placeholder="name@example.com"></label>
-    <label class="f" for="pw">كلمة المرور<input id="pw" type="password" dir="ltr" autocomplete="current-password" required></label>
+    <label class="f" for="pw">كلمة المرور<span class="pwbox"><input id="pw" type="password" dir="ltr" autocomplete="current-password" required><button type="button" id="pwEye" class="pweye" aria-label="إظهار كلمة المرور" title="إظهار كلمة المرور" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path id="pwSlash" d="M3 3l18 18" style="display:none"/></svg></button></span></label>
     <button class="btn block" type="submit" id="go">دخول</button>
   </form>
   <p class="roles-note">صفحة دخول واحدة للطالب والمعلم والمشرف، وتنقلك المنصة لصفحتك حسب حسابك.</p>
@@ -54,6 +57,7 @@ body{min-height:100vh;display:flex;flex-direction:column;background:linear-gradi
     const { data: me } = await db.from('users').select('role').eq('id', session.user.id).maybeSingle();
     if (me) return location.replace(homeOf(me.role));
   }
+  $('#pwEye').onclick = () => { const i = $('#pw'), show = i.type === 'password'; i.type = show ? 'text' : 'password'; const e = $('#pwEye'); e.setAttribute('aria-pressed', show); e.title = e.ariaLabel = show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور'; $('#pwSlash').style.display = show ? '' : 'none'; i.focus(); };
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   $('#f').addEventListener('submit', async e => {
     e.preventDefault(); $('#err').hidden = true;
