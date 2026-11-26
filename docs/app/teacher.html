@@ -10,7 +10,24 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="app.js"></script>
 <style>
-.wrap{max-width:1200px;margin:0 auto;padding:12px max(16px,env(safe-area-inset-left,0px)) 30px}
+.wrap{max-width:1200px;margin:0 auto;padding:12px max(14px,env(safe-area-inset-left,0px)) 90px}
+.room-card{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.room-head{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;background:none;border:0;text-align:right}
+.room-head>div{min-width:0}
+.room-head .chev{flex:none}
+.rs{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;padding:10px 4px;border-bottom:1px dashed var(--soft-line)}
+.rs:last-child{border-bottom:0}
+.rs b{color:var(--primary)}
+.rs .meta{grid-column:1;font-size:11.5px;color:var(--muted);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.rs .btn{grid-row:1/span 2;grid-column:2}
+.room-head .chev{transition:transform .2s;color:var(--muted);font-size:14px}
+.room-card.open .room-head .chev{transform:rotate(180deg)}
+.room-card.open{border-color:var(--teal);box-shadow:0 4px 18px rgba(15,47,51,.08)}
+.room-body{border-top:1px dashed var(--line);padding:10px 12px 12px}
+.hb-row{display:grid;grid-template-columns:34px 1fr auto;gap:8px;align-items:center;padding:8px 6px;border-bottom:1px dashed var(--soft-line)}
+.hb-row .r{font-weight:800;color:#7A6534;text-align:center}
+.hb-row.mine{background:color-mix(in srgb,var(--gold) 15%,#fff);border-radius:8px}
+@media (max-width:560px){.donut{width:104px;height:104px}.donut::after{inset:18px}.legend{min-width:140px}}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .tabs a{background:#fff;border:1px solid var(--line);border-radius:20px;padding:4px 14px;font-weight:700;text-decoration:none;color:var(--muted)}
 .tabs a[aria-current="page"]{background:var(--primary);border-color:var(--primary);color:#fff}
@@ -33,12 +50,12 @@
 <body>
 <header class="topbar">
   <div class="brand"><span class="mark">سنن</span><h1>صفحة المعلم<span class="sep">|</span><span class="prog" id="who"></span></h1></div>
-  <div class="tools"><span id="today"></span><button class="pillbtn" type="button" id="logout">خروج</button></div>
+  <div class="icons" id="icons"></div>
 </header>
 <div class="wrap">
-  <nav class="tabs" aria-label="الأقسام"><a href="#record">رصد جلسة التسميع</a><a href="#rooms">غرفي الصوتية</a><a href="#profile">ملفي الشخصي</a></nav>
   <div id="main"><div class="loading">جارٍ التحميل…</div></div>
 </div>
+<nav class="tabbar" id="tabbar" aria-label="الأقسام"></nav>
 <script>
 (async () => {
 'use strict';
@@ -47,8 +64,7 @@ const me = await A.requireRole(['teacher']);
 if (!me) return;
 const TODAY = A.todayMakkah();
 $('#who').textContent = me.name;
-$('#today').textContent = A.dayName(TODAY) + ' · ' + A.hijri(TODAY);
-$('#logout').onclick = A.logout;
+A.topIcons($('#icons'));
 
 const { data: T } = await db.from('teachers').select('*').eq('user_id', me.id).maybeSingle();
 if (!T) { $('#main').innerHTML = '<div class="error">حسابك غير مرتبط بملف معلم. تواصل مع المشرف.</div>'; return; }
@@ -79,8 +95,79 @@ if (planIds.length) {
   d.forEach(x => { if (PLANS[x.plan_id]) PLANS[x.plan_id].days[x.day_number] = x; });
 }
 
-const S = { stu: null, status: 'present', ded: {}, editing: null, makeup: null, draft: null, hist: [] };
+const S = { stu: null, status: 'present', ded: {}, editing: null, makeup: null, draft: null, hist: [], pending: null };
 const SECTIONS = {};
+
+// ============ التقارير ============
+let RECS = null;
+async function myRecs() {
+  if (RECS) return RECS;
+  RECS = students.length ? await fetchAll(() => db.from('plan_recitations').select('student_id, teacher_id, status, rec_date, memo_from, memo_to, score').in('student_id', students.map(s => s.id)).is('superseded_by', null).order('rec_date', { ascending: false })) : [];
+  return RECS;
+}
+const ageOf = d => { if (!d) return null; const b = new Date(d + 'T12:00:00Z'), t = new Date(TODAY + 'T12:00:00Z'); let a = t.getUTCFullYear() - b.getUTCFullYear(); if (t.getUTCMonth() < b.getUTCMonth() || (t.getUTCMonth() === b.getUTCMonth() && t.getUTCDate() < b.getUTCDate())) a--; return a; };
+const band = (v, bands) => { if (v == null || isNaN(v)) return 'غير محدد'; for (const [lim, l] of bands) if (v <= lim) return l; return bands[bands.length - 1][1]; };
+SECTIONS.reports = async el => {
+  const recs = await myRecs();
+  const act = students.filter(s => s.status === 'active');
+  const heard = recs.filter(r => r.teacher_id === T.id && ['present', 'makeup'].includes(r.status));
+  const hadiths = heard.reduce((a, r) => a + (r.memo_from != null && r.memo_to != null && +r.memo_from > 0 ? Math.abs(+r.memo_to - +r.memo_from) + 1 : 0), 0);
+  const month = TODAY.slice(0, 7);
+  const monthHeard = heard.filter(r => r.rec_date.slice(0, 7) === month);
+  const sc = heard.filter(r => r.score != null).map(r => +r.score);
+  const planCount = A.tally(act.map(s => PLANS[assignOf[s.id]?.plan_id]?.name || 'بلا خطة'), 6);
+  const nat = A.tally(act.map(s => s.nationality), 6);
+  const ages = A.tally(act.map(s => band(ageOf(s.birth_date), [[14, 'أقل من 15'], [19, '15–19'], [29, '20–29'], [39, '30–39'], [999, '40 فأكثر']])), 7);
+  const edu = A.tally(act.map(s => s.education), 6);
+  const quran = A.tally(act.map(s => band(s.quran_parts == null ? null : +s.quran_parts, [[4.99, 'أقل من 5 أجزاء'], [9.99, '5–9 أجزاء'], [19.99, '10–19 جزءًا'], [29.99, '20–29 جزءًا'], [30, 'القرآن كاملًا']])), 6);
+  const mini = (l, v, c, sm) => `<div class="mini" style="--c:var(--${c})"><span>${l}</span><b>${v}</b>${sm ? `<small>${sm}</small>` : ''}</div>`;
+  el.innerHTML = `<div class="sec-h" style="--c:var(--teal)"><b>تقاريري</b><span>${A.dayName(TODAY)} · ${A.hijri(TODAY)}</span></div>
+    <div class="card" style="--a:var(--teal);margin-bottom:10px"><div class="minis">
+      ${mini('طلابي', fmtNum(act.length), 'teal', students.length > act.length ? 'و' + (students.length - act.length) + ' غير منتظم' : '')}
+      ${mini('جلسات التسميع التي سمعتها', fmtNum(heard.length), 'blue', 'هذا الشهر: ' + fmtNum(monthHeard.length))}
+      ${mini('الأحاديث التي سمعتها', fmtNum(hadiths), 'green', 'هذا الشهر: ' + fmtNum(monthHeard.reduce((a, r) => a + (r.memo_from != null && r.memo_to != null && +r.memo_from > 0 ? Math.abs(+r.memo_to - +r.memo_from) + 1 : 0), 0)))}
+      ${mini('متوسط درجات طلابي', sc.length ? fmtNum(sc.reduce((a, b) => a + b, 0) / sc.length, 2) : '—', 'violet')}
+    </div></div>
+    <div class="grid">
+      <div class="card span6 c-teal"><div class="head"><h3>طلابي حسب الخطة</h3></div>${A.donut(planCount, 'طالب')}</div>
+      <div class="card span6 c-blue"><div class="head"><h3>الجنسيات</h3></div>${A.donut(nat, 'طالب')}</div>
+      <div class="card span6 c-amber"><div class="head"><h3>الأعمار</h3></div>${A.donut(ages, 'طالب')}</div>
+      <div class="card span6 c-violet"><div class="head"><h3>المستوى التعليمي</h3></div>${A.donut(edu, 'طالب')}</div>
+      <div class="card span6 c-green"><div class="head"><h3>مقدار حفظ القرآن</h3></div>${A.donut(quran, 'طالب')}</div>
+      <div class="card span6" id="hbCard"><div class="head"><h3>لوحة الشرف</h3></div><div id="hb"></div></div>
+    </div>`;
+  honor($('#hb'));
+};
+const HB = { scope: 'mine', period: 'month', plan: '', more: false };
+async function honor(box) {
+  const myPlans = [...new Set(students.map(s => assignOf[s.id]?.plan_id).filter(Boolean))];
+  if (!HB.plan && myPlans.length) HB.plan = myPlans[0];
+  box.innerHTML = '<div class="loading">جارٍ التحميل…</div>';
+  const from = HB.period === 'month' ? TODAY.slice(0, 8) + '01' : null;
+  const { data, error } = await db.rpc('honor_board', { p_plan: HB.plan || null, p_from: from, p_to: null });
+  if (error) { box.innerHTML = `<div class="error">${esc(error.message)}</div>`; return; }
+  let list = (data || []).filter(x => +x.memorized > 0);
+  let rows;
+  if (HB.scope === 'teachers') {
+    const g = {}; list.forEach(x => { const k = x.teacher_id || '—'; (g[k] ||= { name: x.teacher_name || 'بلا معلم', n: 0, sum: 0, id: x.teacher_id }); g[k].n++; g[k].sum += +x.memorized; });
+    rows = Object.values(g).map(t => ({ name: t.name, val: t.sum / t.n, sub: `${t.n} طالب · مجموع ${fmtNum(t.sum, 1)}`, mine: t.id === T.id })).sort((a, b) => b.val - a.val);
+  } else {
+    if (HB.scope === 'mine') list = list.filter(x => x.teacher_id === T.id);
+    rows = list.map(x => ({ name: x.name, val: +x.memorized, sub: `${x.sessions} جلسة · ${x.avg_score != null ? fmtNum(x.avg_score, 2) : '—'}${HB.scope === 'plan' && x.teacher_name ? ' · ' + x.teacher_name : ''}`, mine: HB.scope === 'plan' && x.teacher_id === T.id }));
+  }
+  const shown = HB.more ? rows : rows.slice(0, 10);
+  const seg = (k, v, l) => `<button type="button" data-hb="${k}" data-v="${v}" aria-pressed="${HB[k] === v}">${l}</button>`;
+  box.innerHTML = `<div class="stack" style="gap:8px">
+      <div class="seg">${seg('scope', 'mine', 'طلابي')}${seg('scope', 'plan', 'كل طلاب الخطة')}${seg('scope', 'teachers', 'المعلمون')}</div>
+      <div class="row" style="justify-content:flex-start;gap:6px"><div class="seg">${seg('period', 'month', 'هذا الشهر')}${seg('period', 'all', 'منذ البداية')}</div>
+        ${myPlans.length > 1 ? `<select id="hbPlan" style="width:auto">${myPlans.map(id => `<option value="${id}"${id === HB.plan ? ' selected' : ''}>${esc(PLANS[id]?.name || '')}</option>`).join('')}</select>` : ''}</div>
+      <div>${shown.map((r, i) => `<div class="hb-row${r.mine ? ' mine' : ''}"><span class="r">${i + 1}</span><div><b>${esc(r.name)}</b><div class="hint">${esc(r.sub)}</div></div><b class="num" style="color:var(--teal)">${fmtNum(r.val, 1)}<span class="hint"> ${HB.scope === 'teachers' ? 'حديث/طالب' : 'حديث'}</span></b></div>`).join('') || '<div class="empty">لا توجد بيانات في هذه الفترة</div>'}</div>
+      ${rows.length > 10 ? `<button class="btn ghost block" id="hbMore">${HB.more ? 'عرض أول 10 فقط' : 'عرض المزيد'}</button>` : ''}
+      <p class="hint">الترتيب بعدد الأحاديث المحفوظة في ${HB.period === 'month' ? 'هذا الشهر' : 'كل الفترة'}${HB.scope === 'teachers' ? '، والمعلمون بمتوسط ما حفظه طلاب كل معلم' : ''}.</p></div>`;
+  $$('[data-hb]', box).forEach(b => b.onclick = () => { HB[b.dataset.hb] = b.dataset.v; HB.more = false; honor(box); });
+  $('#hbPlan', box) && ($('#hbPlan', box).onchange = e => { HB.plan = e.target.value; honor(box); });
+  $('#hbMore', box) && ($('#hbMore', box).onclick = () => { HB.more = !HB.more; honor(box); });
+}
 
 // ============ الرصد ============
 SECTIONS.record = el => {
@@ -102,7 +189,8 @@ SECTIONS.record = el => {
   q.addEventListener('focus', showList);
   q.addEventListener('input', showList);
   document.addEventListener('click', e => { if (!e.target.closest('.search')) dd.hidden = true; });
-  if (S.stu) renderStudent();
+  if (S.pending) { const id = S.pending; S.pending = null; pick(id); }
+  else if (S.stu) renderStudent();
 };
 function pick(id) { S.stu = students.find(s => s.id === id); S.status = 'present'; S.ded = {}; S.editing = null; S.makeup = null; S.draft = null; $('#q').value = S.stu.name; loadHist().then(renderStudent); }
 async function loadHist() {
@@ -202,43 +290,48 @@ async function save(P, day, score) {
     const { error: e2 } = await db.from('plan_recitations').update({ superseded_by: ins.id, edit_reason: $('#reason').value.trim() }).eq('id', ed.id);
     if (e2) toast('حُفظ الرصد الجديد لكن تعذّر ربطه بالقديم: ' + e2.message, true);
   }
-  toast(ed ? 'حُفظ التعديل' : 'رُصدت الجلسة');
+  toast(ed ? 'حُفظ التعديل' : 'رُصدت الجلسة'); RECS = null;
   S.editing = null; S.ded = {}; S.draft = null; S.notes = null; S.status = 'present'; S.makeup = null;
   await loadHist(); renderStudent();
 }
 
 // ============ الغرف ============
-SECTIONS.rooms = el => {
+const OPEN = new Set();
+SECTIONS.rooms = async el => {
   const mine = ra.filter(x => x.assignee_type === 'teacher' && x.assignee_id === T.id).map(x => roomById[x.room_id]).filter(Boolean);
+  const recs = await myRecs();
+  const last = {}; recs.forEach(r => { if (!last[r.student_id]) last[r.student_id] = r; });
   const now = A.nowMakkahHM(), dn = A.DAYS[A.dowMakkah()];
-  el.innerHTML = `<div class="sec-h" style="--c:var(--blue)"><b>غرفي الصوتية</b><span>الأوقات بتوقيت مكة · الآن ${now}</span></div>
+  el.innerHTML = `<div class="sec-h" style="--c:var(--blue)"><b>الغرف الصوتية</b><span>بتوقيت مكة · الآن ${now}</span></div>
+    <p class="hint" style="margin-bottom:8px">اضغط على الغرفة لعرض طلابك فيها.</p>
     <div class="stack">${mine.map(r => {
       const live = r.active && (r.days || []).includes(dn) && r.start_time && now >= r.start_time.slice(0, 5) && now <= (r.end_time || '23:59').slice(0, 5);
-      const n = ra.filter(x => x.room_id === r.id && x.assignee_type === 'student' && students.some(s => s.id === x.assignee_id)).length;
-      return `<div class="room"><div><b>${esc(r.name)}</b> ${live ? '<span class="pill ok">الآن</span>' : ''}<div class="small muted">${(r.days || []).join('، ')} · ${(r.start_time || '').slice(0, 5)} – ${(r.end_time || '').slice(0, 5)} · ${n} من طلابك</div></div>
-        ${r.meet_url && (live || r.outside_behavior === 'always_visible') ? `<a class="btn" href="${esc(r.meet_url)}" target="_blank" rel="noopener">ادخل الغرفة</a>` : r.outside_behavior === 'hidden' ? '' : '<button class="btn" disabled title="يُفتح في وقت الفترة">ادخل الغرفة</button>'}</div>`; }).join('') || '<div class="empty">لا توجد غرف مسندة إليك</div>'}</div>`;
+      const st = students.filter(s => roomOf[s.id] === r.id);
+      const open = OPEN.has(r.id);
+      return `<div class="room-card${open ? ' open' : ''}" data-room="${r.id}">
+        <button type="button" class="room-head" aria-expanded="${open}"><div><b>${esc(r.name)}</b> ${live ? '<span class="pill ok">الآن</span>' : ''}<div class="small muted">${(r.days || []).join('، ')} · ${(r.start_time || '').slice(0, 5)} – ${(r.end_time || '').slice(0, 5)} · ${st.length} طالب</div></div><span class="chev">▼</span></button>
+        ${open ? `<div class="room-body">
+          <div class="row" style="margin-bottom:8px">${r.meet_url && (live || r.outside_behavior === 'always_visible') ? `<a class="btn" href="${esc(r.meet_url)}" target="_blank" rel="noopener">ادخل الغرفة</a>` : r.outside_behavior === 'hidden' ? '' : '<button class="btn" disabled title="يُفتح في وقت الفترة">ادخل الغرفة</button>'}</div>
+          <div>${st.map(s => { const l = last[s.id]; const P = PLANS[assignOf[s.id]?.plan_id]; return `<div class="rs"><b>${esc(s.name)}</b><button class="btn sm" data-rec="${s.id}">تسجيل الرصد</button>
+            <div class="meta"><span>${esc(P?.name || 'بلا خطة')}</span><span>·</span>${l ? `<span>آخر رصد ${A.greg(l.rec_date)}</span>${statusPill(l.status)}` : '<span>لا يوجد رصد</span>'}</div></div>`; }).join('') || '<div class="empty">لا يوجد من طلابك في هذه الغرفة</div>'}</div></div>` : ''}
+      </div>`; }).join('') || '<div class="empty">لا توجد غرف مسندة إليك</div>'}</div>`;
+  $$('.room-head', el).forEach(b => b.onclick = () => { const id = b.closest('.room-card').dataset.room; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); SECTIONS.rooms(el).then(() => { const c = $(`.room-card[data-room="${id}"]`, el); if (OPEN.has(id)) c?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); });
+  $$('[data-rec]', el).forEach(b => b.onclick = () => { S.pending = b.dataset.rec; location.hash = 'record'; });
 };
 
 // ============ الملف الشخصي ============
-SECTIONS.profile = async el => {
-  const { data: p } = await db.from('user_profiles').select('*').eq('id', me.id).maybeSingle();
-  el.innerHTML = `<div class="sec-h" style="--c:var(--gold)"><b>ملفي الشخصي</b><span>${esc(me.email)}</span></div>
-    <div class="grid"><div class="card span7"><div class="head"><h3>بياناتي</h3></div>
-      <dl class="dl"><dt>الاسم</dt><dd>${esc(me.name)}</dd><dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(me.email)}</dd><dt>عدد طلابي</dt><dd>${students.length}</dd></dl>
-      <div class="g2" style="margin-top:10px"><label class="f" for="pc">المدينة<input id="pc" type="text" value="${esc(p?.city || '')}"></label><label class="f" for="pq">المؤهل<input id="pq" type="text" value="${esc(p?.qualifications || '')}"></label>
-      <label class="f" for="pm">حفظ القرآن<input id="pm" type="text" value="${esc(p?.quran_memorization || '')}"></label><label class="f" for="pw2">جهة العمل<input id="pw2" type="text" value="${esc(p?.workplace || '')}"></label></div>
-      <label class="f" for="pb" style="margin-top:8px">نبذة<textarea id="pb">${esc(p?.bio || '')}</textarea></label>
-      <button class="btn" id="ps" style="margin-top:10px">حفظ</button></div>
-    <div class="card span5 c-red"><div class="head"><h3>تغيير كلمة المرور</h3></div><label class="f" for="np">كلمة المرور الجديدة <span class="hint">8 أحرف على الأقل</span><input id="np" type="password" dir="ltr" autocomplete="new-password"></label><button class="btn" id="npg" style="margin-top:10px">تغيير</button></div></div>`;
-  $('#ps').onclick = async () => { const { error } = await db.from('user_profiles').upsert({ id: me.id, city: $('#pc').value || null, qualifications: $('#pq').value || null, quran_memorization: $('#pm').value || null, workplace: $('#pw2').value || null, bio: $('#pb').value || null, updated_at: new Date().toISOString() }); if (error) return toast(error.message, true); toast('حُفظ'); };
-  $('#npg').onclick = async () => { const v = $('#np').value; if (v.length < 8) return toast('8 أحرف على الأقل', true); const { error } = await db.auth.updateUser({ password: v }); if (error) return toast(error.message, true); $('#np').value = ''; toast('تغيّرت كلمة المرور'); };
-};
+SECTIONS.profile = el => A.profileSection(el, me, { extra: true });
 
+const TABS = [['reports', 'التقارير', 'report'], ['record', 'رصد جلسة التسميع', 'mic'], ['rooms', 'الغرف الصوتية', 'room']];
 function route() {
-  const k = (location.hash || '#record').slice(1);
-  const key = SECTIONS[k] ? k : 'record';
-  $$('.tabs a').forEach(a => a.setAttribute('aria-current', a.getAttribute('href') === '#' + key ? 'page' : 'false'));
-  SECTIONS[key]($('#main'));
+  const k = (location.hash || '#reports').slice(1);
+  const key = SECTIONS[k] ? k : 'reports';
+  $('#tabbar').innerHTML = TABS.map(([h, l, ic]) => `<a href="#${h}" aria-current="${h === key ? 'page' : 'false'}">${A.svg(ic)}${l}</a>`).join('');
+  const host = document.createElement('div');
+  host.innerHTML = '<div class="loading">جارٍ التحميل…</div>';
+  $('#main').replaceChildren(host);
+  Promise.resolve(SECTIONS[key](host)).catch(e => { if (host.isConnected) host.innerHTML = `<div class="error">${esc(e.message || e)}</div>`; });
+  window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
 route();

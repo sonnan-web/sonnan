@@ -812,7 +812,7 @@ SECTIONS.notify = async el => {
   const rows = (log || []).map(n => ({ n, date: n.created_at.slice(0, 10), who: D.userById[n.recipient_user_id]?.name || '—', title: n.title, kind: { manual: 'رسالة', leave_decided: 'قرار استئذان', discipline_alert: 'تنبيه', discipline_warning: 'إنذار' }[n.kind] || n.kind, channel: { inbox: 'داخل المنصة', email: 'بريد', push: 'جوال' }[n.channel], status: n.channel === 'inbox' ? (n.read_at ? 'مقروء' : 'لم يُقرأ') : { queued: 'بانتظار خدمة الإرسال', sent: 'أُرسل', failed: 'فشل', skipped: 'تُخطي' }[n.status] }));
   el.innerHTML = `${secHead('الإشعارات', 'رسائل داخل المنصة، ومعها البريد وإشعار الجوال', 'blue')}
     <div class="grid"><div class="card c-blue span5"><div class="head"><h3>رسالة جديدة</h3></div>
-      <label class="f" for="nAud">المستلمون<select id="nAud">${opt('all', 'كل الطلاب المنتظمين')}${opt('teacher', 'طلاب معلم')}${opt('room', 'طلاب فترة')}${opt('plan', 'طلاب خطة')}${opt('one', 'طالب واحد')}${opt('teachers', 'كل المعلمين')}</select></label>
+      <label class="f" for="nAud">المستلمون<select id="nAud">${opt('all', 'كل الطلاب المنتظمين')}${opt('teacher', 'طلاب معلم')}${opt('room', 'طلاب فترة')}${opt('plan', 'طلاب خطة')}${opt('one', 'طالب واحد')}${opt('teachers', 'كل المعلمين')}${opt('oneTeacher', 'معلم واحد')}</select></label>
       <div id="nSub" style="margin-top:8px"></div>
       <label class="f" for="nT" style="margin-top:8px">العنوان<input id="nT" type="text"></label>
       <label class="f" for="nB" style="margin-top:8px">النص<textarea id="nB"></textarea></label>
@@ -823,7 +823,7 @@ SECTIONS.notify = async el => {
       <div class="card span7" id="nCard"><div class="head"><h3>سجل الإشعارات</h3></div><div id="nTbl"></div></div></div>`;
   const sub = () => {
     const a = $('#nAud').value;
-    $('#nSub').innerHTML = a === 'teacher' ? `<select id="nTe">${teacherOpts()}</select>` : a === 'room' ? `<select id="nRo">${roomOpts()}</select>` : a === 'plan' ? `<select id="nPl">${planOpts()}</select>` : a === 'one' ? `<select id="nOne">${D.students.slice().sort((x, y) => x.name.localeCompare(y.name, 'ar')).map(s => opt(s.id, s.name)).join('')}</select>` : '';
+    $('#nSub').innerHTML = a === 'teacher' ? `<select id="nTe">${teacherOpts()}</select>` : a === 'room' ? `<select id="nRo">${roomOpts()}</select>` : a === 'plan' ? `<select id="nPl">${planOpts()}</select>` : a === 'oneTeacher' ? `<select id="nOT">${teacherOpts()}</select>` : a === 'one' ? `<select id="nOne">${D.students.slice().sort((x, y) => x.name.localeCompare(y.name, 'ar')).map(s => opt(s.id, s.name)).join('')}</select>` : '';
     $$('#nSub select').forEach(s => s.onchange = count); count();
   };
   const recipients = () => {
@@ -834,6 +834,7 @@ SECTIONS.notify = async el => {
     if (a === 'plan') return act.filter(s => s.assign?.plan_id === $('#nPl').value).map(s => s.user_id);
     if (a === 'one') return [D.studentById[$('#nOne').value]?.user_id].filter(Boolean);
     if (a === 'teachers') return D.teachers.filter(t => !t.is_archived).map(t => t.user_id);
+    if (a === 'oneTeacher') return [D.teacherById[$('#nOT').value]?.user_id].filter(Boolean);
     return [];
   };
   const count = () => { $('#nCount').textContent = 'سيصل إلى ' + recipients().length + ' مستلم'; };

@@ -188,3 +188,39 @@ begin
 end $$;
 revoke execute on function public.admin_update_account(uuid, text, text) from anon, public;
 grant execute on function public.admin_update_account(uuid, text, text) to authenticated;
+
+-- ===== إضافة لاحقة: الملف الشخصي مع الصورة، ولوحة الشرف مع اسم المعلم =====
+alter table public.user_profiles
+  add column if not exists phone text, add column if not exists residence text,
+  add column if not exists id_type text, add column if not exists id_number text, add column if not exists education text;
+create or replace function public.update_my_name(p_name text) returns void language plpgsql security definer set search_path = '' as $$
+begin
+  if length(btrim(coalesce(p_name, ''))) < 2 then raise exception 'اكتب الاسم'; end if;
+  update public.users set name = btrim(p_name) where id = auth.uid();
+end $$;
+revoke execute on function public.update_my_name(text) from anon, public;
+grant execute on function public.update_my_name(text) to authenticated;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 2097152, array['image/jpeg','image/png','image/webp']) on conflict (id) do nothing;
+create policy avatars_own_select on storage.objects for select to authenticated using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy avatars_own_insert on storage.objects for insert to authenticated with check (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy avatars_own_update on storage.objects for update to authenticated using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+create policy avatars_own_delete on storage.objects for delete to authenticated using (bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text);
+drop function if exists public.honor_board(uuid, date, date);
+create or replace function public.honor_board(p_plan uuid default null, p_from date default null, p_to date default null)
+returns table (student_id uuid, name text, memorized numeric, sessions int, avg_score numeric, teacher_id uuid, teacher_name text)
+language sql stable security definer set search_path = '' as $$
+  with r as (select pr.student_id, pr.score, pr.memo_from f, pr.memo_to t from public.plan_recitations pr
+    where pr.superseded_by is null and pr.status in ('present','makeup') and (p_plan is null or pr.plan_id = p_plan)
+      and (p_from is null or pr.rec_date >= p_from) and (p_to is null or pr.rec_date <= p_to)),
+  merged as (select student_id, sum(upper(x) - lower(x)) m from (
+      select student_id, unnest(range_agg(numrange(least(f,t) - 0.5, greatest(f,t) + 0.5, '[)'))) x from r where f is not null and t is not null and f > 0 group by student_id) q group by student_id)
+  select s.id, u.name, coalesce(m.m, 0), (select count(*)::int from r where r.student_id = s.id), (select round(avg(score),2) from r where r.student_id = s.id), s.teacher_id, tu.name
+  from public.students s join public.users u on u.id = s.user_id
+  left join public.teachers t on t.id = s.teacher_id left join public.users tu on tu.id = t.user_id
+  left join merged m on m.student_id = s.id
+  where s.is_archived = false and s.status = 'active'
+    and (p_plan is null or exists (select 1 from public.plan_assignments a where a.student_id = s.id and a.plan_id = p_plan and a.ended_at is null))
+  order by 3 desc, 5 desc nulls last $$;
+revoke execute on function public.honor_board(uuid, date, date) from anon, public;
+grant execute on function public.honor_board(uuid, date, date) to authenticated;

@@ -49,7 +49,7 @@ body{font-size:14px}
 <body>
 <header class="topbar">
   <div class="brand"><span class="mark">سنن</span><h1>لوحة الطالب<span class="sep">|</span><span class="prog">تابع إنجازك ونافس على التميز</span></h1></div>
-  <div class="tools"><button class="pillbtn" type="button" id="logout">خروج</button></div>
+  <div class="icons" id="icons"></div>
 </header>
 <div class="wrap" id="main"><div class="loading">جارٍ التحميل…</div></div>
 <nav class="tabbar" id="tabbar"></nav>
@@ -60,7 +60,7 @@ const A = App, { db, $, $$, esc, fmtNum, toast, statusPill, STATUS, svg } = A;
 const me = await A.requireRole(['student']);
 if (!me) return;
 const TODAY = A.todayMakkah();
-$('#logout').onclick = A.logout;
+A.topIcons($('#icons'));
 
 const { data: stu } = await db.from('students').select('*').eq('user_id', me.id).maybeSingle();
 if (!stu) { $('#main').innerHTML = '<div class="error">حسابك غير مرتبط بملف طالب. تواصل مع إدارة البرنامج.</div>'; return; }
@@ -100,7 +100,7 @@ const scores = recs.filter(r => r.score != null).map(r => +r.score);
 const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 const memorized = +memR.data || 0;
 
-const TABS = [['home', 'الرئيسية', 'home'], ['log', 'سجلّي', 'book'], ['honor', 'لوحة الشرف', 'star'], ['leave', 'الاستئذان', 'leave'], ['inbox', 'الإشعارات', 'bell']];
+const TABS = [['home', 'الرئيسية', 'home'], ['log', 'سجلّي', 'book'], ['honor', 'لوحة الشرف', 'star'], ['leave', 'الاستئذان', 'leave']];
 const SECTIONS = {};
 
 SECTIONS.home = async el => {
@@ -189,6 +189,8 @@ SECTIONS.leave = async el => {
   };
 };
 
+SECTIONS.profile = el => A.profileSection(el, me, { seed: { phone: stu.phone, gender: stu.gender, nationality: stu.nationality, residence: stu.residence, birth_date: stu.birth_date, education: stu.education, quran_memorization: stu.quran_parts != null ? stu.quran_parts + ' جزء' : null } });
+
 SECTIONS.inbox = async el => {
   const { data } = await db.from('notifications').select('*').eq('channel', 'inbox').order('created_at', { ascending: false }).limit(150);
   el.innerHTML = `<div class="sec-h" style="--c:var(--blue)"><b>الإشعارات</b><div class="acts"><button class="btn ghost sm" id="all">تعليم الكل كمقروء</button></div></div>
@@ -201,7 +203,7 @@ SECTIONS.inbox = async el => {
 function route() {
   const k = (location.hash || '#home').slice(1);
   const key = SECTIONS[k] ? k : 'home';
-  $('#tabbar').innerHTML = TABS.map(([h, l, ic]) => `<a href="#${h}" aria-current="${h === key ? 'page' : 'false'}">${svg(ic)}${l}${h === 'inbox' && unreadCount ? `<span class="badge">${unreadCount}</span>` : ''}</a>`).join('');
+  $('#tabbar').innerHTML = TABS.map(([h, l, ic]) => `<a href="#${h}" aria-current="${h === key ? 'page' : 'false'}">${svg(ic)}${l}</a>`).join('');
   $('#main').innerHTML = '<div class="loading">جارٍ التحميل…</div>';
   Promise.resolve(SECTIONS[key]($('#main'))).catch(e => $('#main').innerHTML = `<div class="error">${esc(e.message || e)}</div>`);
   window.scrollTo(0, 0);

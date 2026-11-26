@@ -163,6 +163,24 @@ input:disabled,select:disabled{background:var(--track);color:var(--muted)}
 .is-full{position:fixed!important;inset:0;z-index:60;border-radius:0!important;overflow:auto;margin:0!important;max-height:none!important}
 .is-full .tbl-wrap{max-height:calc(100vh - 140px)}
 
+/* أيقونات الشريط العلوي */
+.icons{display:flex;align-items:center;gap:6px}
+.icbtn{position:relative;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;display:grid;place-items:center;text-decoration:none;flex:none}
+.icbtn svg{width:19px;height:19px}
+.icbtn:hover{background:rgba(255,255,255,.12)}
+.icbtn .dotn{position:absolute;top:-3px;left:-3px;background:var(--red);color:#fff;border-radius:10px;font-size:10px;font-weight:800;min-width:18px;height:18px;padding:0 4px;display:grid;place-items:center;border:2px solid var(--primary)}
+.inbox-item{display:grid;grid-template-columns:10px 1fr;gap:10px;padding:10px 0;border-bottom:1px dashed var(--soft-line);cursor:pointer}
+.inbox-item .dot{width:8px;height:8px;border-radius:50%;background:var(--gold);margin-top:7px}
+.inbox-item.read{cursor:default}.inbox-item.read .dot{background:transparent}
+.avatar-lg{width:110px;height:110px;border-radius:50%;background:linear-gradient(135deg,var(--primary),var(--secondary));color:var(--gold);display:grid;place-items:center;font-size:40px;font-weight:800;overflow:hidden;border:3px solid var(--gold)}
+.avatar-lg img{width:100%;height:100%;object-fit:cover}
+/* التنقل السفلي للجوال */
+.tabbar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:space-around;padding-bottom:env(safe-area-inset-bottom,0px);z-index:20;box-shadow:0 -4px 16px rgba(15,47,51,.06)}
+.tabbar a{flex:1;text-align:center;text-decoration:none;color:var(--muted);font-size:11.5px;font-weight:700;padding:8px 2px 9px;position:relative}
+.tabbar a[aria-current="page"]{color:var(--primary)}
+.tabbar a[aria-current="page"]::before{content:"";position:absolute;top:0;inset-inline:28%;height:3px;border-radius:0 0 3px 3px;background:var(--gold)}
+.tabbar .ic{display:block;margin:0 auto 2px;width:21px;height:21px}
+@media (max-width:560px){.topbar h1 .sep,.topbar h1 .prog{display:none}.topbar h1{font-size:14px}}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--primary);color:#fff;padding:9px 18px;border-radius:10px;font-weight:700;z-index:90;max-width:calc(100% - 32px);text-align:center;border-bottom:2px solid var(--gold)}
 .toast.bad{background:#8F2530;border-bottom-color:var(--red)}
 .loading{padding:40px;text-align:center;color:var(--muted)}

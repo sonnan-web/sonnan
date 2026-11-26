@@ -188,7 +188,122 @@
   }[name] || '');
   const svg = name => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icon(name)}"/></svg>`;
 
-  window.App = { db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
+  // ===== رسوم مشتركة =====
+  const PALETTE = ['var(--teal)', 'var(--gold)', 'var(--blue)', 'var(--violet)', 'var(--green)', 'var(--orange)', 'var(--red)', 'var(--slate)'];
+  function donut(parts, centerLabel) {
+    parts = parts.filter(p => p[1] > 0);
+    const total = parts.reduce((a, p) => a + p[1], 0);
+    let acc = 0;
+    const grad = total ? parts.map(([, v, c], i) => { const a = acc / total * 360; acc += v; return `${c || PALETTE[i % PALETTE.length]} ${a}deg ${acc / total * 360}deg`; }).join(',') : 'var(--track) 0deg 360deg';
+    return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${grad})"><div class="mid"><b>${fmtNum(total)}</b><span>${esc(centerLabel)}</span></div></div>
+      <div class="legend">${parts.map(([l, v, c], i) => `<div class="lg"><i style="background:${c || PALETTE[i % PALETTE.length]}"></i><em title="${esc(l)}">${esc(l)}</em><span class="n">${fmtNum(v)}</span><span class="p">${total ? Math.round(v / total * 100) : 0}٪</span></div>`).join('') || '<div class="muted small">لا توجد بيانات</div>'}</div></div>`;
+  }
+  // يجمع القيم ويُبقي الأكثر تكرارًا ويضم الباقي في «أخرى»
+  function tally(values, keep = 6, emptyLabel = 'غير محدد') {
+    const m = {}; values.forEach(v => { const k = (v == null || String(v).trim() === '') ? emptyLabel : String(v).trim(); m[k] = (m[k] || 0) + 1; });
+    const arr = Object.entries(m).sort((a, b) => b[1] - a[1]);
+    if (arr.length <= keep + 1) return arr;
+    const top = arr.slice(0, keep), rest = arr.slice(keep).reduce((a, x) => a + x[1], 0);
+    return [...top, ['أخرى', rest]];
+  }
+
+  // ===== أيقونات الشريط العلوي: الملف الشخصي، الإشعارات، الخروج =====
+  const ICON = {
+    user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
+    logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M14 4v16"/><path d="M10 12H3"/><path d="M6 9l-3 3 3 3"/></svg>'
+  };
+  async function unreadCount() { const { count } = await db.from('notifications').select('id', { count: 'exact', head: true }).eq('channel', 'inbox').is('read_at', null); return count || 0; }
+  async function topIcons(container, { profileHash = 'profile' } = {}) {
+    container.innerHTML = `<a class="icbtn" href="#${profileHash}" title="ملفي الشخصي" aria-label="ملفي الشخصي">${ICON.user}</a>
+      <button class="icbtn" type="button" id="bellBtn" title="الإشعارات" aria-label="الإشعارات">${ICON.bell}<span class="dotn" id="bellN" hidden></span></button>
+      <button class="icbtn" type="button" id="outBtn" title="تسجيل الخروج" aria-label="تسجيل الخروج">${ICON.logout}</button>`;
+    $('#outBtn', container).onclick = logout;
+    $('#bellBtn', container).onclick = () => openInbox();
+    refreshBell();
+  }
+  async function refreshBell() { const n = await unreadCount(); const b = $('#bellN'); if (b) { b.textContent = n > 99 ? '99+' : n; b.hidden = !n; } }
+  async function openInbox() {
+    const { data } = await db.from('notifications').select('*').eq('channel', 'inbox').order('created_at', { ascending: false }).limit(150);
+    drawer('الإشعارات', `<div class="row" style="justify-content:flex-end"><button class="btn ghost sm" id="inAll">تعليم الكل كمقروء</button></div>
+      <div class="card">${(data || []).map(n => `<div class="inbox-item${n.read_at ? ' read' : ''}" data-id="${n.id}"><span class="dot"></span><div><div class="row"><b>${esc(n.title)}</b><span class="small muted">${greg(n.created_at.slice(0, 10))}</span></div><p class="small" style="margin-top:3px;line-height:1.8">${esc(n.body)}</p></div></div>`).join('') || '<div class="empty">لا توجد إشعارات</div>'}</div>`, root => {
+      const mark = async ids => { if (!ids.length) return; await db.from('notifications').update({ read_at: new Date().toISOString() }).in('id', ids); ids.forEach(id => $(`.inbox-item[data-id="${id}"]`, root)?.classList.add('read')); refreshBell(); };
+      $$('.inbox-item:not(.read)', root).forEach(i => i.onclick = () => mark([i.dataset.id]));
+      $('#inAll', root).onclick = () => mark((data || []).filter(n => !n.read_at).map(n => n.id));
+    });
+  }
+
+  // ===== الملف الشخصي مع الصورة (للمعلم والطالب) =====
+  const GENDERS = ['ذكر', 'أنثى'], ID_TYPES = ['هوية وطنية', 'إقامة', 'جواز سفر', 'أخرى'];
+  async function resizeImage(file, max = 320) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      return await new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
+    } finally { URL.revokeObjectURL(url); }
+  }
+  // seed: قيم أولية من سجل الطالب عند خلو الملف
+  async function profileSection(el, me, { seed = {}, extra = false } = {}) {
+    const { data: p0 } = await db.from('user_profiles').select('*').eq('id', me.id).maybeSingle();
+    const p = Object.assign({}, seed, Object.fromEntries(Object.entries(p0 || {}).filter(([, v]) => v != null && v !== '')));
+    const f = (id, label, val, type = 'text', more = '') => `<label class="f" for="${id}">${label}<input id="${id}" type="${type}" value="${esc(val ?? '')}" ${more}></label>`;
+    el.innerHTML = `<div class="sec-h" style="--c:var(--gold)"><b>ملفي الشخصي</b><span>${esc(me.email)}</span></div>
+      <div class="grid">
+        <div class="card span4" style="align-items:center;text-align:center;gap:10px">
+          <div class="avatar-lg" id="avBox">${p.avatar_url ? `<img src="${esc(p.avatar_url)}" alt="صورتي">` : esc((me.name || '؟').trim().charAt(0))}</div>
+          <b>${esc(me.name)}</b><span class="hint">${me.role === 'teacher' ? 'معلم' : 'طالب'}</span>
+          <label class="btn ghost sm" for="avFile" style="cursor:pointer">${p.avatar_url ? 'تغيير الصورة' : 'إضافة صورة'}</label><input id="avFile" type="file" accept="image/*" hidden>
+          ${p.avatar_url ? '<button class="btn danger sm" id="avDel" type="button">حذف الصورة</button>' : ''}
+        </div>
+        <div class="card span8"><div class="head"><h3>بياناتي</h3><span class="hint">تستطيع تعديلها متى شئت</span></div>
+          <div class="g2">
+            ${f('pfName', 'الاسم', me.name)}${f('pfEmail', 'البريد الإلكتروني <span class="hint">يغيّره المشرف</span>', me.email, 'email', 'dir="ltr" disabled')}
+            ${f('pfPhone', 'رقم الجوال', p.phone, 'tel', 'dir="ltr"')}
+            <label class="f" for="pfGender">الجنس<select id="pfGender"><option value="">—</option>${GENDERS.map(g => `<option${p.gender === g ? ' selected' : ''}>${g}</option>`).join('')}</select></label>
+            ${f('pfNat', 'الجنسية', p.nationality)}${f('pfRes', 'مكان الإقامة', p.residence)}
+            <label class="f" for="pfIdT">نوع الإثبات<input id="pfIdT" type="text" list="pfIdTypes" value="${esc(p.id_type ?? '')}"><datalist id="pfIdTypes">${ID_TYPES.map(t => `<option value="${t}">`).join('')}</datalist></label>
+            ${f('pfIdN', 'رقم الإثبات', p.id_number, 'text', 'dir="ltr"')}
+            ${f('pfBirth', 'تاريخ الميلاد', p.birth_date, 'date')}${f('pfEdu', 'التعليم', p.education)}
+            ${f('pfQ', 'حفظ القرآن', p.quran_memorization, 'text', 'placeholder="مثال: 15 جزءًا"')}
+            ${extra ? f('pfQual', 'المؤهل', p.qualifications) + f('pfWork', 'جهة العمل', p.workplace) : ''}
+          </div>
+          ${extra ? `<label class="f" for="pfBio" style="margin-top:8px">نبذة<textarea id="pfBio">${esc(p.bio ?? '')}</textarea></label>` : ''}
+          <button class="btn" id="pfSave" style="margin-top:10px">حفظ البيانات</button></div>
+        <div class="card span12 c-red"><div class="head"><h3>تغيير كلمة المرور</h3></div><div class="g2"><label class="f" for="pfPw">كلمة المرور الجديدة <span class="hint">8 أحرف على الأقل</span><input id="pfPw" type="password" dir="ltr" autocomplete="new-password"></label></div><button class="btn" id="pfPwGo" style="margin-top:10px;justify-self:start">تغيير</button></div>
+      </div>`;
+    const v = id => $('#' + id, el)?.value.trim() || null;
+    $('#pfSave', el).onclick = async () => {
+      const b = $('#pfSave', el); b.disabled = true;
+      try {
+        const name = v('pfName');
+        if (name && name !== me.name) { const { error } = await db.rpc('update_my_name', { p_name: name }); if (error) throw error; me.name = name; }
+        const row = { id: me.id, phone: v('pfPhone'), gender: v('pfGender'), nationality: v('pfNat'), residence: v('pfRes'), id_type: v('pfIdT'), id_number: v('pfIdN'), birth_date: v('pfBirth'), education: v('pfEdu'), quran_memorization: v('pfQ'), updated_at: new Date().toISOString() };
+        if (extra) Object.assign(row, { qualifications: v('pfQual'), workplace: v('pfWork'), bio: v('pfBio') });
+        const { error } = await db.from('user_profiles').upsert(row); if (error) throw error;
+        toast('حُفظت بياناتك');
+      } catch (e) { toast(e.message || String(e), true); }
+      b.disabled = false;
+    };
+    $('#pfPwGo', el).onclick = async () => { const pw = $('#pfPw', el).value; if (pw.length < 8) return toast('8 أحرف على الأقل', true); const { error } = await db.auth.updateUser({ password: pw }); if (error) return toast(error.message, true); $('#pfPw', el).value = ''; toast('تغيّرت كلمة المرور'); };
+    $('#avFile', el).onchange = async e => {
+      const file = e.target.files[0]; if (!file) return;
+      try {
+        const blob = await resizeImage(file);
+        const path = `${me.id}/avatar-${Date.now()}.jpg`;
+        const up = await db.storage.from('avatars').upload(path, blob, { contentType: 'image/jpeg', upsert: true }); if (up.error) throw up.error;
+        const url = db.storage.from('avatars').getPublicUrl(path).data.publicUrl;
+        const { error } = await db.from('user_profiles').upsert({ id: me.id, avatar_url: url, updated_at: new Date().toISOString() }); if (error) throw error;
+        if (p.avatar_url) { const old = p.avatar_url.split('/avatars/')[1]; if (old) db.storage.from('avatars').remove([old]); }
+        toast('حُفظت الصورة'); profileSection(el, me, { seed, extra });
+      } catch (err) { toast('لم تُرفع الصورة: ' + (err.message || err), true); }
+    };
+    $('#avDel', el) && ($('#avDel', el).onclick = async () => { const old = p.avatar_url.split('/avatars/')[1]; if (old) await db.storage.from('avatars').remove([old]); await db.from('user_profiles').upsert({ id: me.id, avatar_url: null }); toast('حُذفت الصورة'); profileSection(el, me, { seed, extra }); });
+  }
+
+  window.App = { donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
     unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, svg };
 })();
