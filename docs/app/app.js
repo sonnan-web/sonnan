@@ -303,7 +303,94 @@
     $('#avDel', el) && ($('#avDel', el).onclick = async () => { const old = p.avatar_url.split('/avatars/')[1]; if (old) await db.storage.from('avatars').remove([old]); await db.from('user_profiles').upsert({ id: me.id, avatar_url: null }); toast('حُذفت الصورة'); profileSection(el, me, { seed, extra }); });
   }
 
-  window.App = { donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
+  // ===== التثبيت على الجوال وإشعارات الجوال =====
+  const VAPID_PUBLIC = 'BGOb1JtomPyxrCk3SiqluCzs97TDuGXRXnScFMYgIrpGYAEhT1NbFUPNhDk01h2VZw3DSvwAXbQ405jF7Z-aNws';
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/i.test(ua);
+  const isMobile = isIOS || isAndroid;
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const pushSupported = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; document.dispatchEvent(new Event('sonnan-installable')); });
+  window.addEventListener('appinstalled', () => { deferredPrompt = null; closeSheet(); toast('ثُبّت التطبيق على جهازك'); });
+  const ls = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  const snoozed = k => { const t = +ls.get(k) || 0; return Date.now() - t < 3 * 864e5; };
+  const b64ToU8 = s => { const p = '='.repeat((4 - s.length % 4) % 4); const raw = atob((s + p).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...raw].map(c => c.charCodeAt(0))); };
+  async function registerSW() { if (!('serviceWorker' in navigator)) return null; try { return await navigator.serviceWorker.register('sw.js'); } catch (e) { return null; } }
+
+  function closeSheet() { $('#pwaSheet')?.remove(); $('#pwaBack')?.remove(); }
+  function sheet(html, onMount) {
+    closeSheet();
+    const back = document.createElement('div'); back.id = 'pwaBack'; back.className = 'drawer-back';
+    const s = document.createElement('div'); s.id = 'pwaSheet'; s.className = 'pwa-sheet'; s.setAttribute('role', 'dialog');
+    s.innerHTML = `<div class="pwa-grip"></div>${html}`;
+    document.body.append(back, s);
+    back.onclick = closeSheet;
+    onMount && onMount(s);
+  }
+  const shareIcon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-4px"><path d="M12 3v12M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>';
+  const addIcon = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" style="vertical-align:-4px"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+  function installSheet() {
+    const head = `<div class="pwa-head"><img src="icons/icon-192.png" alt="" width="56" height="56"><div><b>ثبّت تطبيق سنن على جوالك</b><p>يفتح بضغطة من الشاشة الرئيسية، وتصلك عليه الإشعارات.</p></div></div>`;
+    if (isIOS) {
+      sheet(`${head}<ol class="pwa-steps"><li>اضغط زر المشاركة ${shareIcon} أسفل المتصفح (في سفاري).</li><li>اختر «إضافة إلى الشاشة الرئيسية» ${addIcon}</li><li>اضغط «إضافة»، ثم افتح سنن من الشاشة الرئيسية وسجّل دخولك.</li></ol>
+        <p class="hint">على الآيفون لا تعمل الإشعارات إلا بعد التثبيت بهذه الطريقة.</p><button class="btn ghost block" id="pwaLater">لاحقًا</button>`, s => { $('#pwaLater', s).onclick = () => { ls.set('sonnan-install-snooze', Date.now()); closeSheet(); }; });
+    } else if (deferredPrompt) {
+      sheet(`${head}<button class="btn block" id="pwaGo">تثبيت التطبيق</button><button class="btn ghost block" id="pwaLater" style="margin-top:8px">لاحقًا</button>`, s => {
+        $('#pwaGo', s).onclick = async () => { const p = deferredPrompt; deferredPrompt = null; p.prompt(); const r = await p.userChoice; closeSheet(); if (r.outcome !== 'accepted') ls.set('sonnan-install-snooze', Date.now()); };
+        $('#pwaLater', s).onclick = () => { ls.set('sonnan-install-snooze', Date.now()); closeSheet(); };
+      });
+    } else {
+      sheet(`${head}<ol class="pwa-steps"><li>افتح قائمة المتصفح (⋮) أعلى الشاشة.</li><li>اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</li></ol><button class="btn ghost block" id="pwaLater">لاحقًا</button>`, s => { $('#pwaLater', s).onclick = () => { ls.set('sonnan-install-snooze', Date.now()); closeSheet(); }; });
+    }
+  }
+  // يحفظ اشتراك هذا الجهاز للمستخدم الحالي
+  async function saveSubscription(reg) {
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(VAPID_PUBLIC) });
+    const j = sub.toJSON();
+    const { data: { user } } = await db.auth.getUser();
+    const { data: me } = await db.from('users').select('id').eq('id', user.id).maybeSingle();
+    await db.from('push_subscriptions').delete().eq('endpoint', j.endpoint);
+    const { error } = await db.from('push_subscriptions').insert({ user_id: me.id, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, user_agent: ua.slice(0, 250) });
+    // 23505: الجهاز نفسه مسجل لحساب آخر سجّل الدخول عليه سابقًا
+    if (error && error.code !== '23505') throw error;
+  }
+  async function enablePush() {
+    const reg = await registerSW();
+    if (!reg || !pushSupported()) throw new Error('هذا المتصفح لا يدعم الإشعارات');
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') throw new Error(perm === 'denied' ? 'رُفض الإذن. فعّل الإشعارات لسنن من إعدادات الجوال' : 'لم يُمنح الإذن');
+    await navigator.serviceWorker.ready;
+    await saveSubscription(reg);
+  }
+  function pushSheet() {
+    sheet(`<div class="pwa-head"><div class="pwa-bell">${ICON.bell}</div><div><b>فعّل الإشعارات</b><p>تصلك رسائل المعلم والإدارة، وقرارات الاستئذان، والتنبيهات، حتى والتطبيق مغلق.</p></div></div>
+      <button class="btn block" id="pushGo">تفعيل الإشعارات</button><button class="btn ghost block" id="pushLater" style="margin-top:8px">لاحقًا</button>`, s => {
+      $('#pushGo', s).onclick = async () => { const b = $('#pushGo', s); b.disabled = true; try { await enablePush(); closeSheet(); toast('فُعّلت الإشعارات على هذا الجهاز'); document.dispatchEvent(new Event('sonnan-push')); } catch (e) { b.disabled = false; toast(e.message, true); } };
+      $('#pushLater', s).onclick = () => { ls.set('sonnan-push-snooze', Date.now()); closeSheet(); };
+    });
+  }
+  const pushState = () => !pushSupported() ? (isIOS && !isStandalone() ? 'needs-install' : 'unsupported') : Notification.permission;
+  // يُستدعى عند فتح صفحة الطالب أو المعلم
+  async function setupPWA({ ask = true } = {}) {
+    const reg = await registerSW();
+    // جهاز سبق أن سمح بالإشعارات: نتأكد أن اشتراكه محفوظ
+    if (reg && pushSupported() && Notification.permission === 'granted') { try { await saveSubscription(reg); } catch (e) {} }
+    if (!ask || !isMobile) return;
+    if (!isStandalone() && !snoozed('sonnan-install-snooze')) {
+      if (isAndroid && !deferredPrompt) {
+        // ننتظر قليلًا حتى يعلن المتصفح أن التطبيق قابل للتثبيت
+        const t = setTimeout(installSheet, 2500);
+        document.addEventListener('sonnan-installable', () => { clearTimeout(t); installSheet(); }, { once: true });
+      } else installSheet();
+      return;
+    }
+    if (pushSupported() && Notification.permission === 'default' && !snoozed('sonnan-push-snooze')) pushSheet();
+  }
+
+  window.App = { setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
     unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, svg };
 })();

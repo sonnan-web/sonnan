@@ -4,55 +4,80 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>لوحة الطالب — منصة سنن</title>
+<meta name="theme-color" content="#0F2F33">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="سنن">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
 <link rel="stylesheet" href="app.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="app.js"></script>
 <style>
-body{font-size:14px}
-.wrap{max-width:980px;margin:0 auto;padding:12px max(14px,env(safe-area-inset-left,0px)) 90px}
-.hero{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;border-radius:20px;padding:20px 18px;border-bottom:3px solid var(--gold);margin-bottom:14px}
-.hero .eyebrow{font-size:12px;color:var(--gold);font-weight:700}
-.hero h2{font-size:24px;margin:6px 0 14px}
-.meta{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-.meta div{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.14);border-radius:12px;padding:9px 10px;min-width:0}
-.meta small{display:block;color:#C9DADA;font-size:11px}.meta b{display:block;margin-top:3px;font-size:13.5px;overflow-wrap:anywhere}
-@media (max-width:560px){.meta{grid-template-columns:1fr 1fr}.hero h2{font-size:20px}}
-.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:14px}
-@media (max-width:700px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.metric{background:#fff;border:1px solid var(--line);border-top:3px solid var(--c,var(--teal));border-radius:14px;padding:12px;text-align:center}
-.metric span{display:block;color:var(--muted);font-size:12px;font-weight:700}.metric b{display:block;font-size:26px;color:var(--c,var(--teal));margin-top:3px;font-variant-numeric:tabular-nums}
-.task{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:13px;padding:11px 13px}
-.tick{width:32px;height:32px;border-radius:50%;border:2px solid color-mix(in srgb,var(--teal) 40%,#fff);background:#fff;display:grid;place-items:center;color:#fff;font-weight:800;font-size:16px}
+/* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
+body{font-size:14px;-webkit-tap-highlight-color:transparent}
+.topbar{padding-top:max(7px,env(safe-area-inset-top,0px))}
+.wrap{max-width:640px;margin:0 auto;padding:12px max(12px,env(safe-area-inset-left,0px)) calc(86px + env(safe-area-inset-bottom,0px))}
+.hello{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;border-radius:18px;padding:14px 14px 12px;border-bottom:3px solid var(--gold);display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center}
+.hello .date{font-size:11.5px;color:var(--gold);font-weight:700}
+.hello h2{font-size:18px;margin:4px 0 8px;line-height:1.35}
+.chipsm{display:flex;flex-wrap:wrap;gap:5px}
+.chipsm span{display:inline-flex;align-items:center;gap:4px;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.16);border-radius:20px;padding:2px 9px;font-size:11.5px;color:#E3ECEC;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chipsm svg{width:13px;height:13px;flex:none;color:var(--gold)}
+.ring{--p:0;width:78px;height:78px;border-radius:50%;background:conic-gradient(var(--gold) calc(var(--p)*1%),rgba(255,255,255,.14) 0);display:grid;place-items:center;flex:none}
+.ring div{width:62px;height:62px;border-radius:50%;background:var(--secondary);display:grid;place-items:center;text-align:center;line-height:1.1}
+.ring b{font-size:17px;color:#fff;font-variant-numeric:tabular-nums}.ring small{font-size:9.5px;color:#C9DADA}
+.stats3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:10px 0}
+.st{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 6px;text-align:center}
+.st b{display:block;font-size:19px;color:var(--c,var(--teal));font-variant-numeric:tabular-nums;line-height:1.3}
+.st span{font-size:11px;color:var(--muted);font-weight:700}
+.h3row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:16px 2px 8px}
+.h3row h3{font-size:15.5px;color:var(--primary)}.h3row span{font-size:12px;color:var(--muted);font-weight:700}
+.task{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:11px 12px;margin-bottom:8px}
+.task.done{background:color-mix(in srgb,var(--green) 7%,#fff);border-color:color-mix(in srgb,var(--green) 30%,#fff)}
+.tick{width:40px;height:40px;border-radius:50%;border:2px solid color-mix(in srgb,var(--teal) 45%,#fff);background:#fff;display:grid;place-items:center;color:#fff;font-weight:800;font-size:18px}
 .tick.on{background:var(--green);border-color:var(--green)}
-.tick.none{border-style:dashed;cursor:default}
-.task b{display:block;color:var(--primary)}.task .v{font-size:13px;color:var(--muted)}
-.links{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
-.links a{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-decoration:none;color:var(--primary);font-weight:700}
-.links a:hover{border-color:var(--gold)}
-.section{margin-top:18px}
-.inbox-item{display:grid;grid-template-columns:10px 1fr;gap:10px;padding:10px 0;border-bottom:1px dashed var(--soft-line);cursor:pointer}
-.inbox-item .dot{width:8px;height:8px;border-radius:50%;background:var(--gold);margin-top:7px}
-.inbox-item.read .dot{background:transparent}
-.rank-row{display:grid;grid-template-columns:36px 1fr auto;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px dashed var(--soft-line)}
-.rank-row .r{font-weight:800;color:#7A6534;text-align:center}
-.rank-row.me{background:color-mix(in srgb,var(--gold) 16%,#fff);border-radius:10px}
-.tabbar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:space-around;padding-bottom:env(safe-area-inset-bottom,0px);z-index:20}
-.tabbar a{flex:1;text-align:center;text-decoration:none;color:var(--muted);font-size:11.5px;font-weight:700;padding:8px 2px 9px;position:relative}
-.tabbar a[aria-current="page"]{color:var(--primary)}
-.tabbar a[aria-current="page"]::before{content:"";position:absolute;top:0;inset-inline:28%;height:3px;border-radius:0 0 3px 3px;background:var(--gold)}
-.tabbar .ic{display:block;margin:0 auto 2px;width:21px;height:21px}
-.tabbar .badge{position:absolute;top:3px;inset-inline-start:calc(50% + 6px);background:var(--red);color:#fff;border-radius:9px;font-size:10px;padding:0 5px}
+.tick.none{border-style:dashed;cursor:default;width:34px;height:34px}
+.task b{display:block;color:var(--primary);font-size:14.5px}.task .v{font-size:13px;color:var(--muted)}
+.notice{border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.7;margin-top:6px}
+.notice.gold{background:color-mix(in srgb,var(--gold) 14%,#fff);border:1px solid color-mix(in srgb,var(--gold) 45%,#fff);color:#5E4D27}
+.notice.blue{background:color-mix(in srgb,var(--blue) 9%,#fff);border:1px solid color-mix(in srgb,var(--blue) 25%,#fff);color:#24496B;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.links a{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-decoration:none;color:var(--primary);font-weight:700;font-size:13.5px;min-height:50px}
+.links a .ic{color:var(--gold)}
+.links a[aria-disabled="true"]{opacity:.55;pointer-events:none}
+.seg{overflow-x:auto;flex-wrap:nowrap;padding-bottom:2px}
+.seg button{white-space:nowrap;padding:6px 13px}
+.rec{background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:7px;display:grid;gap:3px}
+.rec .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.rec .top b{font-size:13.5px}
+.rec .sub{font-size:12.5px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap}
+.rec .sub b{color:var(--primary)}
+.rec .note{margin:0;font-size:12px;color:var(--muted);background:var(--track);border-radius:8px;padding:5px 8px}
+.rank{display:grid;grid-template-columns:30px 1fr auto;gap:10px;align-items:center;padding:10px 8px;border-bottom:1px dashed var(--soft-line)}
+.rank .r{font-weight:800;color:#7A6534;text-align:center}
+.rank:nth-child(-n+3) .r{color:#fff;background:var(--gold);border-radius:8px;padding:2px 0}
+.rank .nm{font-weight:700;font-size:13.5px;min-width:0;overflow-wrap:anywhere}
+.rank .val{text-align:left;font-size:12px;color:var(--muted)}.rank .val b{display:block;color:var(--teal);font-size:15px}
+.rank.me{background:color-mix(in srgb,var(--gold) 16%,#fff);border-radius:10px}
+.myrank{display:flex;justify-content:space-between;align-items:center;background:#fff;border:1px solid var(--gold);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.myrank b{font-size:22px;color:#7A6534}
+.card{border-radius:14px}
+input,select,textarea{font-size:16px!important}
+.tabbar a{font-size:11px}
 </style>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand"><span class="mark">سنن</span><h1>لوحة الطالب<span class="sep">|</span><span class="prog">تابع إنجازك ونافس على التميز</span></h1></div>
+  <div class="brand"><span class="mark">سنن</span><h1>لوحة الطالب</h1></div>
   <div class="icons" id="icons"></div>
 </header>
 <div class="wrap" id="main"><div class="loading">جارٍ التحميل…</div></div>
-<nav class="tabbar" id="tabbar"></nav>
+<nav class="tabbar" id="tabbar" aria-label="الأقسام"></nav>
 <script>
 (async () => {
 'use strict';
@@ -100,8 +125,9 @@ const scores = recs.filter(r => r.score != null).map(r => +r.score);
 const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 const memorized = +memR.data || 0;
 
-const TABS = [['home', 'الرئيسية', 'home'], ['log', 'سجلّي', 'book'], ['honor', 'لوحة الشرف', 'star'], ['leave', 'الاستئذان', 'leave']];
+const TABS = [["home", "الرئيسية", "home"], ["log", "سجلّي", "book"], ["honor", "لوحة الشرف", "star"], ["leave", "الاستئذان", "leave"]];
 const SECTIONS = {};
+const ico = (n) => svg(n);
 
 SECTIONS.home = async el => {
   let progress = new Set();
@@ -110,44 +136,67 @@ SECTIONS.home = async el => {
   const tasks = planLive ? A.groupTasks(cols, c => ['student', 'both', 'info'].includes(c.executor)) : [];
   const now = A.nowMakkahHM(), dn = A.DAYS[A.dowMakkah()];
   const live = room && room.active && (room.days || []).includes(dn) && room.start_time && now >= room.start_time.slice(0, 5) && now <= (room.end_time || '23:59').slice(0, 5);
-  el.innerHTML = `<section class="hero"><div class="eyebrow">${A.dayName(TODAY)} · ${A.hijri(TODAY)} · ${A.greg(TODAY)}</div><h2>${esc(me.name)}</h2>
-    <div class="meta"><div><small>الخطة</small><b>${esc(P?.name || 'لم تُسند بعد')}</b></div><div><small>المعلم</small><b>${esc(teacherName)}</b></div><div><small>الفترة</small><b>${room ? esc(room.name) + ' · ' + (room.start_time || '').slice(0, 5) : '—'}</b></div></div></section>
-    <div class="metrics">
-      <div class="metric" style="--c:var(--teal)"><span>نسبة الإنجاز</span><b>${pct == null ? '—' : pct + '٪'}</b></div>
-      <div class="metric" style="--c:var(--green)"><span>الأحاديث المحفوظة</span><b>${fmtNum(memorized, 1)}</b></div>
-      <div class="metric" style="--c:var(--blue)"><span>جلسات التسميع</span><b>${fmtNum(recs.filter(r => ['present', 'makeup'].includes(r.status)).length)}</b></div>
-      <div class="metric" style="--c:var(--violet)"><span>متوسط الدرجة</span><b>${avg == null ? '—' : fmtNum(avg, 2)}</b></div>
+  const workToday = planLive && A.workdaysBetween(TODAY, TODAY, wd);
+  const visTasks = tasks.filter(t => A.fmtTaskVal(t, today?.vals) != null);
+  const doneN = visTasks.filter(t => t.executor !== 'info' && t.cols.some(c => progress.has(c.id))).length;
+  const execN = visTasks.filter(t => t.executor !== 'info').length;
+  const ps = A.pushState();
+  el.innerHTML = `
+    <section class="hello"><div style="min-width:0">
+        <div class="date">${A.dayName(TODAY)} · ${A.hijri(TODAY)}</div>
+        <h2>السلام عليكم، ${esc(me.name.split(' ')[0])}</h2>
+        <div class="chipsm"><span title="الخطة">${ico('plan')}${esc(P?.name || 'لم تُسند خطة')}</span><span title="المعلم">${ico('teacher')}${esc(teacherName)}</span>${room ? `<span title="الفترة">${ico('room')}${esc(room.name)} · ${(room.start_time || '').slice(0, 5)}</span>` : ''}</div>
+      </div>
+      <div class="ring" style="--p:${pct || 0}" aria-label="نسبة الإنجاز"><div><span><b>${pct == null ? '—' : pct + '٪'}</b><br><small>الإنجاز</small></span></div></div>
+    </section>
+    <div class="stats3">
+      <div class="st" style="--c:var(--green)"><b>${fmtNum(memorized, 1)}</b><span>حديثًا محفوظًا</span></div>
+      <div class="st" style="--c:var(--blue)"><b>${fmtNum(recs.filter(r => ['present', 'makeup'].includes(r.status)).length)}</b><span>جلسة تسميع</span></div>
+      <div class="st" style="--c:var(--violet)"><b>${avg == null ? '—' : fmtNum(avg, 2)}</b><span>متوسط الدرجة</span></div>
     </div>
-    <div class="sec-h" style="--c:var(--teal)"><b>مهام اليوم</b><span>${planLive ? (A.workdaysBetween(TODAY, TODAY, wd) ? 'اليوم ' + dayN + ' من ' + nDays : 'اليوم إجازة في خطتك') : ''}</span></div>
+    ${A.isMobile && (ps === 'default' || ps === 'needs-install') ? `<div class="notice blue"><span>${ps === 'needs-install' ? 'ثبّت التطبيق على جوالك لتصلك الإشعارات.' : 'فعّل الإشعارات لتصلك رسائل المعلم والإدارة.'}</span><button class="btn sm" id="enableBtn">${ps === 'needs-install' ? 'تثبيت' : 'تفعيل'}</button></div>` : ''}
+    <div class="h3row"><h3>مهام اليوم</h3><span>${!workToday ? '' : `اليوم ${dayN} من ${nDays}${execN && canExec ? ` · أنجزت ${doneN} من ${execN}` : ''}`}</span></div>
     ${!P ? '<div class="empty">لم تُسند لك خطة بعد. تواصل مع إدارة البرنامج.</div>'
       : !planLive ? '<div class="empty">خطتك لم تُفعَّل بعد.</div>'
-      : !A.workdaysBetween(TODAY, TODAY, wd) ? '<div class="empty">اليوم ليس من أيام الخطة. استرح وراجع ما حفظت.</div>'
-      : `<div class="stack">${tasks.map(t => { const v = A.fmtTaskVal(t, today?.vals); if (v == null) return ''; const info = t.executor === 'info'; const can = canExec && !info; const on = t.cols.some(c => progress.has(c.id));
-          const isUrl = t.single?.value_type === 'url';
-          return `<div class="task"><button type="button" class="tick ${can ? (on ? 'on' : '') : 'none'}" ${can ? `data-tick="${t.key}" aria-pressed="${on}" aria-label="${on ? 'إلغاء الإنجاز' : 'تم الإنجاز'}"` : 'disabled aria-hidden="true"'}>${on ? '✓' : ''}</button>
-            <div><b>${esc(t.name)}</b><span class="v">${isUrl ? `<a href="${esc(today.vals[t.single.id])}" target="_blank" rel="noopener">فتح الرابط</a>` : t.single?.value_type === 'bool' ? 'مطلوب اليوم' : esc(v)}</span></div></div>`; }).join('') || '<div class="empty">لا مهام في هذا اليوم.</div>'}</div>
-      ${canExec ? `<p class="note">${P.student_execution === 'counts' ? 'علّم على المهمة بعد إنجازها، ويدخل تنفيذك في تقييمك.' : 'علّم على المهمة بعد إنجازها لمتابعة نفسك.'}</p>` : ''}
-      ${A.isRecitationDay(P, TODAY) ? `<div class="hintbox" style="margin-top:8px">اليوم يوم تسميع${room ? ' في ' + esc(room.name) : ''}.</div>` : ''}`}
-    <div class="section"><div class="sec-h" style="--c:var(--gold)"><b>روابط مهمة</b></div><div class="links">
-      ${room?.meet_url ? (live || room.outside_behavior === 'always_visible' ? `<a href="${esc(room.meet_url)}" target="_blank" rel="noopener">${svg('room')}ادخل غرفة التسميع</a>` : room.outside_behavior === 'hidden' ? '' : `<a aria-disabled="true" style="opacity:.55;pointer-events:none">${svg('room')}الغرفة تُفتح ${(room.start_time || '').slice(0, 5)}</a>`) : ''}
-      ${P?.audio_url ? `<a href="${esc(P.audio_url)}" target="_blank" rel="noopener">${svg('mic')}السماع</a>` : ''}${P?.book_url ? `<a href="${esc(P.book_url)}" target="_blank" rel="noopener">${svg('book')}الكتاب</a>` : ''}${P?.whatsapp_url ? `<a href="${esc(P.whatsapp_url)}" target="_blank" rel="noopener">${svg('users')}مجموعة البرنامج</a>` : ''}
-    </div></div>`;
+      : !workToday ? '<div class="empty">اليوم ليس من أيام الخطة. استرح وراجع ما حفظت.</div>'
+      : `${visTasks.map(t => { const v = A.fmtTaskVal(t, today?.vals); const info = t.executor === 'info'; const can = canExec && !info; const on = t.cols.some(c => progress.has(c.id)); const isUrl = t.single?.value_type === 'url';
+          return `<div class="task${on ? ' done' : ''}"><button type="button" class="tick ${can ? (on ? 'on' : '') : 'none'}" ${can ? `data-tick="${t.key}" aria-pressed="${on}" aria-label="${on ? 'إلغاء الإنجاز' : 'تم الإنجاز'}: ${esc(t.name)}"` : 'disabled aria-hidden="true"'}>${on ? '✓' : ''}</button>
+            <div><b>${esc(t.name)}</b><span class="v">${isUrl ? `<a href="${esc(today.vals[t.single.id])}" target="_blank" rel="noopener">فتح الرابط</a>` : t.single?.value_type === 'bool' ? 'مطلوب اليوم' : t.task === 'repeat' ? esc(v) + ' مرة' : esc(v)}</span></div></div>`; }).join('') || '<div class="empty">لا مهام في هذا اليوم.</div>'}
+      ${canExec && execN ? `<p class="hint" style="margin:2px 4px 0">${P.student_execution === 'counts' ? 'علّم على المهمة بعد إنجازها، ويدخل تنفيذك في تقييمك.' : 'علّم على المهمة بعد إنجازها لمتابعة نفسك.'}</p>` : ''}
+      ${A.isRecitationDay(P, TODAY) ? `<div class="notice gold">اليوم يوم تسميع${room ? ' في ' + esc(room.name) + ' الساعة ' + (room.start_time || '').slice(0, 5) + ' بتوقيت مكة' : ''}.</div>` : ''}`}
+    <div class="h3row"><h3>روابط</h3></div>
+    <div class="links">
+      ${room?.meet_url && room.outside_behavior !== 'hidden' || live ? `<a href="${esc(room.meet_url || '#')}" target="_blank" rel="noopener" ${live || room.outside_behavior === 'always_visible' ? '' : 'aria-disabled="true"'}>${ico('room')}${live || room.outside_behavior === 'always_visible' ? 'غرفة التسميع' : 'تُفتح ' + (room.start_time || '').slice(0, 5)}</a>` : ''}
+      ${P?.audio_url ? `<a href="${esc(P.audio_url)}" target="_blank" rel="noopener">${ico('mic')}السماع</a>` : ''}${P?.book_url ? `<a href="${esc(P.book_url)}" target="_blank" rel="noopener">${ico('book')}الكتاب</a>` : ''}${P?.whatsapp_url ? `<a href="${esc(P.whatsapp_url)}" target="_blank" rel="noopener">${ico('users')}مجموعة البرنامج</a>` : ''}
+    </div>`;
+  $('#enableBtn', el) && ($('#enableBtn', el).onclick = () => A.pushState() === 'needs-install' ? A.installSheet() : A.pushSheet());
   $$('[data-tick]', el).forEach(b => b.onclick = async () => {
     const t = tasks.find(x => x.key === b.dataset.tick); const on = b.getAttribute('aria-pressed') === 'true';
     b.disabled = true;
     const res = on ? await db.from('plan_progress').delete().eq('student_id', stu.id).eq('plan_day_id', today.id).in('column_id', t.cols.map(c => c.id))
       : await db.from('plan_progress').insert({ student_id: stu.id, plan_day_id: today.id, column_id: t.key });
     if (res.error) { b.disabled = false; return toast('لم يُحفظ: ' + res.error.message, true); }
-    toast(on ? 'أُلغي الإنجاز' : 'أحسنت، سُجّل الإنجاز'); route();
+    if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) {}
+    toast(on ? 'أُلغي الإنجاز' : 'أحسنت، سُجّل الإنجاز'); route(true);
   });
 };
 
+let logFilter = 'all', logShown = 15;
 SECTIONS.log = el => {
-  const rows = recs.map(r => ({ r, date: r.rec_date, st: STATUS[r.status]?.label, memo: r.memo_from ? `${+r.memo_from}–${+r.memo_to}` : '', score: r.score != null ? +r.score : null, mk: r.makes_up_date ? A.greg(r.makes_up_date) : '', notes: r.notes || '' }));
-  el.innerHTML = `<div class="sec-h" style="--c:var(--blue)"><b>سجلّي</b><span>${recs.length} سجل</span></div>
-    <div class="metrics"><div class="metric" style="--c:var(--green)"><span>أيام الإنجاز</span><b>${achDays}</b></div><div class="metric" style="--c:var(--violet)"><span>أيام الاستئذان</span><b>${excDays}</b></div><div class="metric" style="--c:var(--red)"><span>غياب تقديري</span><b>${Math.max(0, base - achDays)}</b></div><div class="metric" style="--c:var(--teal)"><span>أيام الخطة حتى أمس</span><b>${expected}</b></div></div>
-    <div class="card c-blue"><div id="tbl"></div></div>`;
-  A.dataTable($('#tbl'), { rows, sortKey: 'date', dir: -1, pageSize: 10, cols: [{ key: 'date', label: 'التاريخ', html: x => A.dayName(x.date) + ' ' + A.greg(x.date) }, { key: 'st', label: 'الحالة', filter: true, html: x => statusPill(x.r.status) }, { key: 'memo', label: 'الحفظ' }, { key: 'score', label: 'الدرجة', num: true, html: x => x.score == null ? '—' : fmtNum(x.score, 2) }, { key: 'mk', label: 'تعويض عن' }, { key: 'notes', label: 'ملاحظات المعلم' }] });
+  const list = recs.filter(r => logFilter === 'all' || r.status === logFilter);
+  const cnt = k => recs.filter(r => r.status === k).length;
+  el.innerHTML = `<div class="stats3">
+      <div class="st" style="--c:var(--green)"><b>${achDays}</b><span>أيام الإنجاز</span></div>
+      <div class="st" style="--c:var(--violet)"><b>${excDays}</b><span>أيام الاستئذان</span></div>
+      <div class="st" style="--c:var(--red)"><b>${Math.max(0, base - achDays)}</b><span>غياب تقديري</span></div>
+    </div>
+    <div class="seg" style="margin-bottom:10px">${[['all', 'الكل', recs.length], ['present', 'حاضر', cnt('present')], ['makeup', 'تعويض', cnt('makeup')], ['review_only', 'ربط ومراجعة', cnt('review_only')], ['excused', 'مستأذن', cnt('excused')]].filter(x => x[0] === 'all' || x[2]).map(([k, l, n]) => `<button type="button" data-f="${k}" aria-pressed="${logFilter === k}">${l} (${n})</button>`).join('')}</div>
+    ${list.slice(0, logShown).map(r => `<div class="rec"><div class="top"><b>${A.dayName(r.rec_date)} ${A.greg(r.rec_date)}</b>${statusPill(r.status)}</div>
+      <div class="sub">${r.memo_from ? `<span>الحفظ <b>${+r.memo_from}–${+r.memo_to}</b></span>` : ''}${r.score != null ? `<span>الدرجة <b>${fmtNum(r.score, 2)}</b></span>` : ''}${r.makes_up_date ? `<span>تعويض عن ${A.greg(r.makes_up_date)}</span>` : ''}</div>
+      ${r.notes ? `<p class="note">ملاحظة المعلم: ${esc(r.notes)}</p>` : ''}</div>`).join('') || '<div class="empty">لا توجد سجلات</div>'}
+    ${list.length > logShown ? `<button class="btn ghost block" id="more">عرض المزيد (${list.length - logShown})</button>` : ''}`;
+  $$('[data-f]', el).forEach(b => b.onclick = () => { logFilter = b.dataset.f; logShown = 15; route(true); });
+  $('#more', el) && ($('#more', el).onclick = () => { logShown += 15; route(true); });
 };
 
 SECTIONS.honor = async el => {
@@ -158,20 +207,19 @@ SECTIONS.honor = async el => {
   const list = (data || []).filter(x => +x.memorized > 0);
   const myRank = list.findIndex(x => x.student_id === stu.id);
   const shown = st.more ? list : list.slice(0, 10);
-  el.innerHTML = `<div class="sec-h" style="--c:var(--gold)"><b>لوحة الشرف</b><span>${esc(P?.name || '')}</span><div class="acts"><div class="seg"><button type="button" data-p="month" aria-pressed="${st.period === 'month'}">هذا الشهر</button><button type="button" data-p="all" aria-pressed="${st.period === 'all'}">منذ البداية</button></div></div></div>
-    ${myRank >= 0 ? `<div class="hintbox" style="margin-bottom:10px">ترتيبك: <b>${myRank + 1}</b> من ${list.length}</div>` : ''}
-    <div class="card">${shown.map((x, i) => `<div class="rank-row${x.student_id === stu.id ? ' me' : ''}"><span class="r">${i + 1}</span><b>${esc(x.name)}${x.student_id === stu.id ? ' <span class="pill gold">أنت</span>' : ''}</b><span class="small"><b style="color:var(--teal)">${fmtNum(x.memorized, 1)}</b> حديث · ${x.avg_score != null ? fmtNum(x.avg_score, 2) : '—'}</span></div>`).join('') || '<div class="empty">لا توجد بيانات بعد</div>'}
-      ${list.length > 10 ? `<button class="btn ghost block" id="more" style="margin-top:8px">${st.more ? 'عرض أول 10 فقط' : 'عرض المزيد'}</button>` : ''}</div>`;
-  $$('[data-p]', el).forEach(b => b.onclick = () => { st.period = b.dataset.p; st.more = false; route(); });
-  $('#more') && ($('#more').onclick = () => { st.more = !st.more; route(); });
+  el.innerHTML = `<div class="seg" style="margin-bottom:10px"><button type="button" data-p="month" aria-pressed="${st.period === 'month'}">هذا الشهر</button><button type="button" data-p="all" aria-pressed="${st.period === 'all'}">منذ البداية</button></div>
+    ${myRank >= 0 ? `<div class="myrank"><span>ترتيبك في ${esc(P?.name || 'الخطة')}</span><span><b>${myRank + 1}</b> <span class="muted">من ${list.length}</span></span></div>` : ''}
+    <div class="card" style="padding:4px 8px">${shown.map((x, i) => `<div class="rank${x.student_id === stu.id ? ' me' : ''}"><span class="r">${i + 1}</span><span class="nm">${esc(x.name)}${x.student_id === stu.id ? ' <span class="pill gold">أنت</span>' : ''}</span><span class="val"><b>${fmtNum(x.memorized, 1)}</b>حديث</span></div>`).join('') || '<div class="empty">لا توجد بيانات بعد</div>'}</div>
+    ${list.length > 10 ? `<button class="btn ghost block" id="more" style="margin-top:8px">${st.more ? 'عرض أول 10 فقط' : 'عرض المزيد'}</button>` : ''}`;
+  $$('[data-p]', el).forEach(b => b.onclick = () => { st.period = b.dataset.p; st.more = false; route(true); });
+  $('#more', el) && ($('#more', el).onclick = () => { st.more = !st.more; route(true); });
 };
-
 SECTIONS.leave = async el => {
   const { data } = await db.from('leave_requests').select('*').eq('student_id', stu.id).order('created_at', { ascending: false });
   const lim = P?.discipline_rules?.leave_max_month;
   const month = TODAY.slice(0, 7);
   const used = (data || []).filter(l => l.status === 'approved' && l.date_from.slice(0, 7) === month).reduce((a, l) => a + A.daysBetween(l.date_from, l.date_to) + 1, 0);
-  el.innerHTML = `<div class="sec-h" style="--c:var(--violet)"><b>طلب استئذان</b>${lim != null ? `<span>استخدمت ${used} من ${lim} أيام هذا الشهر</span>` : ''}</div>
+  el.innerHTML = `<div class="h3row" style="margin-top:2px"><h3>طلب استئذان</h3>${lim != null ? `<span>استخدمت ${used} من ${lim} أيام هذا الشهر</span>` : ''}</div>
     <form class="card c-violet stack" id="lf">
       <div class="g2"><label class="f" for="lF">من<input id="lF" type="date" value="${TODAY}" min="${TODAY}" required></label><label class="f" for="lT">إلى<input id="lT" type="date" value="${TODAY}" min="${TODAY}" required></label></div>
       <label class="f" for="lR">السبب<select id="lR"><option>سفر</option><option>مرض</option><option>اختبارات دراسية</option><option>ظرف عائلي</option><option>أخرى</option></select></label>
@@ -185,31 +233,28 @@ SECTIONS.leave = async el => {
     if (!f || !t || t < f) return toast('تاريخ النهاية يجب ألا يسبق البداية', true);
     const { error } = await db.from('leave_requests').insert({ student_id: stu.id, date_from: f, date_to: t, reason: $('#lR').value, details: $('#lD').value.trim() || null });
     if (error) return toast('لم يُرسل: ' + error.message, true);
-    toast('أُرسل الطلب'); route();
+    toast('أُرسل الطلب'); route(true);
   };
 };
 
 SECTIONS.profile = el => A.profileSection(el, me, { seed: { phone: stu.phone, gender: stu.gender, nationality: stu.nationality, residence: stu.residence, birth_date: stu.birth_date, education: stu.education, quran_memorization: stu.quran_parts != null ? stu.quran_parts + ' جزء' : null } });
 
-SECTIONS.inbox = async el => {
-  const { data } = await db.from('notifications').select('*').eq('channel', 'inbox').order('created_at', { ascending: false }).limit(150);
-  el.innerHTML = `<div class="sec-h" style="--c:var(--blue)"><b>الإشعارات</b><div class="acts"><button class="btn ghost sm" id="all">تعليم الكل كمقروء</button></div></div>
-    <div class="card">${(data || []).map(n => `<div class="inbox-item${n.read_at ? ' read' : ''}" data-id="${n.id}"><span class="dot"></span><div><div class="row"><b>${esc(n.title)}</b><span class="small muted">${A.greg(n.created_at.slice(0, 10))}</span></div><p class="small" style="margin-top:3px;line-height:1.8">${esc(n.body)}</p></div></div>`).join('') || '<div class="empty">لا توجد إشعارات</div>'}</div>`;
-  const mark = async ids => { if (!ids.length) return; await db.from('notifications').update({ read_at: new Date().toISOString() }).in('id', ids); unreadCount = Math.max(0, unreadCount - ids.length); route(); };
-  $$('.inbox-item:not(.read)', el).forEach(i => i.onclick = () => mark([i.dataset.id]));
-  $('#all').onclick = () => mark((data || []).filter(n => !n.read_at).map(n => n.id));
-};
-
-function route() {
+function route(keepScroll) {
   const k = (location.hash || '#home').slice(1);
   const key = SECTIONS[k] ? k : 'home';
   $('#tabbar').innerHTML = TABS.map(([h, l, ic]) => `<a href="#${h}" aria-current="${h === key ? 'page' : 'false'}">${svg(ic)}${l}</a>`).join('');
-  $('#main').innerHTML = '<div class="loading">جارٍ التحميل…</div>';
-  Promise.resolve(SECTIONS[key]($('#main'))).catch(e => $('#main').innerHTML = `<div class="error">${esc(e.message || e)}</div>`);
-  window.scrollTo(0, 0);
+  const y = window.scrollY;
+  const host = document.createElement('div');
+  host.innerHTML = '<div class="loading">جارٍ التحميل…</div>';
+  $('#main').replaceChildren(host);
+  Promise.resolve(SECTIONS[key](host)).then(() => { if (keepScroll === true) window.scrollTo(0, y); }).catch(e => { if (host.isConnected) host.innerHTML = `<div class="error">${esc(e.message || e)}</div>`; });
+  if (keepScroll !== true) window.scrollTo(0, 0);
 }
-window.addEventListener('hashchange', route);
+window.addEventListener('hashchange', () => route());
+document.addEventListener('sonnan-push', () => { if ((location.hash || '#home') === '#home') route(true); });
 route();
+// أول فتح من الجوال: يطلب التثبيت، وبعد التثبيت يطلب تفعيل الإشعارات
+A.setupPWA({ ask: true });
 })();
 </script>
 </body>

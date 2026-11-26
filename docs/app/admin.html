@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>لوحة المشرف — منصة سنن</title>
+<meta name="theme-color" content="#0F2F33">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="سنن">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
 <link rel="stylesheet" href="app.css">
@@ -607,6 +615,8 @@ async function notify(userIds, kind, title, body, channels, dedupe) {
   const rows = [];
   userIds.forEach(u => channels.forEach(ch => rows.push({ recipient_user_id: u, channel: ch, kind, title, body, created_by: me.id, status: ch === 'inbox' ? 'sent' : 'queued', sent_at: ch === 'inbox' ? new Date().toISOString() : null, dedupe_key: dedupe ? `${dedupe}:${u}:${ch}` : null })));
   for (let i = 0; i < rows.length; i += 500) { const { error } = await db.from('notifications').upsert(rows.slice(i, i + 500), { onConflict: 'dedupe_key', ignoreDuplicates: true }); if (error) throw error; }
+  // إرسال إشعارات الجوال فورًا (ودالة الخادم تعيد المحاولة كل دقيقة أيضًا)
+  if (channels.includes('push')) db.functions.invoke('send-push', { body: {} }).catch(() => {});
   return rows.length;
 }
 

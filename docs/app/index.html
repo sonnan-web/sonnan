@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>الدخول — منصة سنن</title>
+<meta name="theme-color" content="#0F2F33">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="سنن">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
 <link rel="stylesheet" href="app.css">
@@ -43,6 +51,7 @@ body{min-height:100vh;display:flex;flex-direction:column;background:linear-gradi
     const { data: me } = await db.from('users').select('role').eq('id', session.user.id).maybeSingle();
     if (me) return location.replace(homeOf(me.role));
   }
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   $('#f').addEventListener('submit', async e => {
     e.preventDefault(); $('#err').hidden = true;
     const email = $('#email').value.trim().toLowerCase(), pw = $('#pw').value;

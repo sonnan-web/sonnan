@@ -224,3 +224,18 @@ language sql stable security definer set search_path = '' as $$
   order by 3 desc, 5 desc nulls last $$;
 revoke execute on function public.honor_board(uuid, date, date) from anon, public;
 grant execute on function public.honor_board(uuid, date, date) to authenticated;
+
+-- ===== إضافة لاحقة: إشعارات الجوال =====
+-- مفاتيح VAPID تُحفظ في app_secrets (لا يقرؤها إلا مفتاح الخدمة). المفتاح الخاص لا يوضع في المستودع:
+-- أنشئ مفاتيح جديدة لمشروع المنصة (npx web-push generate-vapid-keys) وضع العام في app.js والخاص هنا.
+create table if not exists public.app_secrets (key text primary key, value text not null, updated_at timestamptz not null default now());
+alter table public.app_secrets enable row level security;
+revoke all on public.app_secrets from anon, authenticated;
+-- insert into public.app_secrets (key, value) values ('vapid_public', '<PUBLIC>'), ('vapid_private', '<PRIVATE>'), ('vapid_subject', 'https://<الموقع>/');
+alter table public.push_subscriptions add column if not exists last_ok_at timestamptz, add column if not exists fail_count int not null default 0;
+-- تشغيل دالة الإرسال send-push كل دقيقة عند وجود إشعارات منتظرة (استبدل <REF> و<ANON_JWT> بقيم المشروع)
+create extension if not exists pg_net;
+create extension if not exists pg_cron;
+-- select cron.schedule('send-push-every-minute', '* * * * *', $$ select net.http_post(url := 'https://<REF>.supabase.co/functions/v1/send-push',
+--   headers := '{"Content-Type":"application/json","Authorization":"Bearer <ANON_JWT>"}'::jsonb, body := '{}'::jsonb)
+--   where exists (select 1 from public.notifications where channel = 'push' and status = 'queued') $$);
