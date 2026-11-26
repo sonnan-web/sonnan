@@ -46,7 +46,10 @@ body{min-height:100vh;display:flex;flex-direction:column;background:linear-gradi
   const { db, $, homeOf } = App;
   const showErr = m => { $('#err').textContent = m; $('#err').hidden = false; };
   if (new URLSearchParams(location.search).get('e')) showErr('حسابك غير مفعّل في المنصة. تواصل مع المشرف.');
-  const { data: { session } } = await db.auth.getSession();
+  // بعد تسجيل الخروج لا يُعاد التوجيه تلقائيًا إلى اللوحة
+  const justOut = new URLSearchParams(location.search).has('out');
+  if (justOut) { try { await db.auth.signOut({ scope: 'local' }); } catch (e) {} history.replaceState(null, '', 'index.html'); }
+  const { data: { session } } = justOut ? { data: {} } : await db.auth.getSession();
   if (session) {
     const { data: me } = await db.from('users').select('role').eq('id', session.user.id).maybeSingle();
     if (me) return location.replace(homeOf(me.role));

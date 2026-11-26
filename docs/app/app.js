@@ -70,7 +70,13 @@
     return me;
   }
   const homeOf = role => role === 'admin' ? 'admin.html' : role === 'teacher' ? 'teacher.html' : 'student.html';
-  async function logout() { await db.auth.signOut(); location.replace('index.html'); }
+  // الخروج يمسح الجلسة من الجهاز دائمًا حتى لو فشل طلب الخادم (مثل جلسة منتهية)، وإلا تعيد صفحة الدخول المستخدم إلى لوحته
+  async function logout() {
+    try { await Promise.race([db.auth.signOut(), new Promise(r => setTimeout(r, 4000))]); } catch (e) {}
+    try { await db.auth.signOut({ scope: 'local' }); } catch (e) {}
+    try { Object.keys(localStorage).filter(k => k === 'sonnan-app-auth' || k.startsWith('sonnan-app-auth') || k.startsWith('sb-')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+    location.replace('index.html?out=1');
+  }
 
   // جدول قابل للفرز والبحث والتصفية
   // cols: [{key, label, num?, html?(row), val?(row), filter?:true}]

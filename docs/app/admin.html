@@ -1261,7 +1261,7 @@ SECTIONS.reports = async el => {
 // ============ التقرير الإجمالي: صف لكل طالب ============
 // الحفظ/الربط/المراجعة/التكرار: من تنفيذ الطالب إن كانت الخطة فيها تنفيذ له، وإلا من رصد المعلم.
 // التسميع: مجموع ما سمّعه الطالب للمعلم. الالتزام يُحسب حسب نوع الخطة.
-const SUM_ST = { preset: 'all', from: '', to: TODAY, plan: '', teacher: '', room: '', gender: '', nat: '' };
+const SUM_ST = { preset: 'all', from: '', to: TODAY, plan: '', teacher: '', room: '', nat: '' };
 const rangeLen = (a, b) => (a == null || b == null || a === '' || b === '' || a === false || b === false) ? 0 : Math.abs(+b - +a) + 1;
 SECTIONS.summary = async el => {
   await loadRecs();
@@ -1274,7 +1274,7 @@ SECTIONS.summary = async el => {
   else if (st.preset === 'week') { st.from = A.addDays(TODAY, -A.dowMakkah()); st.to = TODAY; }
   const from = st.from, to = [st.to, TODAY].sort()[0];
   const uniq = k => [...new Set(D.students.map(s => s[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
-  const studs = actives().filter(s => s.assign && PL[s.assign.plan_id] && (!st.plan || s.assign.plan_id === st.plan) && (!st.teacher || s.teacher_id === st.teacher) && (!st.room || D.roomOfStudent[s.id] === st.room) && (!st.gender || s.gender === st.gender) && (!st.nat || s.nationality === st.nat));
+  const studs = actives().filter(s => s.assign && PL[s.assign.plan_id] && (!st.plan || s.assign.plan_id === st.plan) && (!st.teacher || s.teacher_id === st.teacher) && (!st.room || D.roomOfStudent[s.id] === st.room) && (!st.nat || s.nationality === st.nat));
   el.innerHTML = `${secHead('التقرير الإجمالي للطلاب', A.greg(from) + ' – ' + A.greg(to), 'gold', `<button class="btn ghost sm" id="sExport">تصدير إلى إكسل</button>`)}
     <div class="card" style="--a:var(--gold);margin-bottom:10px"><div class="tbl-tools" style="margin:0">
       <div class="seg">${[['week', 'هذا الأسبوع'], ['month', 'هذا الشهر'], ['30', 'آخر 30 يومًا'], ['all', 'منذ البداية'], ['custom', 'مخصص']].map(([k, l]) => `<button type="button" data-sp="${k}" aria-pressed="${st.preset === k}">${l}</button>`).join('')}</div>
@@ -1282,7 +1282,6 @@ SECTIONS.summary = async el => {
       <select id="sPl" style="width:auto"><option value="">كل البرامج</option>${planOpts(st.plan)}</select>
       <select id="sTe" style="width:auto"><option value="">كل المعلمين</option>${teacherOpts(st.teacher)}</select>
       <select id="sRo" style="width:auto"><option value="">كل الفترات</option>${roomOpts(st.room)}</select>
-      <select id="sGe" style="width:auto"><option value="">الجنسان</option>${uniq('gender').map(g => opt(g, g, g === st.gender)).join('')}</select>
       <select id="sNa" style="width:auto"><option value="">كل الجنسيات</option>${uniq('nationality').map(g => opt(g, g, g === st.nat)).join('')}</select>
     </div></div>
     <div class="card" style="--a:var(--gold);margin-bottom:10px" id="sKpi"><div class="loading">جارٍ الحساب…</div></div>
@@ -1296,7 +1295,7 @@ SECTIONS.summary = async el => {
   $$('[data-sp]', el).forEach(b => b.onclick = () => { st.preset = b.dataset.sp; route(); });
   $('#sF').onchange = e => { st.preset = 'custom'; st.from = e.target.value; route(); };
   $('#sT').onchange = e => { st.preset = 'custom'; st.to = e.target.value; route(); };
-  [['#sPl', 'plan'], ['#sTe', 'teacher'], ['#sRo', 'room'], ['#sGe', 'gender'], ['#sNa', 'nat']].forEach(([id, k]) => $(id).onchange = e => { st[k] = e.target.value; route(); });
+  [['#sPl', 'plan'], ['#sTe', 'teacher'], ['#sRo', 'room'], ['#sNa', 'nat']].forEach(([id, k]) => $(id).onchange = e => { st[k] = e.target.value; route(); });
   cardFull($('#sCard'));
 
   const planIds = [...new Set(studs.map(s => s.assign.plan_id))];
