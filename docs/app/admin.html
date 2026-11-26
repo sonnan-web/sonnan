@@ -57,7 +57,7 @@ $('#menuBtn').onclick = () => $('#side').classList.toggle('open');
 
 // ============ القائمة ============
 const NAV = [
-  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية للتسميع', 'mic'], ['dexec', 'المتابعة اليومية للواجب', 'exam'], ['cal', 'تقويم الإنجاز', 'leave'],['recs', 'سجل رصد المعلم', 'list'], ['srecs', 'سجل رصد الطالب', 'book']]],
+  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية للتسميع', 'mic'], ['dexec', 'المتابعة اليومية للواجب', 'exam'], ['recs', 'سجل رصد المعلم', 'list'], ['srecs', 'سجل رصد الطالب', 'book']]],
   ['الطلاب', [['students', 'الطلاب وملفاتهم', 'users'], ['leaves', 'الاستئذان', 'leave'], ['discipline', 'الانضباط والمتابعة', 'alert'], ['exams', 'الاختبارات المرحلية', 'exam'], ['honor', 'لوحة الشرف', 'star']]],
   ['البرامج', [['plans', 'خطط البرامج', 'plan']]],
   ['المعلمون والفترات', [['teachers', 'المعلمون', 'teacher'], ['rooms', 'الفترات والغرف الصوتية', 'room']]],
@@ -205,7 +205,7 @@ SECTIONS.home = async el => {
 // ============ المتابعة اليومية: للتسميع، وللواجب (تنفيذ الطالب) ============
 SECTIONS.daily = el => followSection(el, 'rec');
 SECTIONS.dexec = el => followSection(el, 'exec');
-const FOL = { plan: '', mode: 'day', date: TODAY, from: A.addDays(TODAY, -13), to: TODAY };
+const FOL = { plan: '', mode: 'day', date: TODAY, from: A.addDays(TODAY, -13), to: TODAY, month: TODAY.slice(0, 7) };
 const PROG_CACHE = {};
 async function planProgress(planId) {
   if (PROG_CACHE[planId]) return PROG_CACHE[planId];
@@ -235,8 +235,9 @@ async function followSection(el, kind) {
   el.innerHTML = `${secHead(title, P ? esc(P.name) : '', color, `<button class="btn ghost sm" id="fExport">تصدير إلى إكسل</button>`)}
     <div class="card" style="--a:var(--${color});margin-bottom:10px"><div class="tbl-tools" style="margin:0">
       <label class="small">الخطة <select id="fPlan" style="width:auto">${usable.map(p => opt(p.id, p.name, p.id === FOL.plan)).join('')}</select></label>
-      <div class="seg"><button type="button" data-m="day" aria-pressed="${FOL.mode === 'day'}">يوم</button><button type="button" data-m="range" aria-pressed="${FOL.mode === 'range'}">فترة</button></div>
-      ${FOL.mode === 'day' ? `<button class="btn ghost sm" id="fPrev" type="button">السابق</button><input type="date" id="fDate" value="${day}" style="width:auto"><button class="btn ghost sm" id="fNext" type="button">التالي</button><span class="small muted">${A.dayName(day)} · ${A.hijri(day)}</span>`
+      <div class="seg"><button type="button" data-m="day" aria-pressed="${FOL.mode === 'day'}">يوم</button><button type="button" data-m="range" aria-pressed="${FOL.mode === 'range'}">فترة</button><button type="button" data-m="cal" aria-pressed="${FOL.mode === 'cal'}">تقويم</button></div>
+      ${FOL.mode === 'cal' ? `<button class="btn ghost sm" id="fmPrev" type="button">الشهر السابق</button><input type="month" id="fMonth" value="${FOL.month}" style="width:auto"><button class="btn ghost sm" id="fmNext" type="button">الشهر التالي</button><input type="search" id="fQ" placeholder="بحث باسم الطالب…" style="width:auto;min-width:170px">`
+        : FOL.mode === 'day' ? `<button class="btn ghost sm" id="fPrev" type="button">السابق</button><input type="date" id="fDate" value="${day}" style="width:auto"><button class="btn ghost sm" id="fNext" type="button">التالي</button><span class="small muted">${A.dayName(day)} · ${A.hijri(day)}</span>`
         : `<label class="small">من <input type="date" id="fFrom" value="${from}" style="width:auto"></label><label class="small">إلى <input type="date" id="fTo" value="${FOL.to}" style="width:auto"></label>`}
     </div></div>
     <div class="card" style="--a:var(--${color});margin-bottom:10px" id="fKpi"></div>
@@ -248,12 +249,17 @@ async function followSection(el, kind) {
   $('#fNext') && ($('#fNext').onclick = () => { FOL.date = A.addDays(day, 1); route(); });
   $('#fFrom') && ($('#fFrom').onchange = e => { FOL.from = e.target.value; route(); });
   $('#fTo') && ($('#fTo').onchange = e => { FOL.to = e.target.value; route(); });
+  const shiftMonth = k => { const [y, m] = FOL.month.split('-').map(Number); return new Date(Date.UTC(y, m - 1 + k, 1)).toISOString().slice(0, 7); };
+  $('#fMonth') && ($('#fMonth').onchange = e => { if (e.target.value) { FOL.month = e.target.value; route(); } });
+  $('#fmPrev') && ($('#fmPrev').onclick = () => { FOL.month = shiftMonth(-1); route(); });
+  $('#fmNext') && ($('#fmNext').onclick = () => { FOL.month = shiftMonth(1); route(); });
   cardFull($('#fCard'));
   if (!P) { $('#fTbl').innerHTML = '<div class="empty">لا توجد خطط.</div>'; $('#fKpi').hidden = true; return; }
   if (isR && P.recitation_mode === 'none') { $('#fKpi').hidden = true; $('#fTbl').innerHTML = '<div class="empty">هذه الخطة بلا تسميع. اختر خطة فيها تسميع، أو افتح «المتابعة اليومية للواجب».</div>'; return; }
   const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
   if (!isR && (P.student_execution === 'none' || !tasksE.length)) { $('#fKpi').hidden = true; $('#fTbl').innerHTML = '<div class="empty">هذه الخطة بلا تنفيذ عند الطالب. اختر خطة فيها واجب يعلّم عليه الطالب.</div>'; return; }
   const studs = actives().filter(s => s.assign?.plan_id === P.id);
+  if (FOL.mode === 'cal') return renderCal(el, P, isR ? 'rec' : 'exe', studs, title);
   const { data: lv } = await db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').lte('date_from', FOL.mode === 'day' ? day : to).gte('date_to', FOL.mode === 'day' ? day : from);
   const leaveOn = (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d);
   const base = s => ({ s, name: s.name, email: s.email || '', teacher: s.teacher, room: s.room });
@@ -800,13 +806,23 @@ async function studentFile(id) {
   const s = D.studentById[id]; if (!s) return;
   const st = statsOf(s);
   const recs = (D.recsByStudent[id] || []).slice(0, 15);
+  const PL = await plansFull(), P = s.assign ? PL[s.assign.plan_id] : null;
+  let month = (FOL.mode === 'cal' ? FOL.month : TODAY.slice(0, 7));
   drawer('الطالب: ' + s.name, `
     <div class="row" style="justify-content:flex-start"><button class="btn" id="qEdit">تعديل البيانات</button><a class="btn ghost" href="student-file.html?id=${id}" target="_blank" rel="noopener">عرض الملف الكامل</a></div>
     <div class="card c-teal"><div class="minis">${mini('المحفوظ', fmtNum(st.memorized, 1), 'green')}${mini('الإنجاز', st.pct == null ? '—' : st.pct + '٪', 'teal')}${mini('متوسط الدرجة', st.avg == null ? '—' : fmtNum(st.avg, 2), 'blue')}${mini('غياب تقديري', fmtNum(st.absences), 'red')}</div></div>
     <div class="card"><dl class="dl"><dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(s.email || '')}</dd><dt>الجوال</dt><dd dir="ltr" style="text-align:right">${esc(s.phone || '—')}</dd><dt>المعلم</dt><dd>${esc(s.teacher)}</dd><dt>الفترة</dt><dd>${esc(s.room)}</dd><dt>الخطة</dt><dd>${esc(s.plan)}</dd></dl></div>
+    ${P ? `<div class="card c-teal"><div class="head"><h3>تقويم الشهر</h3><div class="row" style="gap:4px"><button class="btn ghost sm" id="smPrev" type="button">‹ السابق</button><b id="smLbl" class="small"></b><button class="btn ghost sm" id="smNext" type="button">التالي ›</button></div></div>
+      <div class="hint" style="margin-bottom:6px">لكل يوم: حالة التسميع ثم حالة تنفيذ الواجب. اضغط على اليوم للتفاصيل.</div><div id="smCal"></div></div>` : ''}
     <div class="card c-green"><h3>آخر الرصد</h3><div class="tbl-wrap" style="margin-top:8px;max-height:300px"><table><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحفظ</th><th>الدرجة</th><th>المعلم</th></tr></thead><tbody>
       ${recs.map(r => `<tr><td>${A.greg(r.rec_date)}</td><td>${statusPill(r.status)}</td><td>${r.memo_from ? +r.memo_from + '–' + +r.memo_to : '—'}</td><td>${r.score != null ? fmtNum(r.score, 2) : '—'}</td><td>${esc(D.teacherById[r.teacher_id]?.name || '—')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا يوجد</td></tr>'}</tbody></table></div></div>`, root => {
     $('#qEdit', root).onclick = () => studentForm(s);
+    if (!P) return;
+    const shift = k => { const [y, m] = month.split('-').map(Number); return new Date(Date.UTC(y, m - 1 + k, 1)).toISOString().slice(0, 7); };
+    const show = () => { $('#smLbl', root).textContent = new Date(month + '-15T12:00:00Z').toLocaleDateString('ar-SA-u-ca-gregory-nu-latn', { month: 'long', year: 'numeric' }); drawStudentCal($('#smCal', root), s, P, month); };
+    $('#smPrev', root).onclick = () => { month = shift(-1); show(); };
+    $('#smNext', root).onclick = () => { month = shift(1); show(); };
+    show();
   });
 }
 const KIND = { alert: 'تنبيه', warning: 'إنذار', dismissal: 'إحالة للفصل' };
@@ -1496,7 +1512,6 @@ function teacherSessions(r, from, to) {
 }
 
 // ============ تقويم الإنجاز: صف لكل طالب وعمود لكل يوم (التسميع والتنفيذ) ============
-const CAL = { plan: '', month: TODAY.slice(0, 7), view: 'both', teacher: '', room: '' };
 const REC_K = { done: ['تم', 'ت', '#1E8E5A', '#fff'], makeup: ['عوّض', 'ع', '#C9A227', '#2a2200'], review: ['ربط ومراجعة', 'ر', '#2F6FB0', '#fff'], excused: ['مستأذن', 'س', '#7A5BB5', '#fff'], behind: ['متخلّف', '×', '#C8423B', '#fff'], open: ['اليوم، لم يُرصد بعد', '…', '#E9EEF0', '#555'], off: ['لا تسميع', '', 'transparent', ''], future: ['قادم', '', 'transparent', ''] };
 const EXE_K = { full: ['أنجز الواجب', '✓', '#1E8E5A', '#fff'], part: ['أنجز جزءًا', '◐', '#E0A526', '#2a2200'], none: ['لم ينفّذ', '✗', '#C8423B', '#fff'], excused: ['مستأذن', 'س', '#7A5BB5', '#fff'], open: ['اليوم', '…', '#E9EEF0', '#555'], off: ['لا واجب', '', 'transparent', ''], future: ['قادم', '', 'transparent', ''] };
 // حالة طالب في يوم: للتسميع وللتنفيذ
@@ -1526,80 +1541,39 @@ function dayState(s, P, d, ctx) {
   }
   return out;
 }
-SECTIONS.cal = async el => {
-  await loadRecs();
-  const PL = await plansFull();
-  const usable = D.plans.filter(p => p.status !== 'archived');
-  if (!CAL.plan || !PL[CAL.plan]) CAL.plan = (usable.find(p => p.status === 'active') || usable[0])?.id || '';
-  const P = PL[CAL.plan];
-  const [y, m] = CAL.month.split('-').map(Number);
-  const first = `${CAL.month}-01`, last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-  const shiftM = k => { const d = new Date(Date.UTC(y, m - 1 + k, 1)); return d.toISOString().slice(0, 7); };
-  const hasRec = P && P.recitation_mode !== 'none';
-  const tasksE = P ? A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both') : [];
-  const hasExec = P && P.student_execution !== 'none' && tasksE.length > 0;
-  if (CAL.view === 'rec' && !hasRec) CAL.view = 'exe';
-  if (CAL.view === 'exe' && !hasExec) CAL.view = 'rec';
-  if (CAL.view === 'both' && !(hasRec && hasExec)) CAL.view = hasRec ? 'rec' : 'exe';
-  const seg = (v, l, ok) => ok ? `<button type="button" data-cv="${v}" aria-pressed="${CAL.view === v}">${l}</button>` : '';
-  el.innerHTML = `${secHead('تقويم الإنجاز', P ? esc(P.name) + ' · ' + A.hijri(first).replace(/^\d+\s*/, '') : '', 'teal', `<button class="btn ghost sm" id="cExp">تصدير إلى إكسل</button>`)}
-    <div class="card" style="--a:var(--teal);margin-bottom:10px"><div class="tbl-tools" style="margin:0">
-      <label class="small">الخطة <select id="cPlan" style="width:auto">${usable.map(p => opt(p.id, p.name, p.id === CAL.plan)).join('')}</select></label>
-      <button class="btn ghost sm" id="cPrev" type="button">الشهر السابق</button><input type="month" id="cMonth" value="${CAL.month}" style="width:auto"><button class="btn ghost sm" id="cNext" type="button">الشهر التالي</button>
-      <div class="seg">${seg('both', 'التسميع والتنفيذ', hasRec && hasExec)}${seg('rec', 'التسميع', hasRec)}${seg('exe', 'التنفيذ', hasExec)}</div>
-      <select id="cTe" style="width:auto"><option value="">كل المعلمين</option>${teacherOpts(CAL.teacher)}</select>
-      <select id="cRo" style="width:auto"><option value="">كل الفترات</option>${roomOpts(CAL.room)}</select>
-      <input type="search" id="cQ" placeholder="بحث باسم الطالب…" style="width:auto;min-width:180px">
-    </div></div>
-    <div class="card" style="--a:var(--teal);margin-bottom:10px" id="cLegend"></div>
-    <div class="card c-teal" id="cCard"><div class="head"><h3>${A.greg(first)} – ${A.greg(last)}</h3><span class="hint">اضغط على أي خانة لتفاصيل اليوم، وعلى اسم الطالب لتقويمه الشهري</span></div><div id="cGrid"></div></div>`;
-  $('#cPlan').onchange = e => { CAL.plan = e.target.value; route(); };
-  $('#cMonth').onchange = e => { if (e.target.value) { CAL.month = e.target.value; route(); } };
-  $('#cPrev').onclick = () => { CAL.month = shiftM(-1); route(); };
-  $('#cNext').onclick = () => { CAL.month = shiftM(1); route(); };
-  $$('[data-cv]', el).forEach(b => b.onclick = () => { CAL.view = b.dataset.cv; route(); });
-  $('#cTe').onchange = e => { CAL.teacher = e.target.value; route(); };
-  $('#cRo').onchange = e => { CAL.room = e.target.value; route(); };
-  cardFull($('#cCard'));
-  if (!P) { $('#cGrid').innerHTML = '<div class="empty">لا توجد خطط.</div>'; return; }
-  const studs = actives().filter(s => s.assign?.plan_id === P.id && (!CAL.teacher || s.teacher_id === CAL.teacher) && (!CAL.room || D.roomOfStudent[s.id] === CAL.room)).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+// عرض «تقويم» داخل المتابعة اليومية: صف لكل طالب وعمود لكل يوم من الشهر
+async function renderCal(el, P, view, studs, title) {
+  const [y, m] = FOL.month.split('-').map(Number);
+  const first = `${FOL.month}-01`, last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
+  const hasExec = view === 'exe';
+  const K = view === 'rec' ? REC_K : EXE_K, key = view === 'rec' ? 'rec' : 'exe';
+  $('#fTitle').textContent = `${A.greg(first)} – ${A.greg(last)}`;
+  $('#fHint').textContent = 'اضغط على أي خانة لتفاصيل اليوم، وعلى اسم الطالب لملفه وتقويمه الشهري (التسميع والتنفيذ معًا)';
   const { data: lv } = await db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').lte('date_from', last).gte('date_to', first);
   const ctx = { leaveOn: (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d), hasExec, tasksE, nDays: Object.keys(P.days).length, prog: hasExec ? await planProgress(P.id) : {} };
   if (!el.isConnected) return;
   const dates = datesBetween(first, last);
-  const grid = studs.map(s => ({ s, days: dates.map(d => dayState(s, P, d, ctx)) }));
-  const showR = CAL.view !== 'exe', showE = CAL.view !== 'rec';
-  // دليل الألوان + مجاميع الشهر
-  const tot = {}; grid.forEach(g => g.days.forEach(x => { if (showR && x.rec) tot['r' + x.rec] = (tot['r' + x.rec] || 0) + 1; if (showE && x.exe) tot['e' + x.exe] = (tot['e' + x.exe] || 0) + 1; }));
-  const chip = (K, k, p) => `<span class="cal-lg"><i style="background:${K[k][2]};color:${K[k][3]}">${K[k][1]}</i>${K[k][0]} <b>${fmtNum(tot[p + k] || 0)}</b></span>`;
-  $('#cLegend').innerHTML = `${showR ? `<div class="cal-legend"><b>التسميع:</b>${['done', 'makeup', 'review', 'excused', 'behind'].map(k => chip(REC_K, k, 'r')).join('')}</div>` : ''}
-    ${showE ? `<div class="cal-legend"><b>التنفيذ:</b>${['full', 'part', 'none', 'excused'].map(k => chip(EXE_K, k, 'e')).join('')}</div>` : ''}
-    ${CAL.view === 'both' ? '<div class="hint" style="margin-top:4px">في كل خانة: الجزء العلوي للتسميع، والسفلي للتنفيذ.</div>' : ''}`;
-  const cellHtml = (x, si, di) => {
-    const r = showR && x.rec ? REC_K[x.rec] : null, e = showE && x.exe ? EXE_K[x.exe] : null;
-    const part = (K, cls) => K ? `<span class="${cls}" style="background:${K[2]};color:${K[3]}">${K[1]}</span>` : `<span class="${cls}"></span>`;
-    return `<td class="cal-c${CAL.view === 'both' ? ' two' : ''}" data-c="${si}|${di}" title="${esc([r && 'التسميع: ' + r[0], e && 'التنفيذ: ' + e[0]].filter(Boolean).join(' · '))}">${showR ? part(r, 'cr') : ''}${showE ? part(e, 'ce') : ''}</td>`;
-  };
-  const sumOf = g => { const c = {}; g.days.forEach(x => { if (x.rec) c[x.rec] = (c[x.rec] || 0) + 1; if (x.exe) c['e' + x.exe] = (c['e' + x.exe] || 0) + 1; }); return c; };
+  const grid = studs.slice().sort((a, b) => a.name.localeCompare(b.name, 'ar')).map(s => ({ s, days: dates.map(d => dayState(s, P, d, ctx)) }));
+  const keys = view === 'rec' ? ['done', 'makeup', 'review', 'excused', 'behind'] : ['full', 'part', 'none', 'excused'];
+  const tot = {}; grid.forEach(g => g.days.forEach(x => { if (x[key]) tot[x[key]] = (tot[x[key]] || 0) + 1; }));
+  $('#fKpi').innerHTML = `<div class="cal-legend">${keys.map(k => `<span class="cal-lg"><i style="background:${K[k][2]};color:${K[k][3]}">${K[k][1]}</i>${K[k][0]} <b>${fmtNum(tot[k] || 0)}</b></span>`).join('')}</div>`;
+  const okKeys = view === 'rec' ? ['done', 'makeup', 'review'] : ['full'], badKey = view === 'rec' ? 'behind' : 'none';
   const draw = () => {
-    const t = norm($('#cQ').value);
+    const t = norm($('#fQ')?.value || '');
     const rows = grid.map((g, i) => [g, i]).filter(([g]) => !t || norm(g.s.name).includes(t));
-    $('#cGrid').innerHTML = rows.length ? `<div class="tbl-wrap" style="max-height:70vh"><table class="cal-t"><thead><tr><th class="cal-n">الطالب</th>${dates.map(d => `<th class="${d === TODAY ? 'today' : ''}${isWork(P, d) ? '' : ' wk'}" title="${A.dayName(d)} ${A.greg(d)} · ${A.hijri(d)}">${A.dayName(d).replace('ال', '').slice(0, 2)}<br>${+d.slice(8)}</th>`).join('')}
-      ${showR ? '<th class="num" title="أيام التسميع المنجزة: تم + عوّض + ربط ومراجعة">تسميع</th><th class="num" title="متخلّف">×</th>' : ''}${showE ? '<th class="num" title="أيام الواجب المكتملة">تنفيذ</th><th class="num" title="لم ينفّذ">✗</th>' : ''}</tr></thead><tbody>
-      ${rows.map(([g, i]) => { const c = sumOf(g); return `<tr><td class="cal-n"><a href="#" data-sc="${i}">${esc(g.s.name)}</a><div class="hint">${esc(g.s.teacher)} · ${esc(g.s.room)}</div></td>${g.days.map((x, di) => cellHtml(x, i, di)).join('')}
-        ${showR ? `<td class="num"><b style="color:var(--green)">${(c.done || 0) + (c.makeup || 0) + (c.review || 0)}</b></td><td class="num">${c.behind ? `<b style="color:var(--red)">${c.behind}</b>` : '0'}</td>` : ''}${showE ? `<td class="num"><b style="color:var(--green)">${c.efull || 0}</b></td><td class="num">${c.enone ? `<b style="color:var(--red)">${c.enone}</b>` : '0'}</td>` : ''}</tr>`; }).join('')}
-      </tbody></table></div><div class="tbl-foot">${rows.length} طالبًا</div>` : '<div class="empty">لا يوجد طلاب في هذه الخطة بهذه الفلاتر</div>';
-    $$('[data-c]', $('#cGrid')).forEach(td => td.onclick = () => { const [si, di] = td.dataset.c.split('|').map(Number); calDay(grid[si].s, P, dates[di], grid[si].days[di]); });
-    $$('[data-sc]', $('#cGrid')).forEach(a => a.onclick = e => { e.preventDefault(); const g = grid[+a.dataset.sc]; calStudent(g.s, P, dates, g.days); });
+    $('#fTbl').innerHTML = rows.length ? `<div class="tbl-wrap" style="max-height:70vh"><table class="cal-t"><thead><tr><th class="cal-n">الطالب</th>${dates.map(d => `<th class="${d === TODAY ? 'today' : ''}${isWork(P, d) ? '' : ' wk'}" title="${A.dayName(d)} ${A.greg(d)} · ${A.hijri(d)}">${A.dayName(d).replace('ال', '').slice(0, 2)}<br>${+d.slice(8)}</th>`).join('')}
+      <th class="num" title="${view === 'rec' ? 'أيام التسميع المنجزة: تم + عوّض + ربط ومراجعة' : 'أيام الواجب المكتملة'}">${view === 'rec' ? 'منجز' : 'مكتمل'}</th><th class="num" title="${K[badKey][0]}">${K[badKey][1]}</th></tr></thead><tbody>
+      ${rows.map(([g, i]) => `<tr><td class="cal-n"><a href="#" data-sc="${i}">${esc(g.s.name)}</a><div class="hint">${esc(g.s.teacher)} · ${esc(g.s.room)}</div></td>${g.days.map((x, di) => { const k = x[key] ? K[x[key]] : null; return `<td class="cal-c" data-c="${i}|${di}" title="${k ? esc(k[0]) : ''}"><span style="${k && k[1] ? `background:${k[2]};color:${k[3]}` : ''}">${k ? k[1] : ''}</span></td>`; }).join('')}
+        <td class="num"><b style="color:var(--green)">${g.days.filter(x => okKeys.includes(x[key])).length}</b></td><td class="num">${(n => n ? `<b style="color:var(--red)">${n}</b>` : '0')(g.days.filter(x => x[key] === badKey).length)}</td></tr>`).join('')}
+      </tbody></table></div><div class="tbl-foot">${rows.length} طالبًا</div>` : '<div class="empty">لا يوجد طلاب</div>';
+    $$('[data-c]', $('#fTbl')).forEach(td => td.onclick = () => { const [si, di] = td.dataset.c.split('|').map(Number); calDay(grid[si].s, P, dates[di], grid[si].days[di]); });
+    $$('[data-sc]', $('#fTbl')).forEach(a => a.onclick = e => { e.preventDefault(); studentFile(grid[+a.dataset.sc].s.id); });
   };
-  $('#cQ').addEventListener('input', draw); draw();
-  $('#cExp').onclick = () => {
-    const lab = x => [showR && x.rec && REC_K[x.rec][1] ? REC_K[x.rec][0] : '', showE && x.exe && EXE_K[x.exe][1] ? EXE_K[x.exe][0] : ''].filter(Boolean).join(' / ');
-    A.exportXlsx(`تقويم الإنجاز - ${P.name} - ${CAL.month}`, 'تقويم الإنجاز', [['الطالب', g => g.s.name], ['المعلم', g => g.s.teacher], ['الفترة', g => g.s.room], ...dates.map((d, di) => [d, g => lab(g.days[di])]),
-      ...(showR ? [['أيام التسميع المنجزة', g => g.days.filter(x => ['done', 'makeup', 'review'].includes(x.rec)).length], ['متخلّف', g => g.days.filter(x => x.rec === 'behind').length]] : []),
-      ...(showE ? [['أيام التنفيذ المكتملة', g => g.days.filter(x => x.exe === 'full').length], ['لم ينفّذ', g => g.days.filter(x => x.exe === 'none').length]] : [])], grid);
-  };
-};
+  $('#fQ') && $('#fQ').addEventListener('input', draw); draw();
+  $('#fExport').onclick = () => A.exportXlsx(`${title} - تقويم - ${P.name} - ${FOL.month}`, 'التقويم', [['الطالب', g => g.s.name], ['المعلم', g => g.s.teacher], ['الفترة', g => g.s.room],
+    ...dates.map((d, di) => [d, g => { const x = g.days[di][key]; return x && K[x][1] ? K[x][0] : ''; }]), [view === 'rec' ? 'أيام منجزة' : 'أيام مكتملة', g => g.days.filter(x => okKeys.includes(x[key])).length], [K[badKey][0], g => g.days.filter(x => x[key] === badKey).length]], grid);
+}
 function calDay(s, P, d, x) {
   const recLine = r => `<div class="hist"><div class="row"><b>${STATUS[r.status]?.label || r.status}</b>${r.makes_up_date ? `<span class="hint">تعويض عن ${A.greg(r.makes_up_date)} · رُصد ${A.greg(r.rec_date)}</span>` : ''}</div><div class="small muted">${r.memo_from ? 'الحفظ: ' + +r.memo_from + '–' + +r.memo_to + ' · ' : ''}${r.score != null ? 'الدرجة: ' + fmtNum(r.score, 2) + ' · ' : ''}${esc(D.teacherById[r.teacher_id]?.name || '')}${r.notes ? ' · ' + esc(r.notes) : ''}</div></div>`;
   drawer(`${s.name} · ${A.dayName(d)} ${A.greg(d)}`, `<div class="stack">
@@ -1610,17 +1584,33 @@ function calDay(s, P, d, x) {
     $('#cdFile', root).onclick = () => studentFile(s.id);
   });
 }
-// تقويم شهري لطالب واحد بشكل أسابيع
-function calStudent(s, P, dates, days) {
+// تقويم شهري لطالب واحد بشكل أسابيع (التسميع والتنفيذ معًا) — يظهر في ملف الطالب
+async function studentMonth(s, P, month) {
+  const [y, m] = month.split('-').map(Number);
+  const first = `${month}-01`, last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
+  const hasExec = P.student_execution !== 'none' && tasksE.length > 0;
+  const [{ data: lv }, prog] = await Promise.all([
+    db.from('leave_requests').select('student_id, date_from, date_to').eq('student_id', s.id).eq('status', 'approved').lte('date_from', last).gte('date_to', first),
+    hasExec ? db.from('plan_progress').select('plan_day_id, column_id').eq('student_id', s.id).then(r => r.data || []) : []]);
+  const dayOf = {}; Object.values(P.days).forEach(d => dayOf[d.id] = d.day_number);
+  const mine = {}; prog.forEach(x => { const dn = dayOf[x.plan_day_id]; if (dn != null) (mine[dn] ||= new Set()).add(x.column_id); });
+  const ctx = { leaveOn: (sid, d) => (lv || []).some(l => l.date_from <= d && l.date_to >= d), hasExec, tasksE, nDays: Object.keys(P.days).length, prog: { [s.id]: mine } };
+  const dates = datesBetween(first, last);
+  return { dates, days: dates.map(d => dayState(s, P, d, ctx)) };
+}
+function monthGridHtml(dates, days) {
   const pad = new Date(dates[0] + 'T12:00:00Z').getUTCDay();
   const cells = [...Array(pad).fill(null), ...dates.map((d, i) => [d, days[i]])];
   while (cells.length % 7) cells.push(null);
-  const names = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
-  drawer(`تقويم ${s.name}`, `<div class="hint" style="margin-bottom:8px">${esc(P.name)} · ${esc(s.teacher)} · ${esc(s.room)}</div>
-    <div class="cal-month">${names.map(n => `<div class="cm-h">${n}</div>`).join('')}${cells.map(c => { if (!c) return '<div class="cm-d empty"></div>'; const [d, x] = c; const r = x.rec ? REC_K[x.rec] : null, e = x.exe ? EXE_K[x.exe] : null;
-      return `<div class="cm-d${d === TODAY ? ' today' : ''}" data-d="${d}"><span class="cm-n">${+d.slice(8)}</span>${r && r[1] ? `<span class="cm-b" style="background:${r[2]};color:${r[3]}">${r[0]}</span>` : ''}${e && e[1] ? `<span class="cm-b" style="background:${e[2]};color:${e[3]}">${e[0]}</span>` : ''}</div>`; }).join('')}</div>`, root => {
-    $$('[data-d]', root).forEach(c => c.onclick = () => { const i = dates.indexOf(c.dataset.d); calDay(s, P, dates[i], days[i]); });
-  });
+  return `<div class="cal-month">${['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'].map(n => `<div class="cm-h">${n}</div>`).join('')}${cells.map(c => { if (!c) return '<div class="cm-d empty"></div>'; const [d, x] = c; const r = x.rec ? REC_K[x.rec] : null, e = x.exe ? EXE_K[x.exe] : null;
+    return `<div class="cm-d${d === TODAY ? ' today' : ''}" data-d="${d}"><span class="cm-n">${+d.slice(8)}</span>${r && r[1] ? `<span class="cm-b" style="background:${r[2]};color:${r[3]}">${r[0]}</span>` : ''}${e && e[1] ? `<span class="cm-b" style="background:${e[2]};color:${e[3]}">${e[0]}</span>` : ''}</div>`; }).join('')}</div>`;
+}
+async function drawStudentCal(box, s, P, month) {
+  box.innerHTML = '<div class="loading">جارٍ التحميل…</div>';
+  const { dates, days } = await studentMonth(s, P, month);
+  box.innerHTML = monthGridHtml(dates, days);
+  $$('[data-d]', box).forEach(c => c.onclick = () => { const i = dates.indexOf(c.dataset.d); calDay(s, P, dates[i], days[i]); });
 }
 
 // ============ الملف الشخصي ============
