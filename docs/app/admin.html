@@ -601,6 +601,7 @@ SECTIONS.students = async el => {
     { key: 'count', label: 'السجلات', num: true },
     { key: 'act', label: 'خيارات', html: r => `<span class="opts">
         <button class="btn sm" data-a="edit" data-id="${r.s.id}">تعديل</button>
+        <button class="btn ghost sm" data-a="cal" data-id="${r.s.id}">التقويم</button>
         <a class="btn ghost sm" href="student-file.html?id=${r.s.id}" target="_blank" rel="noopener">عرض الملف</a>
         <button class="btn ghost sm" data-a="pw" data-id="${r.s.id}">كلمة المرور</button>
         <button class="btn ${r.s.is_archived ? 'ok' : 'danger'} sm" data-a="arch" data-id="${r.s.id}">${r.s.is_archived ? 'استعادة' : 'أرشفة'}</button></span>` }],
@@ -608,6 +609,7 @@ SECTIONS.students = async el => {
       const s = D.studentById[b.dataset.id];
       if (b.dataset.a === 'edit') studentForm(s);
       else if (b.dataset.a === 'pw') setPassword(s.user_id, s.name);
+      else if (b.dataset.a === 'cal') studentFile(s.id);
       else archiveStudent(s);
     }) });
   cardFull($('#sCard'));
@@ -811,9 +813,9 @@ async function studentFile(id) {
   drawer('الطالب: ' + s.name, `
     <div class="row" style="justify-content:flex-start"><button class="btn" id="qEdit">تعديل البيانات</button><a class="btn ghost" href="student-file.html?id=${id}" target="_blank" rel="noopener">عرض الملف الكامل</a></div>
     <div class="card c-teal"><div class="minis">${mini('المحفوظ', fmtNum(st.memorized, 1), 'green')}${mini('الإنجاز', st.pct == null ? '—' : st.pct + '٪', 'teal')}${mini('متوسط الدرجة', st.avg == null ? '—' : fmtNum(st.avg, 2), 'blue')}${mini('غياب تقديري', fmtNum(st.absences), 'red')}</div></div>
-    <div class="card"><dl class="dl"><dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(s.email || '')}</dd><dt>الجوال</dt><dd dir="ltr" style="text-align:right">${esc(s.phone || '—')}</dd><dt>المعلم</dt><dd>${esc(s.teacher)}</dd><dt>الفترة</dt><dd>${esc(s.room)}</dd><dt>الخطة</dt><dd>${esc(s.plan)}</dd></dl></div>
     ${P ? `<div class="card c-teal"><div class="head"><h3>تقويم الشهر</h3><div class="row" style="gap:4px"><button class="btn ghost sm" id="smPrev" type="button">‹ السابق</button><b id="smLbl" class="small"></b><button class="btn ghost sm" id="smNext" type="button">التالي ›</button></div></div>
-      <div class="hint" style="margin-bottom:6px">لكل يوم: حالة التسميع ثم حالة تنفيذ الواجب. اضغط على اليوم للتفاصيل.</div><div id="smCal"></div></div>` : ''}
+      <div class="hint" style="margin-bottom:6px">لكل يوم: حالة التسميع ثم حالة تنفيذ الواجب. اضغط على اليوم للتفاصيل.</div><div id="smCal"></div></div>` : '<div class="card c-teal"><h3>تقويم الشهر</h3><div class="empty">الطالب غير مسند إلى خطة، فلا يوجد له تقويم. أسنده من «خطط البرامج» ← «إضافة طلاب».</div></div>'}
+    <div class="card"><dl class="dl"><dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(s.email || '')}</dd><dt>الجوال</dt><dd dir="ltr" style="text-align:right">${esc(s.phone || '—')}</dd><dt>المعلم</dt><dd>${esc(s.teacher)}</dd><dt>الفترة</dt><dd>${esc(s.room)}</dd><dt>الخطة</dt><dd>${esc(s.plan)}</dd></dl></div>
     <div class="card c-green"><h3>آخر الرصد</h3><div class="tbl-wrap" style="margin-top:8px;max-height:300px"><table><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحفظ</th><th>الدرجة</th><th>المعلم</th></tr></thead><tbody>
       ${recs.map(r => `<tr><td>${A.greg(r.rec_date)}</td><td>${statusPill(r.status)}</td><td>${r.memo_from ? +r.memo_from + '–' + +r.memo_to : '—'}</td><td>${r.score != null ? fmtNum(r.score, 2) : '—'}</td><td>${esc(D.teacherById[r.teacher_id]?.name || '—')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا يوجد</td></tr>'}</tbody></table></div></div>`, root => {
     $('#qEdit', root).onclick = () => studentForm(s);
