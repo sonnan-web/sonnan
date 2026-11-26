@@ -210,6 +210,7 @@ input:disabled,select:disabled{background:var(--track);color:var(--muted)}
 .tabbar a[aria-current="page"]::before{content:"";position:absolute;top:0;inset-inline:28%;height:3px;border-radius:0 0 3px 3px;background:var(--gold)}
 .tabbar .ic{display:block;margin:0 auto 2px;width:21px;height:21px}
 @media (max-width:560px){.topbar h1 .sep,.topbar h1 .prog{display:none}.topbar h1{font-size:14px}}
+@media (max-width:700px){.topbar .tools>span{display:none}.topbar .tools{min-width:0}}
 .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--primary);color:#fff;padding:9px 18px;border-radius:10px;font-weight:700;z-index:90;max-width:calc(100% - 32px);text-align:center;border-bottom:2px solid var(--gold)}
 .toast.bad{background:#8F2530;border-bottom-color:var(--red)}
 .loading{padding:40px;text-align:center;color:var(--muted)}

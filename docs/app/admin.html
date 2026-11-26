@@ -62,7 +62,7 @@ const NAV = [
   ['البرامج', [['plans', 'خطط البرامج', 'plan']]],
   ['المعلمون والفترات', [['teachers', 'المعلمون', 'teacher'], ['rooms', 'الفترات والغرف الصوتية', 'room']]],
   ['التواصل', [['notify', 'الإشعارات', 'bell']]],
-  ['التقارير', [['reports', 'لوحة التقارير', 'report']]],
+  ['التقارير', [['summary', 'التقرير الإجمالي', 'list'], ['reports', 'لوحة التقارير', 'report']]],
   ['الحساب', [['profile', 'ملفي الشخصي', 'user']]]
 ];
 const TITLES = Object.fromEntries(NAV.flatMap(g => g[1].map(x => [x[0], x[1]])));
@@ -1251,6 +1251,127 @@ SECTIONS.reports = async el => {
   $('#fTe').onchange = e => { st.teacher = e.target.value; route(); };
   $('#fRo').onchange = e => { st.room = e.target.value; route(); };
   $('#fPl').onchange = e => { st.plan = e.target.value; route(); };
+};
+
+// ============ التقرير الإجمالي: صف لكل طالب ============
+// الحفظ/الربط/المراجعة/التكرار: من تنفيذ الطالب إن كانت الخطة فيها تنفيذ له، وإلا من رصد المعلم.
+// التسميع: مجموع ما سمّعه الطالب للمعلم. الالتزام يُحسب حسب نوع الخطة.
+const SUM_ST = { preset: 'all', from: '', to: TODAY, plan: '', teacher: '', room: '', gender: '', nat: '' };
+const LEVELS = [[90, 'ممتاز', 'ok'], [80, 'جيد جدًا', 'ok'], [70, 'جيد', 'info'], [60, 'مقبول', 'warn'], [0, 'ضعيف', 'bad']];
+const CLASSES = { 'متميز': 'ok', 'منتظم': 'info', 'يحتاج متابعة': 'warn', 'متعثر': 'bad', '—': 'plain' };
+const rangeLen = (a, b) => (a == null || b == null || a === '' || b === '' || a === false || b === false) ? 0 : Math.abs(+b - +a) + 1;
+SECTIONS.summary = async el => {
+  await loadRecs();
+  const PL = await plansFull();
+  const st = SUM_ST;
+  const first = D.recs.length ? D.recs[D.recs.length - 1].rec_date : TODAY;
+  if (st.preset === 'all') { st.from = first; st.to = TODAY; }
+  else if (st.preset === 'month') { st.from = TODAY.slice(0, 8) + '01'; st.to = TODAY; }
+  else if (st.preset === '30') { st.from = A.addDays(TODAY, -29); st.to = TODAY; }
+  else if (st.preset === 'week') { st.from = A.addDays(TODAY, -A.dowMakkah()); st.to = TODAY; }
+  const from = st.from, to = [st.to, TODAY].sort()[0];
+  const uniq = k => [...new Set(D.students.map(s => s[k]).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ar'));
+  const studs = actives().filter(s => s.assign && PL[s.assign.plan_id] && (!st.plan || s.assign.plan_id === st.plan) && (!st.teacher || s.teacher_id === st.teacher) && (!st.room || D.roomOfStudent[s.id] === st.room) && (!st.gender || s.gender === st.gender) && (!st.nat || s.nationality === st.nat));
+  el.innerHTML = `${secHead('التقرير الإجمالي للطلاب', A.greg(from) + ' – ' + A.greg(to), 'gold', `<button class="btn ghost sm" id="sExport">تصدير إلى إكسل</button>`)}
+    <div class="card" style="--a:var(--gold);margin-bottom:10px"><div class="tbl-tools" style="margin:0">
+      <div class="seg">${[['week', 'هذا الأسبوع'], ['month', 'هذا الشهر'], ['30', 'آخر 30 يومًا'], ['all', 'منذ البداية'], ['custom', 'مخصص']].map(([k, l]) => `<button type="button" data-sp="${k}" aria-pressed="${st.preset === k}">${l}</button>`).join('')}</div>
+      <input type="date" id="sF" value="${from}" style="width:auto"><input type="date" id="sT" value="${st.to}" style="width:auto">
+      <select id="sPl" style="width:auto"><option value="">كل البرامج</option>${planOpts(st.plan)}</select>
+      <select id="sTe" style="width:auto"><option value="">كل المعلمين</option>${teacherOpts(st.teacher)}</select>
+      <select id="sRo" style="width:auto"><option value="">كل الفترات</option>${roomOpts(st.room)}</select>
+      <select id="sGe" style="width:auto"><option value="">الجنسان</option>${uniq('gender').map(g => opt(g, g, g === st.gender)).join('')}</select>
+      <select id="sNa" style="width:auto"><option value="">كل الجنسيات</option>${uniq('nationality').map(g => opt(g, g, g === st.nat)).join('')}</select>
+    </div></div>
+    <div class="card" style="--a:var(--gold);margin-bottom:10px" id="sKpi"><div class="loading">جارٍ الحساب…</div></div>
+    <div class="card c-gold" id="sCard"><div class="head"><h3>صف لكل طالب</h3><span class="hint">اضغط على الطالب لفتح ملفه · الفلاتر داخل الجدول للمستوى والتصنيف والالتزام</span></div><div id="sTbl"></div></div>
+    <details class="card" style="margin-top:10px"><summary><b>كيف تُحسب الأرقام؟</b></summary><div class="small" style="line-height:1.9;margin-top:8px">
+      • <b>الحفظ والربط والمراجعة</b>: عدد الأحاديث في المهام التي علّم الطالب على إنجازها من واجبه. المهمة التي لا تحددها الخطة في أيامها (كالمراجعة التي يختارها المعلم)، أو خطة بلا تنفيذ عند الطالب، تُؤخذ من رصد المعلم.<br>
+      • <b>التكرار</b>: مجموع مرات التكرار المطلوبة في الأيام التي علّم فيها الطالب على التكرار.<br>
+      • <b>التسميع</b>: عدد الأحاديث التي سمّعها للمعلم (حفظ وربط ومراجعة)، و<b>المحفوظ المسمَّع</b> بلا تكرار للأحاديث المعادة.<br>
+      • <b>مستوى الضبط</b>: متوسط درجة التسميع ÷ الدرجة الكاملة: ممتاز 90٪+، جيد جدًا 80٪+، جيد 70٪+، مقبول 60٪+، ضعيف أقل.<br>
+      • <b>الالتزام</b>: خطة تسميع فقط ← نسبة أيام التسميع المنجزة. خطة يُحتسب فيها تنفيذ الطالب ← تجمع نسبة التسميع ونسبة التنفيذ حسب أوزان الخطة (50/50 إن لم تُحدَّد). خطة تنفيذ فقط ← نسبة التنفيذ.<br>
+      • <b>التصنيف</b>: متميز (التزام 90٪+ وضبط جيد جدًا فأعلى)، منتظم (75٪+)، يحتاج متابعة (50–74٪)، متعثر (أقل من 50٪).
+    </div></details>`;
+  $$('[data-sp]', el).forEach(b => b.onclick = () => { st.preset = b.dataset.sp; route(); });
+  $('#sF').onchange = e => { st.preset = 'custom'; st.from = e.target.value; route(); };
+  $('#sT').onchange = e => { st.preset = 'custom'; st.to = e.target.value; route(); };
+  [['#sPl', 'plan'], ['#sTe', 'teacher'], ['#sRo', 'room'], ['#sGe', 'gender'], ['#sNa', 'nat']].forEach(([id, k]) => $(id).onchange = e => { st[k] = e.target.value; route(); });
+  cardFull($('#sCard'));
+
+  const planIds = [...new Set(studs.map(s => s.assign.plan_id))];
+  const progs = {}; for (const id of planIds) progs[id] = await planProgress(id);
+  if (!el.isConnected) return;
+  const { data: lv } = await db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').lte('date_from', to).gte('date_to', from);
+  const leaveOn = (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d);
+  const allDates = datesBetween(from, to);
+
+  const rows = studs.map(s => {
+    const P = PL[s.assign.plan_id], nDays = Object.keys(P.days).length, prog = progs[P.id][s.id] || {};
+    const hasExec = P.student_execution !== 'none' && P.cols.some(c => c.executor === 'student' || c.executor === 'both');
+    const hasRec = P.recitation_mode !== 'none';
+    const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
+    const tasksT = A.groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both');
+    // المهمة تُعدّ من واجب الطالب إذا حدّدتها الخطة في أيامها، وإلا (مثل مراجعة يحددها المعلم) من رصد المعلم
+    const fromExec = new Set(hasExec ? tasksE.filter(t => Object.values(P.days).some(d => A.fmtTaskVal(t, d.vals) != null)).map(t => t.task) : []);
+    const o = { s, name: s.name, email: s.email || '', program: P.name, teacher: s.teacher, room: s.room, gender: s.gender || '', nat: s.nationality || '', memo: 0, link: 0, review: 0, repeat: 0 };
+    const add = (t, vals) => { if (!['memo', 'link', 'review', 'repeat'].includes(t.task)) return; o[t.task] += t.single ? (t.task === 'repeat' ? (+vals[t.single.id] || 0) : (vals[t.single.id] ? 1 : 0)) : rangeLen(vals[t.from.id], vals[t.to.id]); };
+    const start = [s.assign.start_date, s.join_date, from].filter(Boolean).sort().pop();
+    // تنفيذ الطالب
+    let need = 0, ok = 0, execDays = 0, excE = new Set();
+    if (hasExec) allDates.filter(d => d >= start && d < TODAY && isWork(P, d)).forEach(d => {
+      if (leaveOn(s.id, d)) { excE.add(d); return; }
+      const dn = A.planDayFor(s.assign, P, nDays, d), dv = P.days[dn]?.vals || {}, done = prog[dn] || new Set();
+      let any = false;
+      tasksE.forEach(t => { if (A.fmtTaskVal(t, dv) == null) return; need++; if (t.cols.some(c => done.has(c.id))) { ok++; any = true; add(t, dv); } });
+      if (any) execDays++;
+    });
+    // رصد المعلم
+    const rs = (D.recsByStudent[s.id] || []).filter(r => r.plan_id === P.id && r.rec_date >= from && r.rec_date <= to);
+    const got = rs.filter(r => ACH.includes(r.status));
+    let recited = 0;
+    got.forEach(r => tasksT.forEach(t => { if (t.single || !['memo', 'link', 'review'].includes(t.task)) return; let n = rangeLen(r.vals?.[t.from.id], r.vals?.[t.to.id]); if (!n && t.task === 'memo') n = rangeLen(r.memo_from, r.memo_to); recited += n; if (!fromExec.has(t.task)) o[t.task] += n; }));
+    o.recited = recited;
+    o.memorized = A.unionCount(got.filter(r => r.status !== 'review_only').map(r => [r.memo_from == null ? null : +r.memo_from, r.memo_to == null ? null : +r.memo_to]));
+    const ss = statsOf(s, from, to);
+    o.recDays = ss.achDays; o.absent = hasRec ? ss.absences : 0;
+    o.excused = new Set([...rs.filter(r => r.status === 'excused').map(r => r.rec_date), ...excE]).size;
+    o.execDays = hasExec ? execDays : null;
+    const max = +(P.score_rules?.max || 10);
+    o.avg = ss.avg; o.level = hasRec && ss.avg != null ? LEVELS.find(l => ss.avg / max * 100 >= l[0])[1] : '—';
+    const recPct = hasRec ? ss.pct : null, exPct = hasExec && need ? Math.round(ok / need * 100) : null;
+    o.recPct = recPct; o.exPct = exPct;
+    if (hasRec && P.student_execution === 'counts') { const rw = P.recitation_weight ?? 50, ew = P.execution_weight ?? 50; o.commit = recPct != null && exPct != null ? Math.round((recPct * rw + exPct * ew) / (rw + ew)) : (recPct ?? exPct); o.basis = 'تسميع + تنفيذ'; }
+    else if (hasRec) { o.commit = recPct; o.basis = 'تسميع'; }
+    else { o.commit = exPct; o.basis = 'تنفيذ'; }
+    o.cls = o.commit == null ? '—' : o.commit >= 90 && ['ممتاز', 'جيد جدًا', '—'].includes(o.level) ? 'متميز' : o.commit >= 75 ? 'منتظم' : o.commit >= 50 ? 'يحتاج متابعة' : 'متعثر';
+    o.last = ss.last;
+    return o;
+  });
+  const sum = k => rows.reduce((a, r) => a + (r[k] || 0), 0);
+  const avgOf = k => { const v = rows.map(r => r[k]).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
+  const nc = c => rows.filter(r => r.cls === c).length;
+  $('#sKpi').innerHTML = `<div class="minis">${mini('الطلاب', fmtNum(rows.length), 'slate')}${mini('أحاديث الحفظ', fmtNum(sum('memo')), 'green')}${mini('الربط', fmtNum(sum('link')), 'teal')}${mini('المراجعة', fmtNum(sum('review')), 'blue')}${mini('مرات التكرار', fmtNum(sum('repeat')), 'violet')}${mini('أحاديث مسمَّعة', fmtNum(sum('recited')), 'amber')}
+    ${mini('متوسط الالتزام', avgOf('commit') == null ? '—' : avgOf('commit') + '٪', 'teal')}${mini('متميز', fmtNum(nc('متميز')), 'green')}${mini('منتظم', fmtNum(nc('منتظم')), 'blue')}${mini('يحتاج متابعة', fmtNum(nc('يحتاج متابعة')), 'amber')}${mini('متعثر', fmtNum(nc('متعثر')), 'red')}</div>`;
+  const pctColor = v => v >= 90 ? 'var(--green)' : v >= 70 ? 'var(--teal)' : v >= 50 ? '#9A6A08' : 'var(--red)';
+  const pctHtml = v => v == null ? '—' : `<b style="color:${pctColor(v)}">${v}٪</b>`;
+  const lvPill = Object.fromEntries(LEVELS.map(l => [l[1], l[2]]));
+  const n0 = k => ({ key: k, num: true, html: x => x[k] == null ? '—' : fmtNum(x[k]) });
+  const tbl = dataTable($('#sTbl'), { rows, sortKey: 'commit', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+    { key: 'name', label: 'الطالب' }, { key: 'program', label: 'البرنامج', filter: true }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
+    { ...n0('memo'), label: 'الحفظ' }, { ...n0('link'), label: 'الربط' }, { ...n0('review'), label: 'المراجعة' }, { ...n0('repeat'), label: 'التكرار' },
+    { ...n0('recited'), label: 'التسميع' }, { key: 'memorized', label: 'المحفوظ المسمَّع', num: true, html: x => fmtNum(x.memorized, 1) },
+    { key: 'avg', label: 'متوسط الدرجة', num: true, html: x => x.avg == null ? '—' : fmtNum(x.avg, 2) },
+    { key: 'level', label: 'مستوى الضبط', filter: true, html: x => x.level === '—' ? '—' : `<span class="pill ${lvPill[x.level]}">${x.level}</span>` },
+    { key: 'commit', label: 'الالتزام', num: true, html: x => pctHtml(x.commit) + `<div class="hint">${x.basis}</div>` },
+    { ...n0('recDays'), label: 'أيام التسميع' }, { ...n0('execDays'), label: 'أيام التنفيذ' }, { ...n0('excused'), label: 'الاستئذان' },
+    { key: 'absent', label: 'الغياب', num: true, html: x => x.absent ? `<b style="color:var(--red)">${x.absent}</b>` : '0' },
+    { key: 'cls', label: 'التصنيف', filter: true, html: x => `<span class="pill ${CLASSES[x.cls]}">${x.cls}</span>` },
+    { key: 'last', label: 'آخر رصد', html: x => x.last ? A.greg(x.last) : '—' }] });
+  $('#sExport').onclick = () => A.exportXlsx(`التقرير الإجمالي - ${from} إلى ${to}`, 'التقرير الإجمالي', [
+    ['الطالب', x => x.name], ['البريد', x => x.email], ['البرنامج', x => x.program], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['الجنس', x => x.gender], ['الجنسية', x => x.nat],
+    ['الحفظ', x => x.memo], ['الربط', x => x.link], ['المراجعة', x => x.review], ['التكرار', x => x.repeat], ['التسميع', x => x.recited], ['المحفوظ المسمَّع', x => x.memorized],
+    ['متوسط الدرجة', x => x.avg == null ? null : +x.avg.toFixed(2)], ['مستوى الضبط', x => x.level], ['نسبة التسميع ٪', x => x.recPct], ['نسبة التنفيذ ٪', x => x.exPct], ['الالتزام ٪', x => x.commit], ['أساس الالتزام', x => x.basis],
+    ['أيام التسميع', x => x.recDays], ['أيام التنفيذ', x => x.execDays], ['الاستئذان', x => x.excused], ['الغياب', x => x.absent], ['التصنيف', x => x.cls], ['آخر رصد', x => x.last]], tbl.getRows());
 };
 
 // ============ الملف الشخصي ============
