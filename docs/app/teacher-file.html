@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>ملف المعلم — منصة سنن</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+<style>
+body{background:#DDE5E5}
+.toolbar{position:sticky;top:0;z-index:5;background:linear-gradient(110deg,var(--primary),var(--secondary));border-bottom:2px solid var(--gold);padding:8px max(16px,env(safe-area-inset-left,0px));display:flex;justify-content:space-between;align-items:center;gap:10px;color:#fff}
+.sheet{max-width:900px;margin:18px auto;background:#fff;border-radius:6px;box-shadow:0 6px 30px rgba(15,47,51,.15);padding:30px 36px 40px}
+@media (max-width:700px){.sheet{margin:0;border-radius:0;padding:18px 16px 30px}}
+.letterhead{display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:3px double var(--gold);padding-bottom:14px}
+.letterhead .org{display:flex;align-items:center;gap:12px}
+.letterhead .seal{width:58px;height:58px;border-radius:14px;background:linear-gradient(135deg,var(--primary),var(--secondary));color:var(--gold);display:grid;place-items:center;font-weight:800;font-size:18px;flex:none;overflow:hidden}
+.letterhead .seal img{width:100%;height:100%;object-fit:cover}
+.letterhead h1{font-size:19px;color:var(--primary)}.letterhead p{color:var(--muted);font-size:12px}
+.letterhead .doc{text-align:left;font-size:12px;color:var(--muted);line-height:1.8}
+.title{display:flex;align-items:center;justify-content:center;gap:14px;margin:18px 0 6px}
+.title .ph{width:72px;height:72px;border-radius:50%;border:3px solid var(--gold);overflow:hidden;background:var(--track);display:grid;place-items:center;font-size:26px;font-weight:800;color:var(--primary)}
+.title .ph img{width:100%;height:100%;object-fit:cover}
+.title h2{font-size:22px;color:var(--primary)}
+.idline{text-align:center;color:var(--muted);font-size:12.5px;margin-bottom:18px}
+.block{margin-top:18px;break-inside:avoid}
+.block h3{font-size:14.5px;color:#fff;background:linear-gradient(110deg,var(--primary),var(--secondary));border-right:5px solid var(--gold);padding:6px 12px;border-radius:6px;margin-bottom:10px}
+.facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:8px;overflow:hidden}
+@media (max-width:700px){.facts{grid-template-columns:1fr 1fr}}
+.facts div{padding:8px 11px;border-bottom:1px solid var(--soft-line);border-left:1px solid var(--soft-line);min-width:0}
+.facts small{display:block;color:var(--muted);font-size:11px;font-weight:700}.facts b{display:block;font-size:13.5px;overflow-wrap:anywhere;margin-top:2px}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+@media (max-width:700px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{border:1px solid var(--line);border-top:3px solid var(--c);border-radius:8px;padding:9px;text-align:center}
+.kpi small{display:block;color:var(--muted);font-size:11px;font-weight:700}.kpi b{display:block;font-size:20px;color:var(--c);margin-top:3px;font-variant-numeric:tabular-nums}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:700px){.two{grid-template-columns:1fr}}
+.sheet table{font-size:11.5px}.sheet th{position:static}.sheet .tbl-wrap{max-height:none;border-radius:8px}
+.sign{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:34px;text-align:center;font-size:12.5px;color:var(--muted)}
+.sign div{border-top:1px solid var(--line);padding-top:8px}
+.foot{margin-top:24px;text-align:center;font-size:10.5px;color:var(--muted)}
+@media print{
+  @page{size:A4;margin:12mm}
+  body{background:#fff}.toolbar{display:none}.sheet{box-shadow:none;margin:0;padding:0;max-width:none}
+  .block h3,.letterhead .seal,.pill,.kpi,.donut,.legend i{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  tr{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<div class="toolbar"><b>ملف المعلم</b><div class="row"><button class="btn gold sm" id="print" type="button">طباعة</button><a class="pillbtn" href="admin.html#teachers">رجوع</a></div></div>
+<main class="sheet" id="sheet"><div class="loading">جارٍ التحميل…</div></main>
+<script>
+(async () => {
+'use strict';
+const A = App, { db, $, esc, fmtNum, statusPill, STATUS } = A;
+const me = await A.requireRole(['admin']);
+if (!me) return;
+$('#print').onclick = () => window.print();
+const id = new URLSearchParams(location.search).get('id');
+const TODAY = A.todayMakkah();
+const { data: t } = await db.from('teachers').select('*').eq('id', id).maybeSingle();
+if (!t) { $('#sheet').innerHTML = '<div class="error">لم يُعثر على المعلم.</div>'; return; }
+const [u, prof, ra, studs, users, recs, assigns, plans] = await Promise.all([
+  db.from('users').select('name, email, phone, created_at').eq('id', t.user_id).maybeSingle().then(r => r.data || {}),
+  db.from('user_profiles').select('*').eq('id', t.user_id).maybeSingle().then(r => r.data || {}),
+  db.from('room_assignments').select('audio_rooms(*)').eq('assignee_type', 'teacher').eq('assignee_id', id).then(r => r.data || []),
+  A.fetchAll(() => db.from('students').select('*').eq('teacher_id', id)),
+  A.fetchAll(() => db.from('users').select('id, name')),
+  A.fetchAll(() => db.from('plan_recitations').select('student_id, rec_date, status, memo_from, memo_to, score, errors_total, notes, created_at').eq('teacher_id', id).is('superseded_by', null).order('rec_date', { ascending: false })),
+  A.fetchAll(() => db.from('plan_assignments').select('student_id, plan_id').is('ended_at', null)),
+  db.from('program_plans').select('id, name').then(r => r.data || [])
+]);
+const nameOf = Object.fromEntries(users.map(x => [x.id, x.name]));
+const stuName = Object.fromEntries(studs.map(s => [s.id, nameOf[s.user_id] || '—']));
+// أسماء طلاب سمّع لهم ولم يكونوا مسندين إليه
+const otherIds = [...new Set(recs.map(r => r.student_id).filter(x => !stuName[x]))];
+if (otherIds.length) { const { data } = await db.from('students').select('id, user_id').in('id', otherIds); (data || []).forEach(s => stuName[s.id] = nameOf[s.user_id] || '—'); }
+const planName = Object.fromEntries(plans.map(p => [p.id, p.name]));
+const planOf = Object.fromEntries(assigns.map(a => [a.student_id, planName[a.plan_id]]));
+const rooms = ra.map(x => x.audio_rooms).filter(Boolean);
+const active = studs.filter(s => s.status === 'active' && !s.is_archived);
+const heard = recs.filter(r => ['present', 'makeup'].includes(r.status));
+const hadiths = heard.reduce((a, r) => a + (r.memo_from != null && r.memo_to != null && +r.memo_from > 0 ? Math.abs(+r.memo_to - +r.memo_from) + 1 : 0), 0);
+const month = TODAY.slice(0, 7);
+const sc = heard.filter(r => r.score != null).map(r => +r.score);
+const lastBy = {}; recs.forEach(r => { if (!lastBy[r.student_id]) lastBy[r.student_id] = r; });
+// الجلسات حسب الشهر
+const byMonth = {}; recs.forEach(r => { const m = r.rec_date.slice(0, 7); (byMonth[m] ||= { n: 0, h: 0 }).n++; if (['present', 'makeup'].includes(r.status) && r.memo_from != null && r.memo_to != null && +r.memo_from > 0) byMonth[m].h += Math.abs(+r.memo_to - +r.memo_from) + 1; });
+const months = Object.keys(byMonth).sort().reverse().slice(0, 12);
+const fact = (l, v, ltr) => `<div><small>${l}</small><b${ltr ? ' dir="ltr" style="text-align:right"' : ''}>${v == null || v === '' ? '—' : esc(v)}</b></div>`;
+const cnt = k => recs.filter(r => r.status === k).length;
+document.title = 'ملف المعلم: ' + u.name;
+$('#sheet').innerHTML = `
+  <header class="letterhead"><div class="org"><span class="seal">سنن</span><div><h1>جمعية سنن التعليمية</h1><p>قسم التعليم عن بعد</p></div></div>
+    <div class="doc">تاريخ الإصدار: ${A.greg(TODAY)}<br>${A.hijri(TODAY)}</div></header>
+  <div class="title"><div class="ph">${prof.avatar_url ? `<img src="${esc(prof.avatar_url)}" alt="">` : esc((u.name || '؟').charAt(0))}</div><h2>ملف المعلم</h2></div>
+  <p class="idline">${esc(u.name)} · ${t.is_archived ? 'مؤرشف' : 'على رأس العمل'}</p>
+
+  <section class="block"><h3>البيانات الشخصية</h3><div class="facts">
+    ${fact('الاسم', u.name)}${fact('البريد الإلكتروني', u.email, true)}${fact('رقم الجوال', prof.phone || t.phone || u.phone, true)}
+    ${fact('الجنسية', prof.nationality)}${fact('مكان الإقامة', prof.residence)}${fact('الجنس', prof.gender)}
+    ${fact('نوع الإثبات', prof.id_type)}${fact('رقم الإثبات', prof.id_number, true)}${fact('تاريخ الميلاد', prof.birth_date ? A.greg(prof.birth_date) : null)}
+    ${fact('التعليم', prof.education)}${fact('حفظ القرآن', prof.quran_memorization)}${fact('المؤهل', prof.qualifications)}
+    ${fact('جهة العمل', prof.workplace)}${fact('تاريخ إنشاء الحساب', u.created_at ? A.greg(u.created_at.slice(0, 10)) : null)}${fact('الغرف الصوتية', rooms.map(r => r.name + ' (' + (r.start_time || '').slice(0, 5) + ')').join('، '))}
+  </div>${prof.bio ? `<p class="note">نبذة: ${esc(prof.bio)}</p>` : ''}</section>
+
+  <section class="block"><h3>تقرير الأداء</h3><div class="kpis">
+    <div class="kpi" style="--c:var(--teal)"><small>طلابه المنتظمون</small><b>${active.length}</b></div>
+    <div class="kpi" style="--c:var(--blue)"><small>جلسات سمّعها</small><b>${fmtNum(heard.length)}</b></div>
+    <div class="kpi" style="--c:var(--green)"><small>أحاديث سمّعها</small><b>${fmtNum(hadiths)}</b></div>
+    <div class="kpi" style="--c:var(--amber)"><small>جلسات هذا الشهر</small><b>${fmtNum(heard.filter(r => r.rec_date.slice(0, 7) === month).length)}</b></div>
+    <div class="kpi" style="--c:var(--violet)"><small>متوسط الدرجات</small><b>${sc.length ? fmtNum(sc.reduce((a, b) => a + b, 0) / sc.length, 2) : '—'}</b></div>
+  </div>
+  <div class="two" style="margin-top:12px">
+    <div>${A.donut(['present', 'makeup', 'review_only', 'excused', 'absent'].map(k => [STATUS[k].label, cnt(k), STATUS[k].color]), 'رصد')}</div>
+    <div class="tbl-wrap"><table><thead><tr><th>الشهر</th><th>الجلسات</th><th>الأحاديث</th></tr></thead><tbody>${months.map(m => `<tr><td>${new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { month: 'long', year: 'numeric' }).format(new Date(m + '-15T12:00:00Z'))}</td><td class="num">${byMonth[m].n}</td><td class="num">${byMonth[m].h}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">لا يوجد</td></tr>'}</tbody></table></div>
+  </div></section>
+
+  <section class="block"><h3>الطلاب المسندون (${studs.filter(s => !s.is_archived).length})</h3><div class="tbl-wrap"><table><thead><tr><th>الطالب</th><th>الخطة</th><th>الحالة</th><th>آخر رصد</th></tr></thead><tbody>
+    ${studs.filter(s => !s.is_archived).sort((a, b) => stuName[a.id].localeCompare(stuName[b.id], 'ar')).map(s => { const l = lastBy[s.id]; return `<tr><td>${esc(stuName[s.id])}</td><td>${esc(planOf[s.id] || '—')}</td><td>${{ active: 'منتظم', paused: 'موقوف', graduated: 'خاتم', withdrawn: 'منسحب' }[s.status] || s.status}</td><td>${l ? A.greg(l.rec_date) + ' ' + statusPill(l.status) : '—'}</td></tr>`; }).join('') || '<tr><td colspan="4" class="muted">لا يوجد</td></tr>'}</tbody></table></div></section>
+
+  <section class="block"><h3>سجل الرصد (آخر ${Math.min(recs.length, 150)} من ${recs.length})</h3><div class="tbl-wrap"><table><thead><tr><th>التاريخ</th><th>الطالب</th><th>الحالة</th><th>الحفظ</th><th>الأخطاء</th><th>الدرجة</th></tr></thead><tbody>
+    ${recs.slice(0, 150).map(r => `<tr><td>${A.greg(r.rec_date)}</td><td>${esc(stuName[r.student_id] || '—')}</td><td>${statusPill(r.status)}</td><td>${r.memo_from ? +r.memo_from + '–' + +r.memo_to : '—'}</td><td class="num">${r.errors_total ?? '—'}</td><td class="num">${r.score != null ? fmtNum(r.score, 2) : '—'}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">لا يوجد</td></tr>'}</tbody></table></div></section>
+  <div class="sign"><div>المعلم</div><div>مشرف البرنامج</div></div>
+  <p class="foot">صدر هذا الملف من منصة سنن للتعليم عن بعد · ${A.greg(TODAY)}</p>`;
+})();
+</script>
+</body>
+</html>

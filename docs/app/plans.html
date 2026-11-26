@@ -57,13 +57,13 @@ aside.card{--a:var(--teal)}
 .tabs button[aria-selected="true"]{background:var(--gold);border-color:var(--gold);color:var(--primary)}
 
 .grid{display:grid;gap:12px}
-.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:end}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;align-items:end}
 @media (max-width:640px){.g2,.g3{grid-template-columns:1fr}}
 label.f{display:grid;gap:3px;font-weight:700;font-size:12px}
 label.f .hint,.hint{font-weight:500;color:var(--muted);font-size:11px}
-input[type=text],input[type=number],input[type=email],input[type=password],input[type=date],input[type=url],select,textarea{width:100%;border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 9px;min-width:0;font-size:13px}
-input:focus,select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(203,185,148,.2)}
+input[type=text],input[type=number],input[type=email],input[type=password],input[type=date],input[type=url],input[type=search],select,textarea{width:100%;border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 9px;min-width:0;font-size:13px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(203,185,148,.2)}
 input:disabled,select:disabled{background:var(--track);color:var(--muted)}
 
 /* رأس القسم مثل لوحة التقارير */

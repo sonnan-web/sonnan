@@ -81,6 +81,7 @@
       let rows = opts.rows.slice();
       if (st.q) { const q = norm(st.q); rows = rows.filter(r => opts.cols.some(c => norm(valOf(c, r)).includes(q))); }
       Object.entries(st.filters).forEach(([k, v]) => { if (v !== '') { const c = opts.cols.find(c => c.key === k); rows = rows.filter(r => String(valOf(c, r) ?? '') === v); } });
+      st.last = rows;
       if (st.sortKey) { const c = opts.cols.find(c => c.key === st.sortKey) || { key: st.sortKey, num: true }; rows.sort((a, b) => { let x = valOf(c, a), y = valOf(c, b); if (x == null || x === '') return 1; if (y == null || y === '') return -1; return (c.num ? (x - y) : String(x).localeCompare(String(y), 'ar')) * st.dir; }); }
       const filterCols = opts.cols.filter(c => c.filter);
       el.innerHTML = `<div class="tbl-tools">
@@ -99,9 +100,21 @@
       if (opts.after) opts.after(el);
     }
     draw();
-    return { redraw: draw, setRows(r) { opts.rows = r; draw(); } };
+    return { redraw: draw, setRows(r) { opts.rows = r; draw(); }, getRows: () => st.last || opts.rows };
   }
 
+  // تصدير صفوف إلى ملف إكسل: cols = [[العنوان, دالة القيمة], ...]
+  function exportXlsx(fileName, sheetName, cols, rows) {
+    if (!window.XLSX) return toast('أداة الإكسل لم تُحمَّل بعد، أعد المحاولة', true);
+    const aoa = [cols.map(c => c[0]), ...rows.map(r => cols.map(c => { const v = c[1](r); return v == null ? '' : v; }))];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = cols.map(c => ({ wch: Math.max(10, String(c[0]).length + 4) }));
+    ws['!views'] = [{ RTL: true }];
+    const wb = XLSX.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+    XLSX.writeFile(wb, fileName + '.xlsx');
+    toast('صُدّر ' + rows.length + ' صف');
+  }
   // زر ملء الشاشة لبطاقة
   function fullscreenBtn(card) {
     const b = document.createElement('button'); b.className = 'full-btn'; b.type = 'button'; b.textContent = 'ملء الشاشة';
@@ -303,6 +316,144 @@
     $('#avDel', el) && ($('#avDel', el).onclick = async () => { const old = p.avatar_url.split('/avatars/')[1]; if (old) await db.storage.from('avatars').remove([old]); await db.from('user_profiles').upsert({ id: me.id, avatar_url: null }); toast('حُذفت الصورة'); profileSection(el, me, { seed, extra }); });
   }
 
+  // ===== نموذج رصد جلسة التسميع (مشترك: صفحة المعلم، نافذة الغرف، لوحة المشرف) =====
+  // ctx: { stu:{id,name}, assign, P:{...plan, cols:[], days:{n:day}}, roomId, roomName, teacherId, meId,
+  //        teachers?:[{id,name}] (للمشرف: من رصد), canEdit(r), teacherName(id), onSaved(), layout:'wide'|'stack' }
+  function recordWidget(container, ctx) {
+    const S = { status: 'present', ded: {}, editing: null, makeup: null, draft: null, notes: null, hist: [], shown: 5, teacherId: ctx.teacherId || null };
+    const TODAY = todayMakkah();
+    container.innerHTML = `<div class="rw ${ctx.layout === 'stack' ? 'rw-stack' : ''}"><div class="rw-form"></div><div class="rw-hist"></div></div>`;
+    const fa = $('.rw-form', container), ha = $('.rw-hist', container);
+    async function loadHist() {
+      const { data } = await db.from('plan_recitations').select('*').eq('student_id', ctx.stu.id).is('superseded_by', null).order('rec_date', { ascending: false }).order('created_at', { ascending: false }).limit(60);
+      S.hist = data || [];
+    }
+    function drawHist() {
+      const list = S.hist.slice(0, S.shown);
+      ha.innerHTML = `<div class="card c-blue"><div class="head"><h3>آخر ما رُصد للطالب</h3><span class="hint">${S.hist.length ? S.hist.length + (S.hist.length >= 60 ? '+' : '') + ' سجل' : ''}</span></div>
+        ${list.length ? list.map(r => `<div class="hist">
+          <div class="row"><b>${dayName(r.rec_date)} ${greg(r.rec_date)}</b>${statusPill(r.status)}</div>
+          <div class="small muted">${r.memo_from ? 'الحفظ: ' + +r.memo_from + '–' + +r.memo_to + ' · ' : ''}${r.score != null ? 'الدرجة: ' + fmtNum(r.score, 2) : ''}${r.makes_up_date ? ' · تعويض عن ' + greg(r.makes_up_date) : ''}${ctx.teacherName ? ' · ' + esc(ctx.teacherName(r.teacher_id) || '') : ''}${r.notes ? ' · ' + esc(r.notes) : ''}</div>
+          ${ctx.canEdit(r) ? `<div class="row" style="justify-content:flex-start;gap:6px"><button class="btn ghost sm" data-edit="${r.id}" type="button">تعديل</button>${ctx.canDelete ? `<button class="btn danger sm" data-del="${r.id}" type="button">حذف</button>` : ''}</div>` : '<div class="hint">رصده معلم آخر</div>'}</div>`).join('') : '<div class="empty">لا يوجد رصد سابق</div>'}
+        ${S.hist.length > S.shown ? `<button class="btn ghost block sm" id="rwMore" type="button" style="margin-top:8px">إظهار المزيد</button>` : ''}</div>`;
+      $$('[data-edit]', ha).forEach(b => b.onclick = () => startEdit(b.dataset.edit));
+      $$('[data-del]', ha).forEach(b => b.onclick = () => ctx.onDelete && ctx.onDelete(S.hist.find(x => x.id === b.dataset.del), async () => { await loadHist(); drawHist(); }));
+      $('#rwMore', ha) && ($('#rwMore', ha).onclick = () => { S.shown += 5; drawHist(); });
+    }
+    function startEdit(id) {
+      const r = S.hist.find(x => x.id === id); if (!r) return;
+      S.editing = r; S.status = r.status; S.ded = { ...(r.deductions || {}) }; S.makeup = r.makes_up_date; S.draft = null; S.notes = null; S.teacherId = r.teacher_id || S.teacherId;
+      drawForm(); fa.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    function drawForm() {
+      const { stu, assign: a, P } = ctx;
+      if (!a || !P) { fa.innerHTML = '<div class="card c-red"><div class="error" style="margin:0">لم تُسند للطالب خطة بعد، فلا يظهر نموذج الرصد. اطلب من المشرف إسناد خطة له.</div></div>'; return; }
+      if (P.recitation_mode === 'none') { fa.innerHTML = `<div class="card"><div class="hintbox">خطة الطالب «${esc(P.name)}» بلا تسميع، فلا يُرصد له تسميع.</div></div>`; return; }
+      const nDays = Object.keys(P.days).length;
+      const dayN = planDayFor(a, P, nDays);
+      const recDay = isRecitationDay(P, TODAY);
+      const recDays = P.recitation_mode === 'daily' ? P.workdays : P.recitation_days;
+      const mkWin = P.discipline_rules?.makeup_within_days ?? 14;
+      const done = new Set(S.hist.filter(r => ['present', 'makeup', 'review_only', 'excused'].includes(r.status)).map(r => r.rec_date));
+      S.hist.filter(r => r.makes_up_date).forEach(r => done.add(r.makes_up_date));
+      const missed = [];
+      for (let i = 1, d = addDays(TODAY, -1); i <= Math.max(mkWin, 1) && d >= a.start_date; i++, d = addDays(d, -1)) if (isRecitationDay(P, d) && !done.has(d)) missed.push(d);
+      const ed = S.editing, st = S.status;
+      const targetDayN = st === 'makeup' && S.makeup ? planDayFor(a, P, nDays, S.makeup) : dayN;
+      const day = P.days[targetDayN];
+      const vals = Object.assign({}, ed ? (ed.vals || {}) : (day?.vals || {}), S.draft || {});
+      const tTasks = groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both');
+      const refTasks = groupTasks(P.cols, c => c.executor === 'info');
+      const showFields = ['present', 'makeup', 'review_only'].includes(st);
+      const reviewOnly = st === 'review_only';
+      const R = P.score_rules || { max: 10, deductions: [] };
+      const score = Math.max(0, (R.max || 0) - (R.deductions || []).reduce((x, d) => x + (S.ded[d.key] || 0) * (+d.value || 0), 0));
+      const field = c => {
+        const v = vals[c.id];
+        if (c.value_type === 'bool') return `<label class="chips"><label><input type="checkbox" data-c="${c.id}"${v ? ' checked' : ''}>${esc(c.header)}</label></label>`;
+        return `<label class="f small">${esc(c.header)}<input data-c="${c.id}" type="${c.value_type === 'number' ? 'number' : 'text'}" ${c.value_type === 'number' ? 'step="0.5" inputmode="decimal"' : ''} value="${esc(v ?? '')}"></label>`;
+      };
+      fa.innerHTML = `<div class="card c-teal">
+        <div class="row"><div><h2>${esc(stu.name)}</h2><p class="small muted">${esc(P.name)}${ctx.roomName ? ' · الفترة: ' + esc(ctx.roomName) : ''}</p></div>
+          <div style="text-align:left"><span class="pill gold">اليوم ${dayN} من الخطة</span><div class="hint" style="margin-top:3px">${recDay ? 'اليوم يوم تسميع' : 'اليوم ليس من أيام التسميع (' + recDays.map(i => DAYS[i]).join('، ') + ')'}</div></div></div>
+        ${ed ? `<div class="hintbox" style="margin-top:8px">تعدّل رصد يوم ${greg(ed.rec_date)}. يُحفظ التعديل سجلًا جديدًا ويبقى القديم في التاريخ. <button class="btn ghost sm" id="rwCancelEdit" type="button">إلغاء التعديل</button></div>` : ''}
+        ${ctx.teachers ? `<label class="f" for="rwT" style="margin-top:10px">المعلم الذي سمّع<select id="rwT">${ctx.teachers.map(t => `<option value="${t.id}"${t.id === S.teacherId ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>` : ''}
+        <div style="margin-top:10px"><b class="small">حالة الطالب</b><div class="seg" style="margin-top:6px">${['present', 'makeup', 'review_only', 'excused', 'absent'].map(k => `<button type="button" data-st="${k}" aria-pressed="${st === k}">${STATUS[k].label}</button>`).join('')}</div></div>
+        ${st === 'makeup' ? `<label class="f" for="rwMk" style="margin-top:10px">تعويض عن يوم <span class="hint">أيام تسميع فاتته خلال ${mkWin} يومًا ولم تُعوَّض</span><select id="rwMk">${(ed?.makes_up_date && !missed.includes(ed.makes_up_date) ? [ed.makes_up_date] : []).concat(missed).map(d => `<option value="${d}"${S.makeup === d ? ' selected' : ''}>${dayName(d)} ${greg(d)}</option>`).join('') || '<option value="">لا توجد أيام فائتة</option>'}</select></label>` : ''}
+        ${showFields ? `<div class="stack" style="margin-top:12px">
+          ${tTasks.filter(t => !reviewOnly || t.task !== 'memo').map(t => `<div class="task-f"><div class="row"><b>${esc(t.name)}</b><span class="hint">المقرر${st === 'makeup' ? ' ليوم التعويض' : ''}: ${esc(fmtTaskVal(t, day?.vals) ?? '—')}</span></div><div class="g2">${t.cols.map(field).join('')}</div></div>`).join('') || '<div class="hint">لا توجد أعمدة يرصدها المعلم في هذه الخطة.</div>'}
+          ${refTasks.map(t => { const v = fmtTaskVal(t, day?.vals); return v == null ? '' : `<div class="task-f ref"><b>${esc(t.name)} <span class="hint">للعرض</span></b><span class="small">${t.cols[0].value_type === 'url' ? `<a href="${esc(day.vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(v)}</span></div>`; }).join('')}
+        </div>
+        ${!reviewOnly && (R.deductions || []).length ? `<div class="card" style="--a:var(--violet);margin-top:12px;padding:8px 12px"><b>الأخطاء</b>
+          ${R.deductions.map(d => `<div class="ded"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ctl"><button type="button" data-d="${esc(d.key)}" data-v="-1" aria-label="إنقاص">−</button><b>${S.ded[d.key] || 0}</b><button type="button" data-d="${esc(d.key)}" data-v="1" aria-label="زيادة">+</button></span></div>`).join('')}
+          <div class="row" style="margin-top:6px"><span>الدرجة</span><span class="score">${fmtNum(score, 2)} <span class="hint">من ${R.max}</span></span></div></div>` : ''}`
+        : `<div class="hintbox" style="margin-top:10px">${st === 'excused' ? 'يُسجَّل الطالب مستأذنًا لهذا اليوم، ولا يُحسب غيابًا.' : 'يُسجَّل الطالب غائبًا لهذا اليوم، ويدخل في حساب التنبيهات والإنذارات.'}</div>`}
+        <label class="f" for="rwNotes" style="margin-top:10px">ملاحظات على الطالب <span class="hint">اختياري</span><textarea id="rwNotes">${esc(S.notes ?? ed?.notes ?? '')}</textarea></label>
+        ${ed ? `<label class="f" for="rwReason" style="margin-top:8px">سبب التعديل<input id="rwReason" type="text"></label>` : ''}
+        <button class="btn block" id="rwSave" type="button" style="margin-top:12px">${ed ? 'حفظ التعديل' : 'رصد الجلسة'}</button>
+      </div>`;
+      const keep = () => { S.draft = {}; $$('[data-c]', fa).forEach(i => { S.draft[i.dataset.c] = i.type === 'checkbox' ? i.checked : (i.value === '' ? null : (i.type === 'number' ? Number(i.value) : i.value)); }); S.notes = $('#rwNotes', fa).value; if ($('#rwT', fa)) S.teacherId = $('#rwT', fa).value; };
+      $$('[data-st]', fa).forEach(b => b.onclick = () => { keep(); S.status = b.dataset.st; if (S.status === 'makeup' && !S.makeup) { S.makeup = missed[0] || null; S.draft = null; } drawForm(); });
+      $('#rwMk', fa) && ($('#rwMk', fa).onchange = e => { S.makeup = e.target.value; S.draft = null; drawForm(); });
+      $$('[data-d]', fa).forEach(b => b.onclick = () => { keep(); const k = b.dataset.d; S.ded[k] = Math.max(0, (S.ded[k] || 0) + +b.dataset.v); drawForm(); });
+      $('#rwCancelEdit', fa) && ($('#rwCancelEdit', fa).onclick = () => { S.editing = null; S.ded = {}; S.status = 'present'; S.draft = null; S.notes = null; S.makeup = null; drawForm(); });
+      $('#rwSave', fa).onclick = () => save(P, day, score);
+    }
+    async function save(P, day, score) {
+      const st = S.status, ed = S.editing, btn = $('#rwSave', fa);
+      if ($('#rwT', fa)) S.teacherId = $('#rwT', fa).value;
+      if (st === 'makeup' && !S.makeup) return toast('لا يوجد يوم فائت للتعويض عنه', true);
+      if (ed && !$('#rwReason', fa).value.trim()) return toast('اكتب سبب التعديل', true);
+      const vals = {};
+      $$('[data-c]', fa).forEach(i => { const c = P.cols.find(x => x.id === i.dataset.c); if (!c) return; if (c.value_type === 'bool') vals[c.id] = i.checked; else if (i.value !== '') vals[c.id] = c.value_type === 'number' ? Number(i.value) : i.value; });
+      for (const c of P.cols.filter(c => c.range_role === 'start' && c.value_type === 'number')) { const e = P.cols.find(x => x.id === c.pair_column_id); if (e && vals[c.id] != null && vals[e.id] != null && vals[c.id] > vals[e.id]) return toast(`«${c.header}» أكبر من «${e.header}»`, true); }
+      const mF = P.cols.find(c => c.task === 'memo' && c.range_role === 'start'), mT = P.cols.find(c => c.task === 'memo' && c.range_role === 'end');
+      const withScore = ['present', 'makeup'].includes(st);
+      const row = {
+        student_id: ctx.stu.id, teacher_id: S.teacherId, plan_id: P.id, plan_day_id: day?.id || null,
+        rec_date: ed ? ed.rec_date : TODAY, status: st, makes_up_date: st === 'makeup' ? S.makeup : null,
+        vals: ['present', 'makeup', 'review_only'].includes(st) ? vals : {}, deductions: withScore ? S.ded : {},
+        score: withScore ? score : null, errors_total: withScore ? Object.values(S.ded).reduce((x, y) => x + y, 0) : null,
+        memo_from: withScore && mF ? (vals[mF.id] ?? null) : null, memo_to: withScore && mT ? (vals[mT.id] ?? null) : null,
+        notes: $('#rwNotes', fa).value.trim() || null, room_id: ctx.roomId || null, created_by: ctx.meId
+      };
+      btn.disabled = true; btn.textContent = 'جارٍ الحفظ…';
+      const { data: ins, error } = await db.from('plan_recitations').insert(row).select('id').single();
+      if (error) { btn.disabled = false; btn.textContent = ed ? 'حفظ التعديل' : 'رصد الجلسة'; return toast('لم يُحفظ: ' + error.message, true); }
+      if (ed) {
+        const { error: e2 } = await db.from('plan_recitations').update({ superseded_by: ins.id, edit_reason: $('#rwReason', fa).value.trim() }).eq('id', ed.id);
+        if (e2) toast('حُفظ الرصد الجديد لكن تعذّر ربطه بالقديم: ' + e2.message, true);
+      }
+      toast(ed ? 'حُفظ التعديل' : 'رُصدت الجلسة');
+      S.editing = null; S.ded = {}; S.draft = null; S.notes = null; S.status = 'present'; S.makeup = null;
+      await loadHist(); drawForm(); drawHist();
+      ctx.onSaved && ctx.onSaved();
+    }
+    fa.innerHTML = '<div class="loading">جارٍ التحميل…</div>';
+    loadHist().then(async () => {
+      if (ctx.editId) {
+        if (!S.hist.some(r => r.id === ctx.editId)) { const { data } = await db.from('plan_recitations').select('*').eq('id', ctx.editId).maybeSingle(); if (data) S.hist.push(data); }
+        drawHist(); startEdit(ctx.editId); return;
+      }
+      drawForm(); drawHist();
+    });
+    return { reload: async () => { await loadHist(); drawForm(); drawHist(); } };
+  }
+  // تحميل خطط بأعمدتها وأيامها
+  async function loadPlansFull(planIds) {
+    const PLANS = {};
+    if (!planIds.length) return PLANS;
+    const [p, c, d] = await Promise.all([
+      db.from('program_plans').select('*').in('id', planIds),
+      db.from('plan_columns').select('*').in('plan_id', planIds).order('seq'),
+      fetchAll(() => db.from('plan_days').select('id, plan_id, day_number, vals').in('plan_id', planIds))
+    ]);
+    (p.data || []).forEach(x => PLANS[x.id] = { ...x, cols: [], days: {} });
+    (c.data || []).forEach(x => PLANS[x.plan_id]?.cols.push(x));
+    d.forEach(x => { if (PLANS[x.plan_id]) PLANS[x.plan_id].days[x.day_number] = x; });
+    return PLANS;
+  }
+
   // ===== التثبيت على الجوال وإشعارات الجوال =====
   const VAPID_PUBLIC = 'BGOb1JtomPyxrCk3SiqluCzs97TDuGXRXnScFMYgIrpGYAEhT1NbFUPNhDk01h2VZw3DSvwAXbQ405jF7Z-aNws';
   const ua = navigator.userAgent || '';
@@ -390,7 +541,7 @@
     if (pushSupported() && Notification.permission === 'default' && !snoozed('sonnan-push-snooze')) pushSheet();
   }
 
-  window.App = { setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
+  window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
     unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, svg };
 })();

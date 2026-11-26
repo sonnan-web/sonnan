@@ -78,32 +78,23 @@ const { data: T } = await db.from('teachers').select('*').eq('user_id', me.id).m
 if (!T) { $('#main').innerHTML = '<div class="error">حسابك غير مرتبط بملف معلم. تواصل مع المشرف.</div>'; return; }
 if (T.is_archived) { $('#main').innerHTML = '<div class="error">حسابك موقوف مؤقتًا. تواصل مع المشرف.</div>'; return; }
 
-const [studs, users, assigns, ra, rooms] = await Promise.all([
-  db.from('students').select('*').eq('teacher_id', T.id).eq('is_archived', false).then(r => r.data || []),
-  db.from('users').select('id, name, email').then(r => r.data || []),
-  db.from('plan_assignments').select('*').is('ended_at', null).then(r => r.data || []),
-  db.from('room_assignments').select('*').then(r => r.data || []),
-  db.from('audio_rooms').select('*').order('sort').then(r => r.data || [])
+const [studs, users, assigns, ra, rooms, tchs] = await Promise.all([
+  A.fetchAll(() => db.from('students').select('*').eq('is_archived', false)),
+  A.fetchAll(() => db.from('users').select('id, name, email, role')),
+  A.fetchAll(() => db.from('plan_assignments').select('*').is('ended_at', null)),
+  A.fetchAll(() => db.from('room_assignments').select('*')),
+  db.from('audio_rooms').select('*').order('sort').then(r => r.data || []),
+  db.from('teachers').select('id, user_id').then(r => r.data || [])
 ]);
 const uById = Object.fromEntries(users.map(u => [u.id, u]));
+const teacherName = Object.fromEntries(tchs.map(t => [t.id, uById[t.user_id]?.name || '']));
 const assignOf = Object.fromEntries(assigns.map(a => [a.student_id, a]));
 const roomOf = Object.fromEntries(ra.filter(a => a.assignee_type === 'student').map(a => [a.assignee_id, a.room_id]));
 const roomById = Object.fromEntries(rooms.map(r => [r.id, r]));
-const students = studs.map(s => ({ ...s, name: uById[s.user_id]?.name || '—', email: uById[s.user_id]?.email || '' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
-const planIds = [...new Set(assigns.map(a => a.plan_id))];
-const PLANS = {};
-if (planIds.length) {
-  const [p, c, d] = await Promise.all([
-    db.from('program_plans').select('*').in('id', planIds),
-    db.from('plan_columns').select('*').in('plan_id', planIds).order('seq'),
-    fetchAll(() => db.from('plan_days').select('id, plan_id, day_number, vals').in('plan_id', planIds))
-  ]);
-  (p.data || []).forEach(x => PLANS[x.id] = { ...x, cols: [], days: {} });
-  (c.data || []).forEach(x => PLANS[x.plan_id]?.cols.push(x));
-  d.forEach(x => { if (PLANS[x.plan_id]) PLANS[x.plan_id].days[x.day_number] = x; });
-}
-
-const S = { stu: null, status: 'present', ded: {}, editing: null, makeup: null, draft: null, hist: [], pending: null };
+const allStudents = studs.map(s => ({ ...s, name: uById[s.user_id]?.name || '—', email: uById[s.user_id]?.email || '' })).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+// «طلابي» في التقارير ولوحة الشرف: المسندون إلى هذا المعلم
+const students = allStudents.filter(s => s.teacher_id === T.id);
+const PLANS = await A.loadPlansFull([...new Set(assigns.map(a => a.plan_id))]);
 const SECTIONS = {};
 
 // ============ التقارير ============
@@ -144,7 +135,7 @@ SECTIONS.reports = async el => {
       <div class="card span6 c-green"><div class="head"><h3>مقدار حفظ القرآن</h3></div>${A.donut(quran, 'طالب')}</div>
       <div class="card span6" id="hbCard"><div class="head"><h3>لوحة الشرف</h3></div><div id="hb"></div></div>
     </div>`;
-  honor($('#hb'));
+  honor($('#hb', el));
 };
 const HB = { scope: 'mine', period: 'month', plan: '', more: false };
 async function honor(box) {
@@ -178,159 +169,74 @@ async function honor(box) {
 }
 
 // ============ الرصد ============
+// المعلم يرصد لأي طالب في المنصة، وتقاريره تبقى لطلابه المسندين إليه
+let recPick = null;
+const ctxFor = s => {
+  const a = assignOf[s.id];
+  return { stu: s, assign: a, P: a ? PLANS[a.plan_id] : null, roomId: roomOf[s.id] || null, roomName: roomById[roomOf[s.id]]?.name || '',
+    teacherId: T.id, meId: me.id, canEdit: r => r.teacher_id === T.id, teacherName: id => id === T.id ? 'أنت' : (teacherName[id] || ''), onSaved: () => { RECS = null; } };
+};
 SECTIONS.record = el => {
-  el.innerHTML = `<div class="grid">
-    <div class="span12"><div class="sec-h" style="--c:var(--teal)"><b>رصد جلسة التسميع</b><span>${students.length} طالبًا مسندًا إليك</span></div></div>
-    <div class="card c-teal span12"><label class="f" for="q">اختر الطالب
-      <div class="search"><input id="q" type="search" placeholder="اكتب اسم الطالب أو بريده…" autocomplete="off" value="${esc(S.stu?.name || '')}"><div class="dd" id="dd" hidden></div></div></label></div>
-    <div id="formArea" class="span7"></div>
-    <div id="histArea" class="span5"></div>
-  </div>`;
+  el.innerHTML = `<div class="sec-h" style="--c:var(--teal)"><b>رصد جلسة التسميع</b><span>${allStudents.length} طالبًا · طلابي ${students.length}</span></div>
+    <div class="card c-teal" style="margin-bottom:10px"><label class="f" for="q">اختر الطالب
+      <div class="search"><input id="q" type="search" placeholder="اكتب اسم الطالب أو بريده…" autocomplete="off" value="${esc(recPick?.name || '')}"><div class="dd" id="dd" hidden></div></div></label></div>
+    <div id="rwBox"></div>`;
   const q = $('#q'), dd = $('#dd');
   const showList = () => {
     const t = norm(q.value);
-    const list = students.filter(s => !t || norm(s.name + ' ' + s.email).includes(t)).slice(0, 60);
-    dd.innerHTML = list.map(s => `<button type="button" data-id="${s.id}"><span>${esc(s.name)}</span><span class="small muted">${esc(roomById[roomOf[s.id]]?.name || '')}</span></button>`).join('') || '<div class="muted small" style="padding:10px">لا يوجد طالب بهذا الاسم ضمن طلابك</div>';
+    const list = allStudents.filter(s => !t || norm(s.name + ' ' + s.email).includes(t)).sort((a, b) => (b.teacher_id === T.id) - (a.teacher_id === T.id) || a.name.localeCompare(b.name, 'ar')).slice(0, 80);
+    dd.innerHTML = list.map(s => `<button type="button" data-id="${s.id}"><span>${esc(s.name)}${s.teacher_id === T.id ? ' <span class="pill ok">طالبي</span>' : ''}</span><span class="small muted">${esc(roomById[roomOf[s.id]]?.name || '')}</span></button>`).join('') || '<div class="muted small" style="padding:10px">لا يوجد طالب بهذا الاسم</div>';
     dd.hidden = false;
-    $$('button', dd).forEach(b => b.onclick = () => { dd.hidden = true; pick(b.dataset.id); });
+    $$('button', dd).forEach(b => b.onclick = () => { dd.hidden = true; recPick = allStudents.find(s => s.id === b.dataset.id); q.value = recPick.name; A.recordWidget($('#rwBox'), ctxFor(recPick)); });
   };
   q.addEventListener('focus', showList);
   q.addEventListener('input', showList);
   document.addEventListener('click', e => { if (!e.target.closest('.search')) dd.hidden = true; });
-  if (S.pending) { const id = S.pending; S.pending = null; pick(id); }
-  else if (S.stu) renderStudent();
+  if (recPick) A.recordWidget($('#rwBox'), ctxFor(recPick));
 };
-function pick(id) { S.stu = students.find(s => s.id === id); S.status = 'present'; S.ded = {}; S.editing = null; S.makeup = null; S.draft = null; $('#q').value = S.stu.name; loadHist().then(renderStudent); }
-async function loadHist() {
-  const { data } = await db.from('plan_recitations').select('*').eq('student_id', S.stu.id).is('superseded_by', null).order('rec_date', { ascending: false }).order('created_at', { ascending: false }).limit(15);
-  S.hist = data || [];
-}
-
-function renderStudent() {
-  const s = S.stu, a = assignOf[s.id], P = a ? PLANS[a.plan_id] : null;
-  const fa = $('#formArea'), ha = $('#histArea');
-  ha.innerHTML = `<div class="card c-blue"><div class="head"><h3>آخر ما رُصد للطالب</h3></div>
-    ${S.hist.length ? S.hist.map(r => `<div class="hist">
-      <div class="row"><b>${A.dayName(r.rec_date)} ${A.greg(r.rec_date)}</b>${statusPill(r.status)}</div>
-      <div class="small muted">${r.memo_from ? 'الحفظ: ' + +r.memo_from + '–' + +r.memo_to + ' · ' : ''}${r.score != null ? 'الدرجة: ' + fmtNum(r.score, 2) : ''}${r.makes_up_date ? ' · تعويض عن ' + A.greg(r.makes_up_date) : ''}${r.notes ? ' · ' + esc(r.notes) : ''}</div>
-      ${r.teacher_id === T.id ? `<div><button class="btn ghost sm" data-edit="${r.id}">تعديل هذا الرصد</button></div>` : '<div class="hint">رصده معلم آخر</div>'}</div>`).join('') : '<div class="empty">لا يوجد رصد سابق</div>'}</div>`;
-  $$('[data-edit]', ha).forEach(b => b.onclick = () => startEdit(b.dataset.edit));
-
-  if (!P) { fa.innerHTML = '<div class="card c-red"><div class="error" style="margin:0">لم تُسند للطالب خطة بعد، فلا يظهر نموذج الرصد. اطلب من المشرف إسناد خطة له.</div></div>'; return; }
-  if (P.recitation_mode === 'none') { fa.innerHTML = `<div class="card"><div class="hintbox">خطة الطالب «${esc(P.name)}» بلا تسميع، فلا يُرصد له تسميع.</div></div>`; return; }
-  const nDays = Object.keys(P.days).length;
-  const dayN = A.planDayFor(a, P, nDays);
-  const recDay = A.isRecitationDay(P, TODAY);
-  const recDays = P.recitation_mode === 'daily' ? P.workdays : P.recitation_days;
-  const mkWin = P.discipline_rules?.makeup_within_days ?? 14;
-  const done = new Set(S.hist.filter(r => ['present', 'makeup', 'review_only', 'excused'].includes(r.status)).map(r => r.rec_date));
-  S.hist.filter(r => r.makes_up_date).forEach(r => done.add(r.makes_up_date));
-  const missed = [];
-  for (let i = 1, d = A.addDays(TODAY, -1); i <= Math.max(mkWin, 1) && d >= a.start_date; i++, d = A.addDays(d, -1)) if (A.isRecitationDay(P, d) && !done.has(d)) missed.push(d);
-  const ed = S.editing, st = S.status;
-  const targetDayN = st === 'makeup' && S.makeup ? A.planDayFor(a, P, nDays, S.makeup) : dayN;
-  const day = P.days[targetDayN];
-  const vals = Object.assign({}, ed ? (ed.vals || {}) : (day?.vals || {}), S.draft || {});
-  const tTasks = A.groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both');
-  const refTasks = A.groupTasks(P.cols, c => c.executor === 'info');
-  const showFields = ['present', 'makeup', 'review_only'].includes(st);
-  const reviewOnly = st === 'review_only';
-  const R = P.score_rules || { max: 10, deductions: [] };
-  const score = Math.max(0, (R.max || 0) - (R.deductions || []).reduce((x, d) => x + (S.ded[d.key] || 0) * (+d.value || 0), 0));
-  const field = c => {
-    const v = vals[c.id];
-    if (c.value_type === 'bool') return `<label class="chips"><label><input type="checkbox" data-c="${c.id}"${v ? ' checked' : ''}>${esc(c.header)}</label></label>`;
-    return `<label class="f small">${esc(c.header)}<input data-c="${c.id}" type="${c.value_type === 'number' ? 'number' : 'text'}" ${c.value_type === 'number' ? 'step="0.5" inputmode="decimal"' : ''} value="${esc(v ?? '')}"></label>`;
-  };
-  fa.innerHTML = `<div class="card c-teal">
-    <div class="row"><div><h2>${esc(s.name)}</h2><p class="small muted">${esc(P.name)} · الفترة: ${esc(roomById[roomOf[s.id]]?.name || '—')}</p></div>
-      <div style="text-align:left"><span class="pill gold">اليوم ${dayN} من الخطة</span><div class="hint" style="margin-top:3px">${recDay ? 'اليوم يوم تسميع' : 'اليوم ليس من أيام التسميع (' + recDays.map(i => A.DAYS[i]).join('، ') + ')'}</div></div></div>
-    ${ed ? `<div class="hintbox" style="margin-top:8px">تعدّل رصد يوم ${A.greg(ed.rec_date)}. يُحفظ التعديل سجلًا جديدًا ويبقى القديم في التاريخ. <button class="btn ghost sm" id="cancelEdit">إلغاء التعديل</button></div>` : ''}
-    <div style="margin-top:10px"><b class="small">حالة الطالب</b><div class="seg" style="margin-top:6px">${['present', 'makeup', 'review_only', 'excused', 'absent'].map(k => `<button type="button" data-st="${k}" aria-pressed="${st === k}">${STATUS[k].label}</button>`).join('')}</div></div>
-    ${st === 'makeup' ? `<label class="f" for="mk" style="margin-top:10px">تعويض عن يوم <span class="hint">أيام تسميع فاتته خلال ${mkWin} يومًا ولم تُعوَّض</span><select id="mk">${(ed?.makes_up_date && !missed.includes(ed.makes_up_date) ? [ed.makes_up_date] : []).concat(missed).map(d => `<option value="${d}"${S.makeup === d ? ' selected' : ''}>${A.dayName(d)} ${A.greg(d)}</option>`).join('') || '<option value="">لا توجد أيام فائتة</option>'}</select></label>` : ''}
-    ${showFields ? `<div class="stack" style="margin-top:12px">
-      ${tTasks.filter(t => !reviewOnly || t.task !== 'memo').map(t => `<div class="task"><div class="row"><b>${esc(t.name)}</b><span class="hint">المقرر${st === 'makeup' ? ' ليوم التعويض' : ''}: ${esc(A.fmtTaskVal(t, day?.vals) ?? '—')}</span></div><div class="g2">${t.cols.map(field).join('')}</div></div>`).join('') || '<div class="hint">لا توجد أعمدة يرصدها المعلم في هذه الخطة.</div>'}
-      ${refTasks.map(t => { const v = A.fmtTaskVal(t, day?.vals); return v == null ? '' : `<div class="task ref"><b>${esc(t.name)} <span class="hint">للعرض</span></b><span class="small">${t.cols[0].value_type === 'url' ? `<a href="${esc(day.vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(v)}</span></div>`; }).join('')}
-    </div>
-    ${!reviewOnly && (R.deductions || []).length ? `<div class="card" style="--a:var(--violet);margin-top:12px;padding:8px 12px"><b>الأخطاء</b>
-      ${R.deductions.map(d => `<div class="ded"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ctl"><button type="button" data-d="${esc(d.key)}" data-v="-1" aria-label="إنقاص">−</button><b>${S.ded[d.key] || 0}</b><button type="button" data-d="${esc(d.key)}" data-v="1" aria-label="زيادة">+</button></span></div>`).join('')}
-      <div class="row" style="margin-top:6px"><span>الدرجة</span><span class="score">${fmtNum(score, 2)} <span class="hint">من ${R.max}</span></span></div></div>` : ''}`
-    : `<div class="hintbox" style="margin-top:10px">${st === 'excused' ? 'يُسجَّل الطالب مستأذنًا لهذا اليوم، ولا يُحسب غيابًا.' : 'يُسجَّل الطالب غائبًا لهذا اليوم، ويدخل في حساب التنبيهات والإنذارات.'}</div>`}
-    <label class="f" for="notes" style="margin-top:10px">ملاحظاتك على الطالب <span class="hint">اختياري</span><textarea id="notes">${esc(S.notes ?? ed?.notes ?? '')}</textarea></label>
-    ${ed ? `<label class="f" for="reason" style="margin-top:8px">سبب التعديل<input id="reason" type="text"></label>` : ''}
-    <button class="btn block" id="save" style="margin-top:12px">${ed ? 'حفظ التعديل' : 'رصد الجلسة'}</button>
-  </div>`;
-  const keepDraft = () => { S.draft = {}; $$('[data-c]', fa).forEach(i => { S.draft[i.dataset.c] = i.type === 'checkbox' ? i.checked : (i.value === '' ? null : (i.type === 'number' ? Number(i.value) : i.value)); }); S.notes = $('#notes').value; };
-  $$('[data-st]', fa).forEach(b => b.onclick = () => { keepDraft(); S.status = b.dataset.st; if (S.status === 'makeup' && !S.makeup) { S.makeup = missed[0] || null; S.draft = null; } renderStudent(); });
-  $('#mk') && ($('#mk').onchange = e => { S.makeup = e.target.value; S.draft = null; renderStudent(); });
-  $$('[data-d]', fa).forEach(b => b.onclick = () => { keepDraft(); const k = b.dataset.d; S.ded[k] = Math.max(0, (S.ded[k] || 0) + +b.dataset.v); renderStudent(); });
-  $('#cancelEdit') && ($('#cancelEdit').onclick = () => { S.editing = null; S.ded = {}; S.status = 'present'; S.draft = null; S.notes = null; S.makeup = null; renderStudent(); });
-  $('#save').onclick = () => save(P, day, score);
-}
-
-function startEdit(id) {
-  const r = S.hist.find(x => x.id === id); if (!r) return;
-  S.editing = r; S.status = r.status; S.ded = { ...(r.deductions || {}) }; S.makeup = r.makes_up_date; S.draft = null; S.notes = null;
-  renderStudent(); window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-async function save(P, day, score) {
-  const s = S.stu, st = S.status, ed = S.editing, btn = $('#save');
-  if (st === 'makeup' && !S.makeup) return toast('لا يوجد يوم فائت للتعويض عنه', true);
-  if (ed && !$('#reason').value.trim()) return toast('اكتب سبب التعديل', true);
-  const vals = {};
-  $$('[data-c]').forEach(i => { const c = P.cols.find(x => x.id === i.dataset.c); if (!c) return; if (c.value_type === 'bool') vals[c.id] = i.checked; else if (i.value !== '') vals[c.id] = c.value_type === 'number' ? Number(i.value) : i.value; });
-  for (const c of P.cols.filter(c => c.range_role === 'start' && c.value_type === 'number')) { const e = P.cols.find(x => x.id === c.pair_column_id); if (e && vals[c.id] != null && vals[e.id] != null && vals[c.id] > vals[e.id]) return toast(`«${c.header}» أكبر من «${e.header}»`, true); }
-  const mF = P.cols.find(c => c.task === 'memo' && c.range_role === 'start'), mT = P.cols.find(c => c.task === 'memo' && c.range_role === 'end');
-  const withScore = ['present', 'makeup'].includes(st);
-  const row = {
-    student_id: s.id, teacher_id: T.id, plan_id: P.id, plan_day_id: day?.id || null,
-    rec_date: ed ? ed.rec_date : TODAY, status: st, makes_up_date: st === 'makeup' ? S.makeup : null,
-    vals: ['present', 'makeup', 'review_only'].includes(st) ? vals : {}, deductions: withScore ? S.ded : {},
-    score: withScore ? score : null, errors_total: withScore ? Object.values(S.ded).reduce((x, y) => x + y, 0) : null,
-    memo_from: withScore && mF ? (vals[mF.id] ?? null) : null, memo_to: withScore && mT ? (vals[mT.id] ?? null) : null,
-    notes: $('#notes').value.trim() || null, room_id: roomOf[s.id] || null, created_by: me.id
-  };
-  btn.disabled = true; btn.textContent = 'جارٍ الحفظ…';
-  const { data: ins, error } = await db.from('plan_recitations').insert(row).select('id').single();
-  if (error) { btn.disabled = false; btn.textContent = ed ? 'حفظ التعديل' : 'رصد الجلسة'; return toast('لم يُحفظ: ' + error.message, true); }
-  if (ed) {
-    const { error: e2 } = await db.from('plan_recitations').update({ superseded_by: ins.id, edit_reason: $('#reason').value.trim() }).eq('id', ed.id);
-    if (e2) toast('حُفظ الرصد الجديد لكن تعذّر ربطه بالقديم: ' + e2.message, true);
-  }
-  toast(ed ? 'حُفظ التعديل' : 'رُصدت الجلسة'); RECS = null;
-  S.editing = null; S.ded = {}; S.draft = null; S.notes = null; S.status = 'present'; S.makeup = null;
-  await loadHist(); renderStudent();
-}
 
 // ============ الغرف ============
 const OPEN = new Set();
+async function roomLast(ids) {
+  if (!ids.length) return {};
+  const { data } = await db.from('plan_recitations').select('student_id, rec_date, status').in('student_id', ids).is('superseded_by', null).order('rec_date', { ascending: false }).limit(ids.length * 8);
+  const last = {}; (data || []).forEach(r => { if (!last[r.student_id]) last[r.student_id] = r; });
+  return last;
+}
 SECTIONS.rooms = async el => {
   const mine = ra.filter(x => x.assignee_type === 'teacher' && x.assignee_id === T.id).map(x => roomById[x.room_id]).filter(Boolean);
-  const recs = await myRecs();
-  const last = {}; recs.forEach(r => { if (!last[r.student_id]) last[r.student_id] = r; });
   const now = A.nowMakkahHM(), dn = A.DAYS[A.dowMakkah()];
+  const inRoom = id => allStudents.filter(s => roomOf[s.id] === id && s.status === 'active').sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  const openIds = mine.filter(r => OPEN.has(r.id)).flatMap(r => inRoom(r.id).map(s => s.id));
+  const last = await roomLast(openIds);
   el.innerHTML = `<div class="sec-h" style="--c:var(--blue)"><b>الغرف الصوتية</b><span>بتوقيت مكة · الآن ${now}</span></div>
-    <p class="hint" style="margin-bottom:8px">اضغط على الغرفة لعرض طلابك فيها.</p>
+    <p class="hint" style="margin-bottom:8px">اضغط على الغرفة لعرض طلابها، و«تسجيل الرصد» يفتح نافذة الرصد هنا.</p>
     <div class="stack">${mine.map(r => {
       const live = r.active && (r.days || []).includes(dn) && r.start_time && now >= r.start_time.slice(0, 5) && now <= (r.end_time || '23:59').slice(0, 5);
-      const st = students.filter(s => roomOf[s.id] === r.id);
+      const st = inRoom(r.id);
       const open = OPEN.has(r.id);
       return `<div class="room-card${open ? ' open' : ''}" data-room="${r.id}">
         <button type="button" class="room-head" aria-expanded="${open}"><div><b>${esc(r.name)}</b> ${live ? '<span class="pill ok">الآن</span>' : ''}<div class="small muted">${(r.days || []).join('، ')} · ${(r.start_time || '').slice(0, 5)} – ${(r.end_time || '').slice(0, 5)} · ${st.length} طالب</div></div><span class="chev">▼</span></button>
         ${open ? `<div class="room-body">
           <div class="row" style="margin-bottom:8px">${r.meet_url && (live || r.outside_behavior === 'always_visible') ? `<a class="btn" href="${esc(r.meet_url)}" target="_blank" rel="noopener">ادخل الغرفة</a>` : r.outside_behavior === 'hidden' ? '' : '<button class="btn" disabled title="يُفتح في وقت الفترة">ادخل الغرفة</button>'}</div>
-          <div>${st.map(s => { const l = last[s.id]; const P = PLANS[assignOf[s.id]?.plan_id]; return `<div class="rs"><b>${esc(s.name)}</b><button class="btn sm" data-rec="${s.id}">تسجيل الرصد</button>
-            <div class="meta"><span>${esc(P?.name || 'بلا خطة')}</span><span>·</span>${l ? `<span>آخر رصد ${A.greg(l.rec_date)}</span>${statusPill(l.status)}` : '<span>لا يوجد رصد</span>'}</div></div>`; }).join('') || '<div class="empty">لا يوجد من طلابك في هذه الغرفة</div>'}</div></div>` : ''}
+          <div>${st.map(s => { const l = last[s.id]; const P = PLANS[assignOf[s.id]?.plan_id]; return `<div class="rs" data-row="${s.id}"><b>${esc(s.name)}</b><button class="btn sm" data-rec="${s.id}" type="button">تسجيل الرصد</button>
+            <div class="meta"><span>${esc(P?.name || 'بلا خطة')}</span><span>·</span>${l ? `<span>آخر رصد ${A.greg(l.rec_date)}</span>${statusPill(l.status)}` : '<span>لا يوجد رصد</span>'}</div></div>`; }).join('') || '<div class="empty">لا يوجد طلاب في هذه الغرفة</div>'}</div></div>` : ''}
       </div>`; }).join('') || '<div class="empty">لا توجد غرف مسندة إليك</div>'}</div>`;
-  $$('.room-head', el).forEach(b => b.onclick = () => { const id = b.closest('.room-card').dataset.room; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); SECTIONS.rooms(el).then(() => { const c = $(`.room-card[data-room="${id}"]`, el); if (OPEN.has(id)) c?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); });
-  $$('[data-rec]', el).forEach(b => b.onclick = () => { S.pending = b.dataset.rec; location.hash = 'record'; });
+  $$('.room-head', el).forEach(b => b.onclick = () => { const id = b.closest('.room-card').dataset.room; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); SECTIONS.rooms(el); });
+  $$('[data-rec]', el).forEach(b => b.onclick = () => {
+    const s = allStudents.find(x => x.id === b.dataset.rec);
+    A.drawer('رصد: ' + s.name, '<div id="rwPop"></div>', root => {
+      const c = ctxFor(s); c.layout = 'stack';
+      c.onSaved = async () => { RECS = null; const l = await roomLast([s.id]); const row = $(`.rs[data-row="${s.id}"] .meta`, el); if (row && l[s.id]) row.innerHTML = `<span>${esc(PLANS[assignOf[s.id]?.plan_id]?.name || 'بلا خطة')}</span><span>·</span><span>آخر رصد ${A.greg(l[s.id].rec_date)}</span>${statusPill(l[s.id].status)}`; };
+      A.recordWidget($('#rwPop', root), c);
+    });
+  });
 };
 
 // ============ الملف الشخصي ============
 SECTIONS.profile = el => A.profileSection(el, me, { extra: true });
 
-const TABS = [['reports', 'التقارير', 'report'], ['record', 'رصد جلسة التسميع', 'mic'], ['rooms', 'الغرف الصوتية', 'room']];
+const TABS = [['reports', 'التقارير', 'report'], ['rooms', 'الغرف الصوتية', 'room'], ['record', 'رصد جلسة التسميع', 'mic']];
 function route() {
   const k = (location.hash || '#reports').slice(1);
   const key = SECTIONS[k] ? k : 'reports';

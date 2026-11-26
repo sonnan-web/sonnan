@@ -239,3 +239,22 @@ create extension if not exists pg_cron;
 -- select cron.schedule('send-push-every-minute', '* * * * *', $$ select net.http_post(url := 'https://<REF>.supabase.co/functions/v1/send-push',
 --   headers := '{"Content-Type":"application/json","Authorization":"Bearer <ANON_JWT>"}'::jsonb, body := '{}'::jsonb)
 --   where exists (select 1 from public.notifications where channel = 'push' and status = 'queued') $$);
+
+-- ===== إضافة لاحقة: المعلم يرى كل الطلاب ويرصد لأي منهم، ويعدّل ما رصده هو فقط =====
+create or replace function public.is_teacher() returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.teachers t join public.users u on u.id = t.user_id where t.user_id = auth.uid() and t.is_archived = false and u.role = 'teacher') $$;
+create or replace function public.is_active_student(stu uuid) returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.students s where s.id = stu and s.is_archived = false) $$;
+revoke execute on function public.is_teacher(), public.is_active_student(uuid) from anon, public;
+grant execute on function public.is_teacher(), public.is_active_student(uuid) to authenticated;
+create policy teacher_all_students on public.students for select to authenticated using (public.is_teacher() and is_archived = false);
+create policy teacher_sees_people on public.users for select to authenticated using (public.is_teacher() and role in ('student','teacher'));
+create policy teacher_all_assignments on public.plan_assignments for select to authenticated using (public.is_teacher());
+create policy teacher_all_room_assign on public.room_assignments for select to authenticated using (public.is_teacher());
+create policy teacher_all_teachers on public.teachers for select to authenticated using (public.is_teacher());
+create policy teacher_rec_read_all on public.plan_recitations for select to authenticated using (public.is_teacher() and public.is_active_student(student_id));
+drop policy if exists teacher_rec_insert on public.plan_recitations;
+create policy teacher_rec_insert on public.plan_recitations for insert to authenticated with check (teacher_id = public.get_teacher_id_for_current_user() and public.is_active_student(student_id));
+drop policy if exists teacher_rec_supersede on public.plan_recitations;
+create policy teacher_rec_supersede on public.plan_recitations for update to authenticated
+  using (teacher_id = public.get_teacher_id_for_current_user() and superseded_by is null) with check (teacher_id = public.get_teacher_id_for_current_user());
