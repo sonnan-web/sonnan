@@ -57,7 +57,7 @@ $('#menuBtn').onclick = () => $('#side').classList.toggle('open');
 
 // ============ القائمة ============
 const NAV = [
-  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية للتسميع', 'mic'], ['dexec', 'المتابعة اليومية للواجب', 'exam'], ['recs', 'سجل رصد المعلم', 'list'], ['srecs', 'سجل رصد الطالب', 'book']]],
+  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية للتسميع', 'mic'], ['dexec', 'المتابعة اليومية للواجب', 'exam'], ['cal', 'تقويم الإنجاز', 'leave'],['recs', 'سجل رصد المعلم', 'list'], ['srecs', 'سجل رصد الطالب', 'book']]],
   ['الطلاب', [['students', 'الطلاب وملفاتهم', 'users'], ['leaves', 'الاستئذان', 'leave'], ['discipline', 'الانضباط والمتابعة', 'alert'], ['exams', 'الاختبارات المرحلية', 'exam'], ['honor', 'لوحة الشرف', 'star']]],
   ['البرامج', [['plans', 'خطط البرامج', 'plan']]],
   ['المعلمون والفترات', [['teachers', 'المعلمون', 'teacher'], ['rooms', 'الفترات والغرف الصوتية', 'room']]],
@@ -1492,6 +1492,134 @@ function teacherSessions(r, from, to) {
     dataTable($('#tsList', root), { rows: list.map(x => ({ x, date: x.rec_date, time: hhmm(x.created_at), name: D.studentById[x.student_id]?.name || '—', room: D.roomById[x.room_id]?.name || '—', status: STATUS[x.status]?.label, h: x._h, score: x.score != null ? +x.score : null })), sortKey: 'date', dir: -1, pageSize: 100, cols: [
       { key: 'date', label: 'التاريخ', html: o => A.greg(o.date) }, { key: 'time', label: 'الوقت' }, { key: 'name', label: 'الطالب' }, { key: 'room', label: 'الفترة', filter: true },
       { key: 'status', label: 'الحالة', filter: true, html: o => statusPill(o.x.status) }, { key: 'h', label: 'أحاديث', num: true }, { key: 'score', label: 'الدرجة', num: true, html: o => o.score == null ? '—' : fmtNum(o.score, 2) }] });
+  });
+}
+
+// ============ تقويم الإنجاز: صف لكل طالب وعمود لكل يوم (التسميع والتنفيذ) ============
+const CAL = { plan: '', month: TODAY.slice(0, 7), view: 'both', teacher: '', room: '' };
+const REC_K = { done: ['تم', 'ت', '#1E8E5A', '#fff'], makeup: ['عوّض', 'ع', '#C9A227', '#2a2200'], review: ['ربط ومراجعة', 'ر', '#2F6FB0', '#fff'], excused: ['مستأذن', 'س', '#7A5BB5', '#fff'], behind: ['متخلّف', '×', '#C8423B', '#fff'], open: ['اليوم، لم يُرصد بعد', '…', '#E9EEF0', '#555'], off: ['لا تسميع', '', 'transparent', ''], future: ['قادم', '', 'transparent', ''] };
+const EXE_K = { full: ['أنجز الواجب', '✓', '#1E8E5A', '#fff'], part: ['أنجز جزءًا', '◐', '#E0A526', '#2a2200'], none: ['لم ينفّذ', '✗', '#C8423B', '#fff'], excused: ['مستأذن', 'س', '#7A5BB5', '#fff'], open: ['اليوم', '…', '#E9EEF0', '#555'], off: ['لا واجب', '', 'transparent', ''], future: ['قادم', '', 'transparent', ''] };
+// حالة طالب في يوم: للتسميع وللتنفيذ
+function dayState(s, P, d, ctx) {
+  const out = {};
+  const rs = (D.recsByStudent[s.id] || []).filter(r => r.plan_id === P.id);
+  const start = [s.assign.start_date, s.join_date].filter(Boolean).sort().pop();
+  const before = d < start, fut = d > TODAY;
+  if (P.recitation_mode !== 'none') {
+    const on = rs.filter(r => r.rec_date === d), mk = rs.find(r => r.status === 'makeup' && r.makes_up_date === d);
+    const has = st => on.some(r => r.status === st);
+    out.rec = has('present') ? 'done' : mk ? 'makeup' : has('makeup') && !on.some(r => r.makes_up_date) ? 'makeup' : has('review_only') ? 'review' : has('excused') || ctx.leaveOn(s.id, d) ? 'excused'
+      : before || !A.isRecitationDay(P, d) ? 'off' : fut ? 'future' : d === TODAY ? 'open' : 'behind';
+    out.recs = on.concat(mk ? [mk] : []);
+  }
+  if (ctx.hasExec) {
+    if (before || !isWork(P, d)) out.exe = 'off';
+    else if (fut) out.exe = 'future';
+    else if (ctx.leaveOn(s.id, d)) out.exe = 'excused';
+    else {
+      const dn = A.planDayFor(s.assign, P, ctx.nDays, d), dv = P.days[dn]?.vals || {}, done = ctx.prog[s.id]?.[dn] || new Set();
+      let n = 0, k = 0; const items = [];
+      ctx.tasksE.forEach(t => { const v = A.fmtTaskVal(t, dv); if (v == null) return; n++; const ok = t.cols.some(c => done.has(c.id)); if (ok) k++; items.push([t.name, v, ok]); });
+      out.exe = !n ? 'off' : k === n ? 'full' : k ? 'part' : d === TODAY ? 'open' : 'none';
+      out.items = items; out.pday = dn;
+    }
+  }
+  return out;
+}
+SECTIONS.cal = async el => {
+  await loadRecs();
+  const PL = await plansFull();
+  const usable = D.plans.filter(p => p.status !== 'archived');
+  if (!CAL.plan || !PL[CAL.plan]) CAL.plan = (usable.find(p => p.status === 'active') || usable[0])?.id || '';
+  const P = PL[CAL.plan];
+  const [y, m] = CAL.month.split('-').map(Number);
+  const first = `${CAL.month}-01`, last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  const shiftM = k => { const d = new Date(Date.UTC(y, m - 1 + k, 1)); return d.toISOString().slice(0, 7); };
+  const hasRec = P && P.recitation_mode !== 'none';
+  const tasksE = P ? A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both') : [];
+  const hasExec = P && P.student_execution !== 'none' && tasksE.length > 0;
+  if (CAL.view === 'rec' && !hasRec) CAL.view = 'exe';
+  if (CAL.view === 'exe' && !hasExec) CAL.view = 'rec';
+  if (CAL.view === 'both' && !(hasRec && hasExec)) CAL.view = hasRec ? 'rec' : 'exe';
+  const seg = (v, l, ok) => ok ? `<button type="button" data-cv="${v}" aria-pressed="${CAL.view === v}">${l}</button>` : '';
+  el.innerHTML = `${secHead('تقويم الإنجاز', P ? esc(P.name) + ' · ' + A.hijri(first).replace(/^\d+\s*/, '') : '', 'teal', `<button class="btn ghost sm" id="cExp">تصدير إلى إكسل</button>`)}
+    <div class="card" style="--a:var(--teal);margin-bottom:10px"><div class="tbl-tools" style="margin:0">
+      <label class="small">الخطة <select id="cPlan" style="width:auto">${usable.map(p => opt(p.id, p.name, p.id === CAL.plan)).join('')}</select></label>
+      <button class="btn ghost sm" id="cPrev" type="button">الشهر السابق</button><input type="month" id="cMonth" value="${CAL.month}" style="width:auto"><button class="btn ghost sm" id="cNext" type="button">الشهر التالي</button>
+      <div class="seg">${seg('both', 'التسميع والتنفيذ', hasRec && hasExec)}${seg('rec', 'التسميع', hasRec)}${seg('exe', 'التنفيذ', hasExec)}</div>
+      <select id="cTe" style="width:auto"><option value="">كل المعلمين</option>${teacherOpts(CAL.teacher)}</select>
+      <select id="cRo" style="width:auto"><option value="">كل الفترات</option>${roomOpts(CAL.room)}</select>
+      <input type="search" id="cQ" placeholder="بحث باسم الطالب…" style="width:auto;min-width:180px">
+    </div></div>
+    <div class="card" style="--a:var(--teal);margin-bottom:10px" id="cLegend"></div>
+    <div class="card c-teal" id="cCard"><div class="head"><h3>${A.greg(first)} – ${A.greg(last)}</h3><span class="hint">اضغط على أي خانة لتفاصيل اليوم، وعلى اسم الطالب لتقويمه الشهري</span></div><div id="cGrid"></div></div>`;
+  $('#cPlan').onchange = e => { CAL.plan = e.target.value; route(); };
+  $('#cMonth').onchange = e => { if (e.target.value) { CAL.month = e.target.value; route(); } };
+  $('#cPrev').onclick = () => { CAL.month = shiftM(-1); route(); };
+  $('#cNext').onclick = () => { CAL.month = shiftM(1); route(); };
+  $$('[data-cv]', el).forEach(b => b.onclick = () => { CAL.view = b.dataset.cv; route(); });
+  $('#cTe').onchange = e => { CAL.teacher = e.target.value; route(); };
+  $('#cRo').onchange = e => { CAL.room = e.target.value; route(); };
+  cardFull($('#cCard'));
+  if (!P) { $('#cGrid').innerHTML = '<div class="empty">لا توجد خطط.</div>'; return; }
+  const studs = actives().filter(s => s.assign?.plan_id === P.id && (!CAL.teacher || s.teacher_id === CAL.teacher) && (!CAL.room || D.roomOfStudent[s.id] === CAL.room)).sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+  const { data: lv } = await db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').lte('date_from', last).gte('date_to', first);
+  const ctx = { leaveOn: (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d), hasExec, tasksE, nDays: Object.keys(P.days).length, prog: hasExec ? await planProgress(P.id) : {} };
+  if (!el.isConnected) return;
+  const dates = datesBetween(first, last);
+  const grid = studs.map(s => ({ s, days: dates.map(d => dayState(s, P, d, ctx)) }));
+  const showR = CAL.view !== 'exe', showE = CAL.view !== 'rec';
+  // دليل الألوان + مجاميع الشهر
+  const tot = {}; grid.forEach(g => g.days.forEach(x => { if (showR && x.rec) tot['r' + x.rec] = (tot['r' + x.rec] || 0) + 1; if (showE && x.exe) tot['e' + x.exe] = (tot['e' + x.exe] || 0) + 1; }));
+  const chip = (K, k, p) => `<span class="cal-lg"><i style="background:${K[k][2]};color:${K[k][3]}">${K[k][1]}</i>${K[k][0]} <b>${fmtNum(tot[p + k] || 0)}</b></span>`;
+  $('#cLegend').innerHTML = `${showR ? `<div class="cal-legend"><b>التسميع:</b>${['done', 'makeup', 'review', 'excused', 'behind'].map(k => chip(REC_K, k, 'r')).join('')}</div>` : ''}
+    ${showE ? `<div class="cal-legend"><b>التنفيذ:</b>${['full', 'part', 'none', 'excused'].map(k => chip(EXE_K, k, 'e')).join('')}</div>` : ''}
+    ${CAL.view === 'both' ? '<div class="hint" style="margin-top:4px">في كل خانة: الجزء العلوي للتسميع، والسفلي للتنفيذ.</div>' : ''}`;
+  const cellHtml = (x, si, di) => {
+    const r = showR && x.rec ? REC_K[x.rec] : null, e = showE && x.exe ? EXE_K[x.exe] : null;
+    const part = (K, cls) => K ? `<span class="${cls}" style="background:${K[2]};color:${K[3]}">${K[1]}</span>` : `<span class="${cls}"></span>`;
+    return `<td class="cal-c${CAL.view === 'both' ? ' two' : ''}" data-c="${si}|${di}" title="${esc([r && 'التسميع: ' + r[0], e && 'التنفيذ: ' + e[0]].filter(Boolean).join(' · '))}">${showR ? part(r, 'cr') : ''}${showE ? part(e, 'ce') : ''}</td>`;
+  };
+  const sumOf = g => { const c = {}; g.days.forEach(x => { if (x.rec) c[x.rec] = (c[x.rec] || 0) + 1; if (x.exe) c['e' + x.exe] = (c['e' + x.exe] || 0) + 1; }); return c; };
+  const draw = () => {
+    const t = norm($('#cQ').value);
+    const rows = grid.map((g, i) => [g, i]).filter(([g]) => !t || norm(g.s.name).includes(t));
+    $('#cGrid').innerHTML = rows.length ? `<div class="tbl-wrap" style="max-height:70vh"><table class="cal-t"><thead><tr><th class="cal-n">الطالب</th>${dates.map(d => `<th class="${d === TODAY ? 'today' : ''}${isWork(P, d) ? '' : ' wk'}" title="${A.dayName(d)} ${A.greg(d)} · ${A.hijri(d)}">${A.dayName(d).replace('ال', '').slice(0, 2)}<br>${+d.slice(8)}</th>`).join('')}
+      ${showR ? '<th class="num" title="أيام التسميع المنجزة: تم + عوّض + ربط ومراجعة">تسميع</th><th class="num" title="متخلّف">×</th>' : ''}${showE ? '<th class="num" title="أيام الواجب المكتملة">تنفيذ</th><th class="num" title="لم ينفّذ">✗</th>' : ''}</tr></thead><tbody>
+      ${rows.map(([g, i]) => { const c = sumOf(g); return `<tr><td class="cal-n"><a href="#" data-sc="${i}">${esc(g.s.name)}</a><div class="hint">${esc(g.s.teacher)} · ${esc(g.s.room)}</div></td>${g.days.map((x, di) => cellHtml(x, i, di)).join('')}
+        ${showR ? `<td class="num"><b style="color:var(--green)">${(c.done || 0) + (c.makeup || 0) + (c.review || 0)}</b></td><td class="num">${c.behind ? `<b style="color:var(--red)">${c.behind}</b>` : '0'}</td>` : ''}${showE ? `<td class="num"><b style="color:var(--green)">${c.efull || 0}</b></td><td class="num">${c.enone ? `<b style="color:var(--red)">${c.enone}</b>` : '0'}</td>` : ''}</tr>`; }).join('')}
+      </tbody></table></div><div class="tbl-foot">${rows.length} طالبًا</div>` : '<div class="empty">لا يوجد طلاب في هذه الخطة بهذه الفلاتر</div>';
+    $$('[data-c]', $('#cGrid')).forEach(td => td.onclick = () => { const [si, di] = td.dataset.c.split('|').map(Number); calDay(grid[si].s, P, dates[di], grid[si].days[di]); });
+    $$('[data-sc]', $('#cGrid')).forEach(a => a.onclick = e => { e.preventDefault(); const g = grid[+a.dataset.sc]; calStudent(g.s, P, dates, g.days); });
+  };
+  $('#cQ').addEventListener('input', draw); draw();
+  $('#cExp').onclick = () => {
+    const lab = x => [showR && x.rec && REC_K[x.rec][1] ? REC_K[x.rec][0] : '', showE && x.exe && EXE_K[x.exe][1] ? EXE_K[x.exe][0] : ''].filter(Boolean).join(' / ');
+    A.exportXlsx(`تقويم الإنجاز - ${P.name} - ${CAL.month}`, 'تقويم الإنجاز', [['الطالب', g => g.s.name], ['المعلم', g => g.s.teacher], ['الفترة', g => g.s.room], ...dates.map((d, di) => [d, g => lab(g.days[di])]),
+      ...(showR ? [['أيام التسميع المنجزة', g => g.days.filter(x => ['done', 'makeup', 'review'].includes(x.rec)).length], ['متخلّف', g => g.days.filter(x => x.rec === 'behind').length]] : []),
+      ...(showE ? [['أيام التنفيذ المكتملة', g => g.days.filter(x => x.exe === 'full').length], ['لم ينفّذ', g => g.days.filter(x => x.exe === 'none').length]] : [])], grid);
+  };
+};
+function calDay(s, P, d, x) {
+  const recLine = r => `<div class="hist"><div class="row"><b>${STATUS[r.status]?.label || r.status}</b>${r.makes_up_date ? `<span class="hint">تعويض عن ${A.greg(r.makes_up_date)} · رُصد ${A.greg(r.rec_date)}</span>` : ''}</div><div class="small muted">${r.memo_from ? 'الحفظ: ' + +r.memo_from + '–' + +r.memo_to + ' · ' : ''}${r.score != null ? 'الدرجة: ' + fmtNum(r.score, 2) + ' · ' : ''}${esc(D.teacherById[r.teacher_id]?.name || '')}${r.notes ? ' · ' + esc(r.notes) : ''}</div></div>`;
+  drawer(`${s.name} · ${A.dayName(d)} ${A.greg(d)}`, `<div class="stack">
+    ${x.rec ? `<div class="card c-teal"><div class="head"><h3>التسميع</h3><span class="pill" style="background:${REC_K[x.rec][2]};color:${REC_K[x.rec][3]}">${REC_K[x.rec][0]}</span></div>${(x.recs || []).map(recLine).join('') || '<div class="hint">لا يوجد رصد لهذا اليوم.</div>'}</div>` : ''}
+    ${x.exe ? `<div class="card c-violet"><div class="head"><h3>التنفيذ${x.pday ? ' · يوم الخطة ' + x.pday : ''}</h3><span class="pill" style="background:${EXE_K[x.exe][2]};color:${EXE_K[x.exe][3]}">${EXE_K[x.exe][0]}</span></div>${(x.items || []).map(([n, v, ok]) => `<div class="row" style="padding:4px 0;border-bottom:1px solid var(--line)"><span>${ok ? '<b style="color:var(--green)">✓</b>' : '<b style="color:var(--red)">✗</b>'} ${esc(n)}</span><span class="hint">${esc(v)}</span></div>`).join('') || '<div class="hint">لا واجب في هذا اليوم.</div>'}</div>` : ''}
+    <div class="row" style="gap:6px;justify-content:flex-start"><button class="btn sm" id="cdRec">رصد / عرض التسميع</button><button class="btn ghost sm" id="cdFile">ملف الطالب</button></div></div>`, root => {
+    $('#cdRec', root).onclick = () => adminRecord(s.id);
+    $('#cdFile', root).onclick = () => studentFile(s.id);
+  });
+}
+// تقويم شهري لطالب واحد بشكل أسابيع
+function calStudent(s, P, dates, days) {
+  const pad = new Date(dates[0] + 'T12:00:00Z').getUTCDay();
+  const cells = [...Array(pad).fill(null), ...dates.map((d, i) => [d, days[i]])];
+  while (cells.length % 7) cells.push(null);
+  const names = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  drawer(`تقويم ${s.name}`, `<div class="hint" style="margin-bottom:8px">${esc(P.name)} · ${esc(s.teacher)} · ${esc(s.room)}</div>
+    <div class="cal-month">${names.map(n => `<div class="cm-h">${n}</div>`).join('')}${cells.map(c => { if (!c) return '<div class="cm-d empty"></div>'; const [d, x] = c; const r = x.rec ? REC_K[x.rec] : null, e = x.exe ? EXE_K[x.exe] : null;
+      return `<div class="cm-d${d === TODAY ? ' today' : ''}" data-d="${d}"><span class="cm-n">${+d.slice(8)}</span>${r && r[1] ? `<span class="cm-b" style="background:${r[2]};color:${r[3]}">${r[0]}</span>` : ''}${e && e[1] ? `<span class="cm-b" style="background:${e[2]};color:${e[3]}">${e[0]}</span>` : ''}</div>`; }).join('')}</div>`, root => {
+    $$('[data-d]', root).forEach(c => c.onclick = () => { const i = dates.indexOf(c.dataset.d); calDay(s, P, dates[i], days[i]); });
   });
 }
 
