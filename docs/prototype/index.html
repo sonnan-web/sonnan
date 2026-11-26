@@ -1,0 +1,662 @@
+<title>منصة سنن</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<style>
+/* التخطيط: شريط تبديل الأدوار (للمراجعة فقط) ثم التطبيق نفسه بعرض يناسب الدور: جوال للطالب، متوسط للمعلم، واسع للمشرف */
+:root {
+  --ink: #0F2F33;           /* هوية: الأخضر الداكن */
+  --ink-2: #173F43;         /* هوية: درجة التدرج الثانية */
+  --gold: #CBB994;          /* هوية: الذهبي */
+  --slate: #6E7F80;         /* هوية: الرمادي المخضر */
+  --mist: #E6E6E6;          /* هوية: الرمادي الفاتح */
+  --bg: #F4F5F4;
+  --surface: #FFFFFF;
+  --fg: #0F2F33;
+  --muted: #5E6F70;
+  --line: #DDE1E0;
+  --chip: #EEF1F0;
+  --gold-ink: #7A6534;
+  --gold-soft: #F5EFE2;
+  --ok: #2F7A55; --ok-soft: #E3F1E9;
+  --warn: #A86A12; --warn-soft: #FBF0DC;
+  --bad: #A63D3D; --bad-soft: #F8E5E4;
+  --info: #2C5F8A; --info-soft: #E4EEF7;
+  --on-ink: #FFFFFF;
+  --shadow: 0 1px 2px rgba(15,47,51,.06), 0 4px 16px rgba(15,47,51,.06);
+  --done: #173F43;
+  --font: "Tajawal", "Segoe UI", Tahoma, "Noto Sans Arabic", sans-serif;
+  --r: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0B1D20; --surface: #11292D; --fg: #E8EDEC; --muted: #9DAEAE; --line: #23413F;
+    --chip: #183539; --gold-ink: #DCCDA9; --gold-soft: #2A2C22;
+    --ok: #6FC198; --ok-soft: #173A2C; --warn: #E2AE5C; --warn-soft: #3A2F18;
+    --bad: #E58B87; --bad-soft: #3D2222; --info: #8DB9E2; --info-soft: #18303F;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+    --done: #CBB994;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0B1D20; --surface: #11292D; --fg: #E8EDEC; --muted: #9DAEAE; --line: #23413F;
+  --chip: #183539; --gold-ink: #DCCDA9; --gold-soft: #2A2C22;
+  --ok: #6FC198; --ok-soft: #173A2C; --warn: #E2AE5C; --warn-soft: #3A2F18;
+  --bad: #E58B87; --bad-soft: #3D2222; --info: #8DB9E2; --info-soft: #18303F;
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 16px rgba(0,0,0,.25);
+  --done: #CBB994;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { direction: rtl; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font); font-size: 15px; line-height: 1.6; padding-bottom: 88px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.num { font-variant-numeric: tabular-nums; }
+h1, h2, h3 { margin: 0; text-wrap: balance; line-height: 1.3; }
+h2 { font-size: 1.15rem; font-weight: 800; }
+h3 { font-size: 1rem; font-weight: 700; }
+p { margin: 0; }
+
+/* شريط المراجعة */
+.review-bar { background: var(--surface); border-bottom: 1px solid var(--line); padding-block: 8px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; font-size: .85rem; }
+.review-bar .tag { background: var(--gold-soft); color: var(--gold-ink); padding: 2px 10px; border-radius: 99px; font-weight: 700; }
+.roles { display: flex; gap: 4px; background: var(--chip); padding: 3px; border-radius: 99px; }
+.roles a { text-decoration: none; color: var(--muted); padding: 4px 14px; border-radius: 99px; font-weight: 700; }
+.roles a[aria-current="true"] { background: var(--ink); color: var(--on-ink); }
+.review-bar .note { color: var(--muted); }
+
+/* رأس التطبيق */
+.app-head { background: linear-gradient(135deg, var(--ink), var(--ink-2)); color: var(--on-ink); padding-block: 18px 22px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.app-head .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .mark { width: 38px; height: 38px; border-radius: 10px; border: 1.5px solid var(--gold); display: grid; place-items: center; color: var(--gold); font-weight: 800; font-size: 1.1rem; }
+.brand b { display: block; font-size: 1.05rem; }
+.brand small { color: rgba(255,255,255,.7); font-size: .8rem; }
+.dates { text-align: left; font-size: .8rem; color: rgba(255,255,255,.8); }
+.dates b { color: var(--gold); font-weight: 700; display: block; font-size: .9rem; }
+
+.wrap { max-width: var(--w, 480px); margin-inline: auto; }
+main { padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+main .wrap { display: grid; gap: 14px; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.card.flat { box-shadow: none; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.muted { color: var(--muted); }
+.small { font-size: .85rem; }
+.eyebrow { font-size: .78rem; color: var(--muted); font-weight: 700; letter-spacing: .02em; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 99px; font-size: .8rem; font-weight: 700; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.pill.info { background: var(--info-soft); color: var(--info); }
+.pill.gold { background: var(--gold-soft); color: var(--gold-ink); }
+.pill.plain { background: var(--chip); color: var(--muted); }
+
+.btn { border: 0; border-radius: 10px; padding: 10px 18px; font-weight: 700; background: var(--ink); color: var(--on-ink); }
+.btn.gold { background: var(--gold); color: #0F2F33; }
+.btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.btn.block { width: 100%; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+/* بطاقة اليوم */
+.today { background: linear-gradient(135deg, var(--ink), var(--ink-2)); color: var(--on-ink); border: 0; }
+.today .eyebrow { color: var(--gold); }
+.today .range { font-size: 1.9rem; font-weight: 800; line-height: 1.2; margin-block: 6px 2px; }
+.today .muted { color: rgba(255,255,255,.75); }
+
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px; text-align: center; }
+.stat b { display: block; font-size: 1.45rem; font-weight: 800; }
+.stat span { font-size: .78rem; color: var(--muted); }
+
+/* شريط المرحلة: كل حديث خلية، والفجوات ظاهرة */
+.stage-bar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1px; height: 14px; border-radius: 6px; overflow: hidden; background: var(--line); margin-block: 10px 6px; }
+.stage-bar i { background: var(--chip); }
+.stage-bar i.done { background: var(--done); }
+.stage-bar i.half { background: linear-gradient(to left, var(--done) 50%, var(--chip) 50%); }
+.stage-bar i.gap { background: var(--warn); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .78rem; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-inline-end: 4px; vertical-align: -1px; }
+
+/* أسبوع الطالب */
+.week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center; }
+.day { border-radius: 10px; padding: 8px 2px; background: var(--chip); font-size: .75rem; }
+.day b { display: block; font-size: .95rem; }
+.day.present { background: var(--ok-soft); color: var(--ok); }
+.day.absent { background: var(--bad-soft); color: var(--bad); }
+.day.excused { background: var(--info-soft); color: var(--info); }
+.day.makeup { background: var(--gold-soft); color: var(--gold-ink); }
+.day.off { background: transparent; color: var(--muted); border: 1px dashed var(--line); }
+
+.list { display: grid; }
+.list > * { padding-block: 12px; border-bottom: 1px solid var(--line); }
+.list > *:last-child { border-bottom: 0; }
+
+/* التنقل السفلي */
+.tabbar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); padding-left: max(8px, env(safe-area-inset-left, 0px)); padding-right: max(8px, env(safe-area-inset-right, 0px)); z-index: 5; }
+.tabbar .wrap { display: flex; justify-content: space-around; }
+.tabbar a { flex: 1; text-align: center; text-decoration: none; color: var(--muted); font-size: .78rem; font-weight: 700; padding: 8px 4px 10px; position: relative; }
+.tabbar a svg { display: block; margin: 0 auto 2px; width: 22px; height: 22px; }
+.tabbar a[aria-current="true"] { color: var(--fg); }
+.tabbar a[aria-current="true"]::before { content: ""; position: absolute; top: 0; inset-inline: 30%; height: 3px; border-radius: 0 0 3px 3px; background: var(--gold); }
+.tabbar .badge { position: absolute; top: 4px; inset-inline-start: calc(50% + 6px); background: var(--bad); color: #fff; font-size: .65rem; min-width: 16px; height: 16px; border-radius: 8px; display: grid; place-items: center; padding-inline: 4px; }
+
+/* النماذج */
+label.field { display: grid; gap: 6px; font-weight: 700; font-size: .9rem; }
+label.field .hint { font-weight: 400; color: var(--muted); font-size: .8rem; }
+input[type=text], input[type=email], input[type=number], input[type=date], select, textarea {
+  width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 12px; min-width: 0;
+}
+textarea { min-height: 80px; resize: vertical; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+
+/* رصد المعلم */
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 4px 12px; font-size: .82rem; font-weight: 700; color: var(--muted); }
+.seg button[aria-pressed="true"][data-v="present"] { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.seg button[aria-pressed="true"][data-v="absent"] { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
+.seg button[aria-pressed="true"][data-v="excused"] { background: var(--info-soft); color: var(--info); border-color: transparent; }
+.seg button[aria-pressed="true"][data-v="makeup"] { background: var(--gold-soft); color: var(--gold-ink); border-color: transparent; }
+.seg button[aria-pressed="true"][data-v="review"] { background: var(--chip); color: var(--fg); border-color: var(--slate); }
+.student-rec { display: grid; gap: 10px; }
+.student-rec .who { display: flex; align-items: center; gap: 10px; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--chip); display: grid; place-items: center; font-weight: 800; color: var(--muted); flex: none; }
+.rec-fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rec-fields label { font-size: .75rem; color: var(--muted); display: grid; gap: 2px; }
+.rec-fields input, .rec-fields select { padding: 6px 8px; }
+.rec-fields.disabled { opacity: .4; pointer-events: none; }
+.edit-window { display: flex; gap: 10px; align-items: center; background: var(--gold-soft); color: var(--gold-ink); border-radius: 10px; padding: 10px 12px; font-size: .85rem; }
+
+/* المشرف */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+.kpi b { font-size: 1.7rem; font-weight: 800; display: block; line-height: 1.2; }
+.kpi span { font-size: .8rem; color: var(--muted); }
+.kpi .delta { font-size: .78rem; font-weight: 700; }
+.two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; align-items: start; }
+.attention { display: grid; grid-template-columns: 4px 1fr auto; gap: 12px; align-items: center; }
+.attention .stripe { align-self: stretch; border-radius: 4px; }
+.stripe.bad { background: var(--bad); } .stripe.warn { background: var(--warn); } .stripe.info { background: var(--info); }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; }
+.filters button { border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 3px 12px; font-size: .82rem; font-weight: 700; color: var(--muted); }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+.subnav { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.subnav a { text-decoration: none; color: var(--muted); font-weight: 700; padding: 8px 14px; border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.subnav a[aria-current="true"] { color: var(--fg); border-bottom-color: var(--gold); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+th, td { text-align: right; padding: 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 700; font-size: .8rem; }
+.days-pick { display: flex; flex-wrap: wrap; gap: 6px; }
+.days-pick label { display: inline-flex; gap: 4px; align-items: center; border: 1px solid var(--line); border-radius: 99px; padding: 4px 12px; font-size: .85rem; font-weight: 500; cursor: pointer; }
+.days-pick input { accent-color: var(--ink-2); }
+.impact { border: 1px dashed var(--gold); background: var(--gold-soft); border-radius: 12px; padding: 14px; display: grid; gap: 8px; }
+.impact h3 { color: var(--gold-ink); }
+.version { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.vno { width: 34px; height: 34px; border-radius: 8px; background: var(--chip); display: grid; place-items: center; font-weight: 800; }
+
+/* لوحة الشرف */
+.podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: end; text-align: center; }
+.podium > div { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 6px; min-width: 0; }
+.podium .first { border-color: var(--gold); background: var(--gold-soft); padding-block: 18px; }
+.podium .rank { font-weight: 800; color: var(--gold-ink); font-size: .85rem; }
+.podium .name { font-weight: 700; font-size: .9rem; overflow-wrap: anywhere; }
+.podium .val { font-weight: 800; font-size: 1.2rem; }
+.rankrow { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; }
+.rankrow .r { color: var(--muted); font-weight: 800; text-align: center; }
+.rankrow.me { background: var(--gold-soft); border-radius: 10px; padding-inline: 8px; }
+
+/* الدخول */
+.login { min-height: 70vh; display: grid; align-content: center; gap: 18px; }
+.login .mark-lg { width: 64px; height: 64px; border-radius: 16px; background: linear-gradient(135deg, var(--ink), var(--ink-2)); color: var(--gold); display: grid; place-items: center; font-weight: 800; font-size: 1.6rem; margin-inline: auto; }
+
+.toast { position: fixed; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 10px; font-weight: 700; box-shadow: var(--shadow); z-index: 20; max-width: calc(100% - 32px); text-align: center; }
+.inbox-item { display: grid; grid-template-columns: 10px 1fr; gap: 10px; }
+.inbox-item .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 8px; background: var(--gold); }
+.inbox-item.read .dot { background: transparent; }
+
+@media (max-width: 860px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .two-col { grid-template-columns: 1fr; }
+}
+@media (max-width: 520px) {
+  .rec-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid2 { grid-template-columns: 1fr; }
+  .review-bar .note { display: none; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .screen { animation: in .18s ease-out; }
+  @keyframes in { from { opacity: .4; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+}
+</style>
+
+<div class="review-bar">
+  <span class="tag">نموذج للمراجعة</span>
+  <nav class="roles" aria-label="الدور">
+    <a href="#student-home" data-role="student">الطالب</a>
+    <a href="#teacher-record" data-role="teacher">المعلم</a>
+    <a href="#admin-overview" data-role="admin">المشرف</a>
+  </nav>
+  <span class="note">كل الأسماء والأرقام أمثلة، ولا شيء يُحفظ.</span>
+</div>
+
+<header class="app-head">
+  <div class="wrap">
+    <div class="brand"><span class="mark">سنن</span><div><b id="head-title">الجمع بين الصحيحين</b><small id="head-sub">التعليم عن بعد</small></div></div>
+    <div class="dates"><b id="hijri"></b><span id="greg"></span></div>
+  </div>
+</header>
+
+<main><div class="wrap" id="screen"></div></main>
+<nav class="tabbar" id="tabbar" hidden><div class="wrap" id="tabs"></div></nav>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var $$ = function (s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); };
+  var ar = function (n) { return Number(n).toLocaleString("ar-SA-u-nu-arab"); };
+
+  // التاريخ: هجري أم القرى + ميلادي
+  var now = new Date();
+  function hijri(d) { try { return new Intl.DateTimeFormat("ar-SA-u-ca-islamic-umalqura", { day: "numeric", month: "long", year: "numeric" }).format(d); } catch (e) { return ""; } }
+  function greg(d) { return new Intl.DateTimeFormat("ar-SA-u-ca-gregory-nu-arab", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(d); }
+  $("#hijri").textContent = hijri(now);
+  $("#greg").textContent = greg(now);
+
+  var toastT;
+  function toast(msg) { var t = $("#toast"); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(function () { t.hidden = true; }, 2600); }
+
+  // ---------------- بيانات مثال ----------------
+  var me = { name: "عبدالله المطيري", email: "student@example.com", plan: "خطة ٣ أحاديث يوميًا", teacher: "أ. سليمان الزهراني", slot: "الأحد والثلاثاء ٨:٣٠ م (مكة)" };
+  var week = [
+    { d: "أحد", n: 22, s: "present" }, { d: "اثنين", n: 23, s: "present" }, { d: "ثلاثاء", n: 24, s: "absent" },
+    { d: "أربعاء", n: 25, s: "makeup", note: "تعويض عن الثلاثاء" }, { d: "خميس", n: 26, s: "today" }, { d: "جمعة", n: 27, s: "off" }, { d: "سبت", n: 28, s: "off" }
+  ];
+  var stage = { name: "المرحلة الثالثة", vol: 2, from: 201, to: 260, cells: [] };
+  for (var i = 201; i <= 260; i++) stage.cells.push(i <= 228 ? (i === 213 || i === 214 ? "gap" : "done") : (i === 229 ? "half" : ""));
+  var inbox = [
+    { t: "رُصد إنجازك ليوم الأربعاء", b: "تعويض عن يوم الثلاثاء: الأحاديث ٢٢٦–٢٢٨. الضبط ٩ من ١٠.", when: "أمس ٩:١٢ م", read: false },
+    { t: "تنبيه أول", b: "غياب واحد دون استئذان خلال آخر ١٤ يوم عمل. التعويض خلال أسبوع يُحسب لك.", when: "الثلاثاء ١١:٠٥ م", read: false },
+    { t: "إعلان من إدارة البرنامج", b: "إجازة منتصف الفصل من ١٥ إلى ١٩ جمادى الآخرة، ولا يُحتسب فيها غياب.", when: "السبت", read: true },
+    { t: "أكملت المرحلة الثانية", b: "أحسنت. وصلت إلى نهاية المرحلة الثانية من المجلد الثاني.", when: "قبل أسبوعين", read: true }
+  ];
+  var leaves = [{ from: "١٠ جمادى الأولى", to: "١١ جمادى الأولى", reason: "سفر", status: "approved" }];
+
+  var roster = [
+    { n: "عبدالله المطيري", plan: "٣ أحاديث", from: 229, to: 231, s: "present", c: 9, m: 10, flag: "" },
+    { n: "خالد العنزي", plan: "٣ أحاديث", from: 187, to: 189, s: "present", c: 8, m: 10, flag: "" },
+    { n: "يوسف القحطاني", plan: "٥ أحاديث", from: 340, to: 344, s: "", c: "", m: "", flag: "warn" },
+    { n: "محمد الشهري", plan: "٣ أحاديث", from: 112, to: 114, s: "", c: "", m: "", flag: "" },
+    { n: "إبراهيم الدوسري", plan: "٢ حديثان", from: 95, to: 96, s: "excused", c: "", m: "", flag: "" },
+    { n: "فهد السبيعي", plan: "٣ أحاديث", from: 263, to: 265, s: "", c: "", m: "", flag: "bad" },
+    { n: "سعد الغامدي", plan: "٥ أحاديث", from: 401, to: 405, s: "", c: "", m: "", flag: "" }
+  ];
+  var missedDays = { "يوسف القحطاني": ["الاثنين ٢٣"], "فهد السبيعي": ["الأحد ٢٢", "الثلاثاء ٢٤"] };
+
+  var honor = [
+    ["عبدالرحمن الحربي", 100, 66], ["أنس البقمي", 100, 64], ["عمر الشمري", 98, 63], ["عبدالله المطيري", 96, 61],
+    ["تركي العتيبي", 96, 60], ["ماجد الرشيدي", 95, 58], ["زياد الأحمدي", 94, 57], ["حمزة الجهني", 93, 57],
+    ["صالح الحربي", 92, 55], ["بدر المالكي", 91, 54], ["نواف السهلي", 90, 52], ["رائد القرني", 88, 50],
+    ["مازن الزهراني", 87, 49], ["سلطان العمري", 85, 47]
+  ];
+
+  var attention = [
+    { sev: "bad", who: "فهد السبيعي", what: "إنذار مستحق: ٤ غيابات دون استئذان خلال ١٤ يوم عمل", act: "مراجعة الإنذار", kind: "warning" },
+    { sev: "bad", who: "نايف العصيمي", what: "حالة متابعة مفتوحة منذ ٦ أيام بلا تواصل مسجَّل", act: "فتح الحالة", kind: "case" },
+    { sev: "warn", who: "يوسف القحطاني", what: "تنبيه أول: غياب يوم الاثنين دون استئذان", act: "عرض", kind: "alert" },
+    { sev: "warn", who: "أ. ماجد الحربي", what: "لم يرصد ٩ طلاب لليوم، وتُغلق المهلة بعد ١٤ ساعة", act: "تذكير المعلم", kind: "teacher" },
+    { sev: "info", who: "عبدالله المطيري", what: "وصل نهاية المرحلة الثالثة وفيها فجوة: ٢١٣–٢١٤", act: "مراجعة الفجوة", kind: "gap" },
+    { sev: "info", who: "٣ طلبات استئذان", what: "بانتظار الاعتماد", act: "اعتماد", kind: "leave" }
+  ];
+
+  var settings = { days: [0, 1, 2, 3, 4], excusedWeight: "", windowDays: 14, alertAt: 1, warnAt: 4, escalateAt: 4, editHours: 48, effective: "2026-12-06" };
+  var versions = [
+    { v: 3, from: "١ ربيع الآخر ١٤٤٨", note: "رفع عدد الإنذارات قبل التصعيد إلى ٤", status: "سارية" },
+    { v: 2, from: "١ صفر ١٤٤٨", note: "إضافة الجمعة يوم مراجعة اختياري", status: "منتهية" },
+    { v: 1, from: "١ محرم ١٤٤٨", note: "الإعداد الأول للبرنامج", status: "منتهية" }
+  ];
+
+  // ---------------- أيقونات ----------------
+  var ico = {
+    home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>',
+    book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5"/></svg>',
+    star: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/></svg>',
+    bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
+    pen: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+    users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/></svg>',
+    grid: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+    sliders: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>'
+  };
+
+  var tabsFor = {
+    student: [["student-home", "الرئيسية", "home"], ["student-log", "سجلّي", "book"], ["honor", "لوحة الشرف", "star"], ["student-inbox", "الإشعارات", "bell"]],
+    teacher: [["teacher-record", "الرصد", "pen"], ["teacher-students", "طلابي", "users"], ["honor", "لوحة الشرف", "star"]],
+    admin: [["admin-overview", "الملخص", "grid"], ["program-rules", "الإعدادات", "sliders"], ["honor", "لوحة الشرف", "star"]]
+  };
+  var roleOf = function (r) { return r.indexOf("teacher") === 0 ? "teacher" : (r.indexOf("admin") === 0 || r === "program-rules") ? "admin" : "student"; };
+  var lastRole = "student";
+
+  // ---------------- الشاشات ----------------
+  var screens = {};
+
+  screens["login"] = function () {
+    return '<div class="login screen">' +
+      '<div class="mark-lg">سنن</div>' +
+      '<div style="text-align:center"><h2>الدخول إلى منصة سنن</h2><p class="muted small">اكتب البريد الذي سجّلت به في البرنامج</p></div>' +
+      '<form class="card" id="login-form" style="display:grid;gap:12px">' +
+      '<label class="field" for="email">البريد الإلكتروني<input id="email" type="email" dir="ltr" value="' + me.email + '" required></label>' +
+      '<button class="btn block" type="submit">دخول</button>' +
+      '<p class="muted small">ستبقى مسجّلًا ٣٠ يومًا على هذا الجهاز. يمكنك تثبيت المنصة على الشاشة الرئيسية من قائمة المتصفح.</p>' +
+      '</form></div>';
+  };
+
+  screens["student-home"] = function () {
+    var done = stage.cells.filter(function (c) { return c === "done"; }).length + 0.5;
+    var bar = stage.cells.map(function (c) { return '<i class="' + c + '"></i>'; }).join("");
+    var wk = week.map(function (d) {
+      var cls = d.s === "today" ? "" : d.s;
+      var lbl = { present: "حاضر", absent: "غائب", excused: "مستأذن", makeup: "تعويض", off: "إجازة", today: "اليوم" }[d.s];
+      return '<div class="day ' + cls + '"' + (d.s === "today" ? ' style="outline:2px solid var(--gold)"' : "") + ' title="' + esc(d.note || lbl) + '"><span>' + d.d + '</span><b class="num">' + ar(d.n) + '</b><span>' + lbl + '</span></div>';
+    }).join("");
+    return '<div class="screen" style="display:grid;gap:14px">' +
+      '<p class="muted">السلام عليكم، <b style="color:var(--fg)">' + esc(me.name) + '</b></p>' +
+      '<section class="card today">' +
+      '<div class="row"><span class="eyebrow">مقرر اليوم · يوم العمل ' + ar(29) + '</span><span class="pill warn">بانتظار رصد المعلم</span></div>' +
+      '<div class="range num">الأحاديث ' + ar(229) + '–' + ar(231) + '</div>' +
+      '<p class="muted">الجمع بين الصحيحين · المجلد الثاني · ' + me.plan + '</p>' +
+      '<p class="muted small" style="margin-top:8px">لقاؤك: ' + me.slot + ' مع ' + me.teacher + '</p>' +
+      '</section>' +
+      '<div class="stats">' +
+      '<div class="stat"><b class="num">' + ar(96) + '٪</b><span>نسبة الإنجاز</span></div>' +
+      '<div class="stat"><b class="num">' + ar(8.7) + '</b><span>متوسط الضبط من ١٠</span></div>' +
+      '<div class="stat"><b class="num">' + ar(1) + '</b><span>تنبيهات سارية</span></div>' +
+      '</div>' +
+      '<section class="card"><div class="row"><h3>هذا الأسبوع</h3><a href="#student-log" class="small" style="color:var(--gold-ink)">السجل كاملًا</a></div><div class="week" style="margin-top:10px">' + wk + '</div></section>' +
+      '<section class="card">' +
+      '<div class="row"><h3>' + stage.name + '</h3><span class="muted small num">المجلد ' + ar(stage.vol) + ' · ' + ar(stage.from) + '–' + ar(stage.to) + '</span></div>' +
+      '<div class="stage-bar" aria-label="تقدم المرحلة">' + bar + '</div>' +
+      '<div class="row small"><span class="num"><b>' + ar(done) + '</b> من ' + ar(60) + ' حديثًا</span><span class="muted num">بقي ' + ar(60 - done) + '</span></div>' +
+      '<div class="legend" style="margin-top:6px"><span><i style="background:var(--done)"></i>محفوظ</span><span><i style="background:var(--warn)"></i>لم يُسمَّع (٢١٣–٢١٤)</span><span><i style="background:linear-gradient(to left,var(--done) 50%,var(--chip) 50%)"></i>نصف حديث</span></div>' +
+      '</section>' +
+      '<div class="grid2"><a class="btn ghost" style="text-align:center;text-decoration:none" href="#student-leave">طلب استئذان</a><a class="btn ghost" style="text-align:center;text-decoration:none" href="#student-inbox">الإشعارات (' + ar(inbox.filter(function (x) { return !x.read; }).length) + ')</a></div>' +
+      '</div>';
+  };
+
+  screens["student-log"] = function () {
+    var rows = [
+      ["الخميس ٢٦", "اليوم", "plain", "٢٢٩–٢٣١ (مقرر)", "—"],
+      ["الأربعاء ٢٥", "تعويض عن الثلاثاء", "gold", "٢٢٦–٢٢٨", "٩"],
+      ["الثلاثاء ٢٤", "غائب · عُوِّض", "bad", "—", "—"],
+      ["الاثنين ٢٣", "حاضر", "ok", "٢٢٣–٢٢٥", "٨"],
+      ["الأحد ٢٢", "حاضر", "ok", "٢٢٠–٢٢٢ + نصف ٢٢٩", "٩"],
+      ["الخميس ١٩", "مراجعة فقط", "plain", "مراجعة ٤ صفحات", "—"],
+      ["الأربعاء ١٨", "مستأذن", "info", "—", "—"]
+    ];
+    return '<div class="screen" style="display:grid;gap:14px"><h2>سجلّي</h2>' +
+      '<div class="stats"><div class="stat"><b class="num">' + ar(27) + '</b><span>أيام الإنجاز</span></div><div class="stat"><b class="num">' + ar(1) + '</b><span>غياب دون استئذان</span></div><div class="stat"><b class="num">' + ar(1) + '</b><span>أيام مستأذن</span></div></div>' +
+      '<section class="card"><div class="list">' + rows.map(function (r) {
+        return '<div class="row"><div><b>' + r[0] + '</b><div class="muted small num">' + r[3] + '</div></div><div style="text-align:left"><span class="pill ' + r[2] + '">' + r[1] + '</span><div class="muted small">الضبط ' + r[4] + '</div></div></div>';
+      }).join("") + '</div></section>' +
+      '<p class="muted small">أيام الإنجاز تشمل الحضور والتعويض والمراجعة. تُحسب النسبة بحسب إعدادات البرنامج السارية في كل يوم.</p></div>';
+  };
+
+  screens["student-leave"] = function () {
+    return '<div class="screen" style="display:grid;gap:14px"><div class="row"><h2>طلب استئذان</h2><a href="#student-home" class="small muted">رجوع</a></div>' +
+      '<form class="card" id="leave-form" style="display:grid;gap:12px">' +
+      '<div class="grid2"><label class="field" for="lf">من<input id="lf" type="date" value="2026-11-30" required></label><label class="field" for="lt">إلى<input id="lt" type="date" value="2026-12-01" required></label></div>' +
+      '<label class="field" for="lr">السبب<select id="lr"><option>سفر</option><option>مرض</option><option>اختبارات دراسية</option><option>ظرف عائلي</option><option>آخر</option></select></label>' +
+      '<label class="field" for="ld">تفاصيل <span class="hint">اختياري</span><textarea id="ld" placeholder="مثال: سفر عائلي إلى المدينة"></textarea></label>' +
+      '<p class="muted small">يصل الطلب إلى مشرف البرنامج، ويصلك إشعار بالقرار.</p>' +
+      '<button class="btn" type="submit">إرسال الطلب</button></form>' +
+      '<section class="card flat"><h3>طلباتي</h3><div class="list" id="leave-list" style="margin-top:6px">' + leaves.map(function (l) {
+        var st = { approved: ["مقبول", "ok"], pending: ["قيد المراجعة", "warn"] }[l.status];
+        return '<div class="row"><div><b>' + l.reason + '</b><div class="muted small">' + l.from + ' – ' + l.to + '</div></div><span class="pill ' + st[1] + '">' + st[0] + '</span></div>';
+      }).join("") + '</div></section></div>';
+  };
+
+  screens["student-inbox"] = function () {
+    return '<div class="screen" style="display:grid;gap:14px"><div class="row"><h2>الإشعارات</h2><button class="btn ghost small" id="mark-all" type="button">تعليم الكل كمقروء</button></div>' +
+      '<section class="card"><div class="list">' + inbox.map(function (m, i) {
+        return '<div class="inbox-item' + (m.read ? " read" : "") + '" data-i="' + i + '"><span class="dot"></span><div><div class="row"><b>' + m.t + '</b><span class="muted small">' + m.when + '</span></div><p class="small">' + m.b + '</p></div></div>';
+      }).join("") + '</div></section>' +
+      '<p class="muted small">تصلك الإشعارات على الجوال حتى والمنصة مغلقة، وتبقى هنا آخر ١٥٠ رسالة.</p></div>';
+  };
+
+  screens["teacher-record"] = function () {
+    var recorded = roster.filter(function (r) { return r.s; }).length;
+    var opts = [["present", "حاضر"], ["absent", "غائب"], ["excused", "مستأذن"], ["makeup", "تعويض"], ["review", "مراجعة فقط"]];
+    return '<div class="screen" style="display:grid;gap:14px">' +
+      '<div class="row"><div><h2>رصد اليوم</h2><p class="muted small">الخميس ٢٦ نوفمبر · حلقة الأحد والثلاثاء ٨:٣٠ م</p></div><span class="pill ' + (recorded === roster.length ? "ok" : "warn") + ' num" id="rec-count">رُصد ' + ar(recorded) + ' من ' + ar(roster.length) + '</span></div>' +
+      '<div class="edit-window"><b>مهلة التعديل</b><span>تستطيع تعديل رصد اليوم حتى السبت ١٢ ص بتوقيت مكة. بعدها يعدّله المشرف مع ذكر السبب.</span></div>' +
+      roster.map(function (r, idx) {
+        var flag = r.flag === "bad" ? '<span class="pill bad">إنذار مستحق</span>' : r.flag === "warn" ? '<span class="pill warn">تنبيه أول</span>' : "";
+        var mk = missedDays[r.n] ? '<label>عن يوم<select data-f="mk">' + missedDays[r.n].map(function (d) { return "<option>" + d + "</option>"; }).join("") + '</select></label>' : '<label>عن يوم<select data-f="mk" disabled><option>لا أيام فائتة</option></select></label>';
+        var off = r.s === "absent" || r.s === "excused";
+        return '<section class="card student-rec" data-idx="' + idx + '">' +
+          '<div class="row"><div class="who"><span class="avatar">' + r.n.charAt(0) + '</span><div><b>' + r.n + '</b><div class="muted small num">' + r.plan + ' · المقرر ' + ar(r.from) + '–' + ar(r.to) + '</div></div></div>' + flag + '</div>' +
+          '<div class="seg" role="group" aria-label="حالة ' + r.n + '">' + opts.map(function (o) { return '<button type="button" data-v="' + o[0] + '" aria-pressed="' + (r.s === o[0]) + '">' + o[1] + '</button>'; }).join("") + '</div>' +
+          '<div class="rec-fields' + (off ? " disabled" : "") + '">' +
+          '<label>من<input type="number" step="0.5" inputmode="decimal" value="' + r.from + '"></label>' +
+          '<label>إلى<input type="number" step="0.5" inputmode="decimal" value="' + r.to + '"></label>' +
+          '<label>الضبط /١٠<input type="number" min="0" max="10" step="0.5" value="' + r.c + '"></label>' +
+          '<label>الالتزام /١٠<input type="number" min="0" max="10" step="0.5" value="' + r.m + '"></label>' +
+          '</div>' +
+          '<div class="rec-fields makeup-row" ' + (r.s === "makeup" ? "" : "hidden") + ' style="grid-template-columns:1fr">' + mk + '</div>' +
+          '</section>';
+      }).join("") +
+      '<button class="btn block" id="save-rec" type="button">حفظ الرصد</button>' +
+      '<p class="muted small">الأرقام تقبل الكسور: ٢٢٩٫٥ تعني نصف الحديث. التعويض يُحسب في يوم أدائه ويُربط باليوم الفائت.</p></div>';
+  };
+
+  screens["teacher-students"] = function () {
+    return '<div class="screen" style="display:grid;gap:14px"><h2>طلابي</h2><section class="card"><div class="table-wrap"><table><thead><tr><th>الطالب</th><th>الإنجاز</th><th>الضبط</th><th>آخر حفظ</th><th>الحالة</th></tr></thead><tbody>' +
+      roster.map(function (r, i) {
+        var pct = [96, 92, 81, 100, 94, 68, 97][i];
+        var st = r.flag === "bad" ? '<span class="pill bad">إنذار</span>' : r.flag === "warn" ? '<span class="pill warn">تنبيه</span>' : '<span class="pill ok">منتظم</span>';
+        return '<tr><td><b>' + r.n + '</b></td><td class="num">' + ar(pct) + '٪</td><td class="num">' + ar([8.7, 8.1, 7.4, 9.2, 8.8, 6.9, 9][i]) + '</td><td class="num">' + ar(r.from - 1) + '</td><td>' + st + '</td></tr>';
+      }).join("") + '</tbody></table></div></section></div>';
+  };
+
+  var attFilter = "all";
+  screens["admin-overview"] = function () {
+    var shown = attention.filter(function (a) { return attFilter === "all" || a.sev === attFilter; });
+    return '<div class="screen" style="display:grid;gap:14px">' +
+      '<div class="row"><h2>ملخص البرنامج</h2><span class="muted small">الإعدادات السارية: النسخة ٣</span></div>' +
+      '<div class="kpis">' +
+      '<div class="kpi"><span>طلاب نشطون</span><b class="num">' + ar(186) + '</b><span class="delta" style="color:var(--ok)">+٤ هذا الأسبوع</span></div>' +
+      '<div class="kpi"><span>رصد اليوم</span><b class="num">' + ar(71) + '٪</b><span class="delta" style="color:var(--warn)">٥٤ طالبًا لم يُرصدوا</span></div>' +
+      '<div class="kpi"><span>متوسط الإنجاز (الشهر)</span><b class="num">' + ar(88) + '٪</b><span class="delta" style="color:var(--muted)">الشهر الماضي ٨٥٪</span></div>' +
+      '<div class="kpi"><span>إنذارات سارية</span><b class="num">' + ar(7) + '</b><span class="delta" style="color:var(--bad)">٢ مستحقة للمراجعة</span></div>' +
+      '</div>' +
+      '<div class="two-col">' +
+      '<section class="card"><div class="row"><h3>يحتاج انتباهك</h3><div class="filters" id="att-filters">' +
+      [["all", "الكل"], ["bad", "عاجل"], ["warn", "تنبيه"], ["info", "للعلم"]].map(function (f) { return '<button type="button" data-f="' + f[0] + '" aria-pressed="' + (attFilter === f[0]) + '">' + f[1] + '</button>'; }).join("") +
+      '</div></div><div class="list" style="margin-top:6px">' + shown.map(function (a) {
+        return '<div class="attention"><span class="stripe ' + a.sev + '"></span><div><b>' + a.who + '</b><p class="small muted">' + a.what + '</p></div><button class="btn ghost small" type="button" data-act="' + esc(a.act) + '">' + a.act + '</button></div>';
+      }).join("") + '</div></section>' +
+      '<section class="card"><h3>حالة متابعة: نايف العصيمي</h3><p class="muted small" style="margin-block:4px 10px">فُتحت بعد إنذار ثانٍ · المسؤول: أ. عبدالعزيز</p>' +
+      '<div class="list">' +
+      '<div><span class="pill plain">واتساب</span> <span class="muted small">قبل ٦ أيام</span><p class="small">أُرسلت رسالة للاطمئنان، ولم يرد.</p></div>' +
+      '<div><span class="pill plain">اتصال</span> <span class="muted small">قبل ٨ أيام</span><p class="small">ذكر انشغاله بالاختبارات، ووعد بالعودة الأسبوع القادم.</p></div>' +
+      '</div>' +
+      '<form id="contact-form" style="display:grid;gap:8px;margin-top:10px"><label class="field" for="cn">تسجيل تواصل جديد<textarea id="cn" placeholder="ماذا تم؟"></textarea></label><div class="row"><select id="cc" style="width:auto"><option>اتصال</option><option>واتساب</option><option>بريد</option><option>لقاء</option></select><button class="btn" type="submit">حفظ</button></div></form>' +
+      '</section></div></div>';
+  };
+
+  function impactOf(s) {
+    // تقدير توضيحي ثابت لأثر الإعدادات على بيانات المثال
+    var base = 186;
+    var alerts = Math.max(0, Math.round(38 / s.alertAt * (14 / s.windowDays)));
+    var warns = Math.max(0, Math.round(29 / s.warnAt * (14 / s.windowDays)));
+    var excusedNote = s.excusedWeight === "" ? "لم تحدّد وزن يوم الاستئذان، فلن تُحسب نسبة الإنجاز حتى تحدّده." : "يوم الاستئذان يُحسب بوزن " + s.excusedWeight + " من يوم العمل.";
+    return { base: base, alerts: alerts, warns: warns, newWarn: Math.max(0, warns - 7), excusedNote: excusedNote, days: s.days.length };
+  }
+
+  screens["program-rules"] = function () {
+    var dn = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+    return '<div class="screen" style="display:grid;gap:14px">' +
+      '<div class="row"><div><h2>إعدادات البرنامج</h2><p class="muted small">الجمع بين الصحيحين · كل تغيير يصبح نسخة جديدة بتاريخ سريان، ولا يمس الأيام السابقة</p></div><span class="pill gold">مسودة النسخة ٤</span></div>' +
+      '<div class="two-col">' +
+      '<form class="card" id="rules-form" style="display:grid;gap:14px">' +
+      '<h3>الحضور والإنجاز</h3>' +
+      '<div class="field"><span style="font-weight:700;font-size:.9rem">أيام العمل</span><div class="days-pick">' + dn.map(function (d, i) { return '<label><input type="checkbox" data-day="' + i + '"' + (settings.days.indexOf(i) > -1 ? " checked" : "") + '>' + d + '</label>'; }).join("") + '</div></div>' +
+      '<label class="field" for="ew">وزن يوم الاستئذان في نسبة الإنجاز <span class="hint">رقم بين ٠ و١ تحدده أنت، ولا توجد قيمة افتراضية</span><input id="ew" type="number" min="0" max="1" step="0.05" placeholder="مثال: ٠٫٥" value="' + settings.excusedWeight + '"></label>' +
+      '<h3>الانضباط</h3>' +
+      '<div class="grid2">' +
+      '<label class="field" for="wd">نافذة الاحتساب <span class="hint">أيام عمل</span><input id="wd" type="number" min="1" value="' + settings.windowDays + '"></label>' +
+      '<label class="field" for="aa">غيابات تُنشئ تنبيهًا<input id="aa" type="number" min="1" value="' + settings.alertAt + '"></label>' +
+      '<label class="field" for="wa">غيابات تُنشئ إنذارًا<input id="wa" type="number" min="1" value="' + settings.warnAt + '"></label>' +
+      '<label class="field" for="es">إنذارات قبل التصعيد<input id="es" type="number" min="1" value="' + settings.escalateAt + '"></label>' +
+      '</div>' +
+      '<label class="field" for="eh">مهلة تعديل المعلم بعد منتصف الليل <span class="hint">ساعات</span><input id="eh" type="number" min="0" value="' + settings.editHours + '"></label>' +
+      '<label class="field" for="ef">تسري من<input id="ef" type="date" value="' + settings.effective + '"></label>' +
+      '<div class="row"><button class="btn ghost" type="button" id="preview">معاينة الأثر</button><button class="btn gold" type="submit">اعتماد النسخة ٤</button></div>' +
+      '</form>' +
+      '<div style="display:grid;gap:14px">' +
+      '<div class="impact" id="impact"><h3>معاينة الأثر</h3><p class="small">اضغط «معاينة الأثر» لترى ما سيتغير على الطلاب الحاليين قبل الاعتماد.</p></div>' +
+      '<section class="card"><h3>النسخ السابقة</h3><div class="list" style="margin-top:6px">' + versions.map(function (v) {
+        return '<div class="version"><span class="vno num">' + ar(v.v) + '</span><div><b class="small">من ' + v.from + '</b><p class="muted small">' + v.note + '</p></div><span class="pill ' + (v.status === "سارية" ? "ok" : "plain") + '">' + v.status + '</span></div>';
+      }).join("") + '</div></section>' +
+      '<section class="card flat"><h3>استثناء لطالب</h3><p class="muted small">مثال: طالب يعمل يوم السبت بدل الخميس. يُسجَّل الاستثناء مع سببه وتاريخه، ويظهر في ملف الطالب.</p></section>' +
+      '</div></div></div>';
+  };
+
+  var honorScope = "program", honorPeriod = "month", honorMore = false;
+  screens["honor"] = function () {
+    var list = honor.slice();
+    if (honorPeriod === "all") list = list.map(function (h, i) { return [h[0], Math.max(80, h[1] - (i % 3)), h[2] * 6 + (13 - i) * 4]; }).sort(function (a, b) { return b[2] - a[2]; });
+    var shown = honorMore ? list : list.slice(0, 10);
+    var top = list.slice(0, 3);
+    var sel = function (id, cur, opts) { return '<select id="' + id + '" style="width:auto">' + opts.map(function (o) { return '<option value="' + o[0] + '"' + (cur === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") + '</select>'; };
+    var unit = "حديثًا";
+    return '<div class="screen" style="display:grid;gap:14px">' +
+      '<div class="row"><h2>لوحة الشرف</h2><div class="row" style="gap:6px">' +
+      sel("hs", honorScope, [["program", "البرنامج كاملًا"], ["book", "صحيح البخاري ومسلم (الكتاب)"], ["vol", "المجلد الثاني"]]) +
+      sel("hp", honorPeriod, [["month", "هذا الشهر"], ["all", "منذ البداية"]]) +
+      '</div></div>' +
+      '<p class="muted small">الترتيب حسب عدد الأحاديث المحفوظة، ثم نسبة الإنجاز. المشرف يحدد النطاق والفترة وطريقة الترتيب لكل برنامج.</p>' +
+      '<div class="podium">' +
+      '<div><div class="rank">الثاني</div><div class="name">' + top[1][0] + '</div><div class="val num">' + ar(top[1][2]) + '</div><div class="muted small">' + unit + '</div></div>' +
+      '<div class="first"><div class="rank">الأول</div><div class="name">' + top[0][0] + '</div><div class="val num">' + ar(top[0][2]) + '</div><div class="muted small">' + unit + '</div></div>' +
+      '<div><div class="rank">الثالث</div><div class="name">' + top[2][0] + '</div><div class="val num">' + ar(top[2][2]) + '</div><div class="muted small">' + unit + '</div></div>' +
+      '</div>' +
+      '<section class="card"><div class="list">' + shown.map(function (h, i) {
+        return '<div class="rankrow' + (h[0] === me.name ? " me" : "") + '"><span class="r num">' + ar(i + 1) + '</span><b>' + h[0] + (h[0] === me.name ? ' <span class="pill gold">أنت</span>' : "") + '</b><span class="num small"><b>' + ar(h[2]) + '</b> ' + unit + ' · ' + ar(h[1]) + '٪</span></div>';
+      }).join("") + '</div>' +
+      (list.length > 10 ? '<button class="btn ghost block" type="button" id="honor-more" style="margin-top:10px">' + (honorMore ? "عرض أول ١٠ فقط" : "عرض المزيد") + '</button>' : "") +
+      '</section></div>';
+  };
+
+  // ---------------- التوجيه ----------------
+  var widths = { student: "480px", teacher: "720px", admin: "1120px" };
+  function render() {
+    var route = (location.hash || "#login").slice(1);
+    if (!screens[route]) route = "login";
+    var role = route === "honor" ? lastRole : route === "login" ? "student" : roleOf(route);
+    lastRole = role;
+    document.documentElement.style.setProperty("--w", widths[role]);
+    $$(".roles a").forEach(function (a) { a.setAttribute("aria-current", String(a.dataset.role === role)); });
+    $("#head-sub").textContent = { student: "بوابة الطالب", teacher: "بوابة المعلم", admin: "لوحة الإشراف" }[role];
+    $("#screen").innerHTML = screens[route]();
+    var tb = $("#tabbar");
+    tb.hidden = route === "login";
+    var unread = inbox.filter(function (x) { return !x.read; }).length;
+    $("#tabs").innerHTML = tabsFor[role].map(function (t) {
+      return '<a href="#' + t[0] + '" aria-current="' + (t[0] === route) + '">' + ico[t[2]] + t[1] + (t[0] === "student-inbox" && unread ? '<span class="badge num">' + ar(unread) + '</span>' : "") + '</a>';
+    }).join("");
+    bind(route);
+    window.scrollTo(0, 0);
+  }
+
+  function bind(route) {
+    if (route === "login") {
+      $("#login-form").addEventListener("submit", function (e) { e.preventDefault(); location.hash = "student-home"; });
+    }
+    if (route === "student-leave") {
+      $("#leave-form").addEventListener("submit", function (e) {
+        e.preventDefault();
+        leaves.unshift({ from: "٩ جمادى الآخرة", to: "١٠ جمادى الآخرة", reason: $("#lr").value, status: "pending" });
+        render(); toast("أُرسل الطلب إلى المشرف");
+      });
+    }
+    if (route === "student-inbox") {
+      $("#mark-all").addEventListener("click", function () { inbox.forEach(function (m) { m.read = true; }); render(); });
+      $$(".inbox-item").forEach(function (el) { el.addEventListener("click", function () { inbox[+el.dataset.i].read = true; render(); }); });
+    }
+    if (route === "teacher-record") {
+      $$(".student-rec").forEach(function (card) {
+        var r = roster[+card.dataset.idx];
+        $$(".seg button", card).forEach(function (b) {
+          b.addEventListener("click", function () {
+            r.s = b.dataset.v;
+            $$(".seg button", card).forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+            var off = r.s === "absent" || r.s === "excused";
+            $(".rec-fields", card).classList.toggle("disabled", off);
+            $(".makeup-row", card).hidden = r.s !== "makeup";
+            var n = roster.filter(function (x) { return x.s; }).length;
+            var pc = $("#rec-count"); pc.textContent = "رُصد " + ar(n) + " من " + ar(roster.length);
+            pc.className = "pill num " + (n === roster.length ? "ok" : "warn");
+          });
+        });
+      });
+      $("#save-rec").addEventListener("click", function () {
+        var n = roster.filter(function (x) { return x.s; }).length;
+        toast(n === roster.length ? "حُفظ رصد جميع الطلاب" : "حُفظ رصد " + ar(n) + " طلاب، وبقي " + ar(roster.length - n));
+      });
+    }
+    if (route === "admin-overview") {
+      $$("#att-filters button").forEach(function (b) { b.addEventListener("click", function () { attFilter = b.dataset.f; render(); }); });
+      $$("[data-act]").forEach(function (b) { b.addEventListener("click", function () { toast("في التطبيق الفعلي يفتح هذا: " + b.dataset.act); }); });
+      $("#contact-form").addEventListener("submit", function (e) { e.preventDefault(); if (!$("#cn").value.trim()) { toast("اكتب ما تم في التواصل أولًا"); return; } toast("سُجّل التواصل في الحالة"); $("#cn").value = ""; });
+    }
+    if (route === "program-rules") {
+      var read = function () {
+        settings.days = $$("[data-day]").filter(function (c) { return c.checked; }).map(function (c) { return +c.dataset.day; });
+        settings.excusedWeight = $("#ew").value;
+        settings.windowDays = Math.max(1, +$("#wd").value || 1);
+        settings.alertAt = Math.max(1, +$("#aa").value || 1);
+        settings.warnAt = Math.max(1, +$("#wa").value || 1);
+        settings.escalateAt = Math.max(1, +$("#es").value || 1);
+        settings.editHours = +$("#eh").value;
+        settings.effective = $("#ef").value;
+      };
+      $("#preview").addEventListener("click", function () {
+        read();
+        var im = impactOf(settings);
+        $("#impact").innerHTML = '<h3>معاينة الأثر من ' + esc(settings.effective) + '</h3>' +
+          '<div class="list">' +
+          '<div class="row small"><span>طلاب يشملهم التغيير</span><b class="num">' + ar(im.base) + '</b></div>' +
+          '<div class="row small"><span>أيام العمل أسبوعيًا</span><b class="num">' + ar(im.days) + '</b></div>' +
+          '<div class="row small"><span>تنبيهات متوقعة خلال النافذة</span><b class="num">' + ar(im.alerts) + '</b></div>' +
+          '<div class="row small"><span>إنذارات متوقعة</span><b class="num">' + ar(im.warns) + '</b></div>' +
+          '<div class="row small"><span>طلاب ينتقلون إلى إنذار بعد التغيير</span><b class="num" style="color:var(--bad)">' + ar(im.newWarn) + '</b></div>' +
+          '</div><p class="small">' + im.excusedNote + '</p><p class="muted small">الأيام قبل تاريخ السريان تبقى محسوبة بالنسخة ٣.</p>';
+      });
+      $("#rules-form").addEventListener("submit", function (e) {
+        e.preventDefault(); read();
+        if (settings.excusedWeight === "") { toast("حدّد وزن يوم الاستئذان قبل الاعتماد"); $("#ew").focus(); return; }
+        if (!settings.days.length) { toast("اختر يوم عمل واحدًا على الأقل"); return; }
+        versions.forEach(function (v) { if (v.status === "سارية") v.status = "حتى " + settings.effective; });
+        versions.unshift({ v: 4, from: settings.effective, note: "اعتُمدت الآن من لوحة الإعدادات", status: "سارية" });
+        render(); toast("اعتُمدت النسخة ٤");
+      });
+    }
+    if (route === "honor") {
+      $("#hs").addEventListener("change", function (e) { honorScope = e.target.value; render(); });
+      $("#hp").addEventListener("change", function (e) { honorPeriod = e.target.value; honorMore = false; render(); });
+      var m = $("#honor-more"); if (m) m.addEventListener("click", function () { honorMore = !honorMore; render(); });
+    }
+  }
+
+  window.addEventListener("hashchange", render);
+  render();
+})();
+</script>
