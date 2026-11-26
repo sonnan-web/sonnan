@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>خطط البرامج — منصة رواد سنن</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* نفس لغة تصميم «لوحة تقارير التعليم عن بعد»: شريط علوي داكن بحد ذهبي، رؤوس أقسام داكنة بحد ملوّن، بطاقات بحد علوي ملوّن */
+:root{--primary:#0F2F33;--secondary:#173F43;--gold:#CBB994;--bg:#E9EFEF;--card:#fff;--line:#D9E3E3;--soft-line:#E4ECEC;--track:#E6EDED;--muted:#5F7679;--ink:#0F2F33;--green:#2F9E6E;--amber:#E3A21A;--red:#D64550;--blue:#3C82C4;--teal:#2A8C8C;--violet:#7B6CC4;--orange:#E07B4F;--slate:#7A8788}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Tajawal',sans-serif;font-size:13px;line-height:1.55;background:var(--bg);color:var(--ink)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+h1,h2,h3{margin:0;line-height:1.3}
+h2{font-size:17px;font-weight:800}h3{font-size:14px;font-weight:800}
+p{margin:0}
+a{color:var(--secondary)}
+
+.top{background:linear-gradient(110deg,var(--primary),var(--secondary));color:#fff;padding:7px max(20px,env(safe-area-inset-left,0px));border-bottom:2px solid var(--gold);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.top .brand{display:flex;align-items:center;gap:9px}
+.top .mark{width:30px;height:30px;border-radius:8px;border:1.5px solid var(--gold);color:var(--gold);display:grid;place-items:center;font-weight:800;font-size:12px}
+.top b{font-size:14.5px}.top small{color:var(--gold);display:inline;font-size:12px;font-weight:700;margin-inline-start:7px}
+.top a,.top button{color:#DCE8E8;background:transparent;border:1px solid rgba(255,255,255,.22);border-radius:20px;padding:2px 12px;text-decoration:none;font-size:11.5px;font-weight:700}
+.top a:hover,.top button:hover{background:rgba(255,255,255,.12)}
+#who{color:#C9DADA;font-size:11.5px}
+
+.layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:12px;padding:12px max(20px,env(safe-area-inset-right,0px)) 30px max(20px,env(safe-area-inset-left,0px));max-width:1560px;margin:0 auto;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:1fr}}
+.card{--a:var(--gold);background:var(--card);border:1px solid var(--line);border-top:3px solid var(--a);border-radius:12px;padding:11px 14px 14px;min-width:0}
+aside.card{--a:var(--teal)}
+.plans-list{display:grid;gap:6px}
+.plans-list button{text-align:right;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 11px;font-weight:700}
+.plans-list button:hover{border-color:var(--gold)}
+.plans-list button[aria-current="true"]{border-color:var(--secondary);background:color-mix(in srgb,var(--teal) 9%,#fff);border-right:4px solid var(--teal)}
+.plans-list small{color:var(--muted);display:block;font-size:11px;font-weight:500}
+
+.btn{border:0;border-radius:10px;padding:7px 15px;font-weight:700;background:var(--primary);color:#fff}
+.btn:hover{background:var(--secondary)}
+.btn.gold{background:var(--gold);color:var(--primary)}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn.ghost:hover{border-color:var(--gold)}
+.btn.danger{background:#fff;color:var(--red);border:1px solid color-mix(in srgb,var(--red) 30%,#fff)}
+.btn.sm{padding:3px 10px;font-size:11.5px;border-radius:8px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.muted{color:var(--muted)}.small{font-size:12px}
+
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-block:10px 12px;padding:6px;border-radius:12px;background:linear-gradient(110deg,var(--primary),var(--secondary))}
+.tabs button{background:transparent;border:1px solid rgba(255,255,255,.22);border-radius:20px;padding:3px 14px;font-weight:700;font-size:12px;color:#DCE8E8}
+.tabs button:hover{background:rgba(255,255,255,.12)}
+.tabs button[aria-selected="true"]{background:var(--gold);border-color:var(--gold);color:var(--primary)}
+
+.grid{display:grid;gap:12px}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:640px){.g2,.g3{grid-template-columns:1fr}}
+label.f{display:grid;gap:3px;font-weight:700;font-size:12px}
+label.f .hint,.hint{font-weight:500;color:var(--muted);font-size:11px}
+input[type=text],input[type=number],input[type=email],input[type=password],input[type=date],input[type=url],select,textarea{width:100%;border:1px solid var(--line);background:#fff;border-radius:9px;padding:6px 9px;min-width:0;font-size:13px}
+input:focus,select:focus{outline:none;border-color:var(--gold);box-shadow:0 0 0 3px rgba(203,185,148,.2)}
+input:disabled,select:disabled{background:var(--track);color:var(--muted)}
+
+/* رأس القسم مثل لوحة التقارير */
+fieldset{--c:var(--gold);border:1px solid var(--line);border-radius:12px;padding:0 14px 14px;margin:0;display:grid;gap:10px;min-width:0;background:#fff}
+fieldset>legend{float:right;width:calc(100% + 28px);margin:-1px -14px 2px;padding:7px 14px;border-radius:12px 12px 0 0;color:#fff;font-weight:800;font-size:14px;background:linear-gradient(110deg,var(--primary),var(--secondary));border-right:6px solid var(--c)}
+fieldset>legend+*{clear:both}
+fieldset.c-gold{--c:var(--gold)}fieldset.c-teal{--c:var(--teal)}fieldset.c-blue{--c:var(--blue)}fieldset.c-violet{--c:var(--violet)}fieldset.c-red{--c:var(--red)}
+
+.choices{display:flex;flex-wrap:wrap;gap:6px}
+.choices label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:20px;padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;background:#fff}
+.choices label:has(input:checked){border-color:color-mix(in srgb,var(--teal) 45%,#fff);background:color-mix(in srgb,var(--teal) 11%,#fff);color:var(--secondary)}
+.choices input{accent-color:var(--teal)}
+
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:#fff}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:6px 8px;border-bottom:1px dashed var(--soft-line);text-align:right;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+th{background:#EEF3F3;color:var(--primary);font-weight:800;font-size:11.5px;white-space:nowrap;border-bottom:1px solid var(--line)}
+td input,td select{padding:4px 7px;font-size:12px}
+td select{min-width:118px}
+td.err{background:#FFF4F4;color:#8F2530}
+
+.pill{display:inline-block;padding:1px 10px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;border:1px solid}
+.pill.ok{color:var(--green);background:color-mix(in srgb,var(--green) 11%,#fff);border-color:color-mix(in srgb,var(--green) 30%,#fff)}
+.pill.bad{color:var(--red);background:color-mix(in srgb,var(--red) 10%,#fff);border-color:color-mix(in srgb,var(--red) 30%,#fff)}
+.pill.warn{color:#9A6A08;background:color-mix(in srgb,var(--amber) 13%,#fff);border-color:color-mix(in srgb,var(--amber) 35%,#fff)}
+.pill.plain{color:var(--muted);background:var(--track);border-color:var(--line)}
+.pill.gold{color:#7A6534;background:color-mix(in srgb,var(--gold) 20%,#fff);border-color:var(--gold)}
+.note{background:color-mix(in srgb,var(--gold) 14%,#fff);border:1px solid color-mix(in srgb,var(--gold) 45%,#fff);color:#5E4D27;border-radius:10px;padding:8px 12px;font-size:12px}
+.errbox{border:1px solid var(--red);background:#FFF4F4;color:#8F2530;border-radius:10px;padding:8px 12px;font-size:12px}
+.okbox{border:1px solid color-mix(in srgb,var(--green) 35%,#fff);background:color-mix(in srgb,var(--green) 9%,#fff);color:#1F6A4A;border-radius:10px;padding:8px 12px;font-size:12px}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:18px;text-align:center;background:#fff}
+.drop.over{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 12%,#fff)}
+.preview-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media (max-width:800px){.preview-cols{grid-template-columns:1fr}}
+.phone{border:1px solid var(--line);border-top:3px solid var(--c,var(--teal));border-radius:12px;padding:11px 12px;background:#fff;display:grid;gap:8px}
+.task{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:center;border-radius:10px;padding:8px 11px;background:color-mix(in srgb,var(--teal) 7%,#fff);border:1px solid color-mix(in srgb,var(--teal) 22%,#fff)}
+.task .tick{width:24px;height:24px;border-radius:50%;border:2px solid color-mix(in srgb,var(--teal) 40%,#fff);display:grid;place-items:center;font-weight:800;color:#fff;background:#fff}
+.task .tick.on{background:var(--green);border-color:var(--green)}
+.task .tick.none{visibility:hidden}
+.task b{display:block;color:var(--primary)}
+.ded{display:flex;align-items:center;gap:8px}
+.ded button{width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:#fff;font-weight:800}
+.score{font-size:22px;font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--primary);color:#fff;padding:9px 18px;border-radius:10px;font-weight:700;z-index:50;max-width:calc(100% - 32px);text-align:center;border-bottom:2px solid var(--gold)}
+.toast.bad{background:#8F2530;border-bottom-color:var(--red)}
+.login{max-width:400px;margin:60px auto}
+.empty{padding:14px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:9px;font-size:12px;background:#fff}
+.colnum{color:var(--muted);font-weight:800;text-align:center;font-variant-numeric:tabular-nums}
+.sticky-save{position:sticky;bottom:0;background:#fff;border-top:1px solid var(--line);padding:8px 0 0;margin-top:4px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><span class="mark">سنن</span><div><b>خطط البرامج</b><small>منصة رواد سنن</small></div></div>
+  <div class="row" style="gap:8px"><span id="who" class="small"></span><a href="dashboard.html">لوحة المشرف</a><button type="button" id="logout" hidden>خروج</button></div>
+</header>
+
+<div id="app"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// ============ الإعداد ============
+// ملاحظة: هذه قيم المشروع التجريبي. عند النقل لمشروع المنصة تُستبدل بـ SUPABASE_URL و ANON_KEY الخاصة به.
+const SUPABASE_URL = 'https://ijkotzbzpduaqykumqtq.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_0Ug3AHf8CWHpa4N1Hp9TvA_Ls7NMXaS';
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, storage: localStorage, storageKey: 'huffaz-auth' }
+});
+
+// ============ أدوات ============
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => (Math.random() * 16 | 0).toString(16)));
+let toastT;
+function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 3200); }
+const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const TASKS = { memo: 'حفظ', link: 'ربط', review: 'مراجعة', repeat: 'تكرار', explain: 'شرح', listen: 'سماع', custom: 'مهمة أخرى' };
+const VTYPES = { number: 'رقم', text: 'نص', url: 'رابط', bool: 'نعم / لا' };
+const ROLES = { single: 'قيمة مفردة', start: 'بداية نطاق (القيمة الدنيا)', end: 'نهاية نطاق (القيمة القصوى)' };
+const EXEC = { student: 'الطالب', teacher: 'المعلم', both: 'الطالب والمعلم', info: 'للعرض فقط' };
+const todayMakkah = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
+
+// ============ الحالة ============
+const S = { user: null, plans: [], plan: null, cols: [], removedCols: [], days: [], students: [], assignments: [], tab: 'rules', dirty: false, imported: null, previewDay: 1, previewTicks: {}, previewDed: {} };
+
+function blankPlan() {
+  return {
+    id: null, name: '', description: '', book_name: '', audio_url: '', book_url: '', whatsapp_url: '', status: 'draft',
+    workdays: [0, 1, 2, 3, 4], recitation_mode: 'days', recitation_days: [0, 2],
+    student_execution: 'counts', execution_weight: null, recitation_weight: null,
+    score_rules: { max: 10, deductions: [{ key: 'full', label: 'خطأ كامل', value: 1 }, { key: 'half', label: 'نصف خطأ', value: 0.5 }, { key: 'quarter', label: 'ربع خطأ', value: 0.25 }] },
+    discipline_rules: { absence_is: 'no_recitation', window_days: null, alert_after: null, warning_after: null, escalate_after: null, leave_max_month: null, makeup_within_days: null }
+  };
+}
+function newCol(over) { return Object.assign({ id: uid(), header: '', task: 'memo', task_label: '', value_type: 'number', range_role: 'single', pair_column_id: null, executor: 'both', counts: true, weight: null, required: false, _new: true }, over || {}); }
+function taskName(c) { return c.task === 'custom' ? (c.task_label || 'مهمة أخرى') : TASKS[c.task]; }
+
+// ============ الدخول ============
+async function boot() {
+  const { data: { session } } = await db.auth.getSession();
+  if (!session) return renderLogin();
+  const { data: me } = await db.from('users').select('id, name, role').eq('id', session.user.id).maybeSingle();
+  if (!me || me.role !== 'admin') { renderLogin('هذه الصفحة للمشرف فقط.'); return; }
+  S.user = me;
+  $('#who').textContent = me.name;
+  $('#logout').hidden = false;
+  await loadPlans();
+  if (S.plans.length) await openPlan(S.plans[0].id); else startNew();
+}
+function renderLogin(msg) {
+  $('#app').innerHTML = `<form class="card login grid" id="loginForm">
+    <h2>دخول المشرف</h2>
+    ${msg ? `<div class="errbox">${esc(msg)}</div>` : ''}
+    <label class="f" for="le">البريد الإلكتروني<input id="le" type="email" dir="ltr" required autocomplete="email"></label>
+    <label class="f" for="lp">كلمة المرور<input id="lp" type="password" dir="ltr" required autocomplete="current-password"></label>
+    <button class="btn" type="submit">دخول</button></form>`;
+  $('#loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const { error } = await db.auth.signInWithPassword({ email: $('#le').value.trim(), password: $('#lp').value });
+    if (error) return renderLogin('البريد أو كلمة المرور غير صحيحة.');
+    boot();
+  });
+}
+$('#logout').addEventListener('click', async () => { await db.auth.signOut(); location.reload(); });
+
+// ============ التحميل ============
+async function loadPlans() {
+  const { data, error } = await db.from('program_plans').select('id, name, status, book_name').order('created_at');
+  if (error) return toast('تعذّر تحميل الخطط: ' + error.message, true);
+  S.plans = data || [];
+}
+async function openPlan(id) {
+  const [p, c, d] = await Promise.all([
+    db.from('program_plans').select('*').eq('id', id).single(),
+    db.from('plan_columns').select('*').eq('plan_id', id).order('seq'),
+    db.from('plan_days').select('id, day_number, vals').eq('plan_id', id).order('day_number')
+  ]);
+  if (p.error) return toast('تعذّر فتح الخطة', true);
+  S.plan = p.data;
+  S.plan.score_rules = S.plan.score_rules || blankPlan().score_rules;
+  S.plan.discipline_rules = Object.assign(blankPlan().discipline_rules, S.plan.discipline_rules || {});
+  S.cols = c.data || [];
+  S.removedCols = [];
+  S.days = d.data || [];
+  S.imported = null; S.dirty = false; S.previewDay = 1; S.previewTicks = {}; S.previewDed = {};
+  render();
+}
+function startNew() {
+  S.plan = blankPlan();
+  S.cols = [
+    newCol({ header: 'الحفظ من حديث', task: 'memo', range_role: 'start' }),
+    newCol({ header: 'الحفظ إلى حديث', task: 'memo', range_role: 'end' })
+  ];
+  S.cols[0].pair_column_id = S.cols[1].id; S.cols[1].pair_column_id = S.cols[0].id;
+  S.removedCols = []; S.days = []; S.imported = null; S.tab = 'rules'; S.dirty = true;
+  render();
+}
+
+// ============ العرض ============
+function render() {
+  const P = S.plan;
+  $('#app').innerHTML = `<div class="layout">
+    <aside class="card grid">
+      <div class="row"><h3>الخطط</h3><button class="btn sm gold" type="button" id="newPlan">+ خطة جديدة</button></div>
+      <div class="plans-list">${S.plans.map(p => `<button type="button" data-open="${p.id}" aria-current="${P && p.id === P.id}">${esc(p.name)}<small>${esc(p.book_name || '')} · ${p.status === 'active' ? 'مفعّلة' : p.status === 'archived' ? 'مؤرشفة' : 'مسودة'}</small></button>`).join('') || '<p class="muted small">لا توجد خطط بعد.</p>'}</div>
+      <p class="hint">الخطة هي طريقة البرنامج: أعمدتها، ومن ينفّذ، وأيام التسميع، وقواعد التنبيه والإنذار. أنشئها ثم أسندها للطلاب.</p>
+    </aside>
+    <section class="card">
+      <div class="row">
+        <div><h2>${esc(P.name || 'خطة جديدة')}</h2><p class="muted small">${S.cols.length} عمود · ${S.days.length} يوم${P.id ? '' : ' · لم تُحفظ بعد'}</p></div>
+        <div class="row" style="gap:6px">${S.dirty ? '<span class="pill warn">تغييرات غير محفوظة</span>' : P.id ? '<span class="pill ok">محفوظة</span>' : ''}<button class="btn" type="button" id="savePlan">حفظ الخطة</button></div>
+      </div>
+      <div class="tabs" role="tablist">
+        ${[['rules', '١. القواعد'], ['columns', '٢. أعمدة الخطة'], ['days', '٣. أيام الخطة والإكسل'], ['preview', '٤. المعاينة'], ['assign', '٥. الإسناد للطلاب']].map(t => `<button type="button" role="tab" data-tab="${t[0]}" aria-selected="${S.tab === t[0]}">${t[1]}</button>`).join('')}
+      </div>
+      <div id="tab"></div>
+    </section></div>`;
+  $('#newPlan').onclick = () => { if (S.dirty && !confirmLeave()) return; startNew(); };
+  $$('[data-open]').forEach(b => b.onclick = () => { if (S.dirty && !confirmLeave()) return; openPlan(b.dataset.open); });
+  $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
+  $('#savePlan').onclick = savePlan;
+  ({ rules: tabRules, columns: tabColumns, days: tabDays, preview: tabPreview, assign: tabAssign })[S.tab]();
+}
+let leaveWarned = false;
+function confirmLeave() { if (leaveWarned) { leaveWarned = false; return true; } leaveWarned = true; toast('لديك تغييرات غير محفوظة. اضغط مرة أخرى للمتابعة دون حفظ.', true); setTimeout(() => leaveWarned = false, 4000); return false; }
+function markDirty() { if (!S.dirty) { S.dirty = true; const h = $('.layout section .row .row'); if (h && !h.querySelector('.pill.warn')) h.insertAdjacentHTML('afterbegin', '<span class="pill warn">تغييرات غير محفوظة</span>'); } }
+const numOrNull = v => v === '' || v == null ? null : Number(v);
+
+// ---------- ١. القواعد ----------
+function tabRules() {
+  const P = S.plan, D = P.discipline_rules, R = P.score_rules;
+  $('#tab').innerHTML = `<div class="grid">
+    <fieldset class="c-gold"><legend>بيانات الخطة</legend>
+      <div class="g2">
+        <label class="f" for="pName">اسم الخطة<input id="pName" type="text" value="${esc(P.name)}" placeholder="مثال: الجمع بين الصحيحين — المجلد الثاني"></label>
+        <label class="f" for="pBook">الكتاب<input id="pBook" type="text" value="${esc(P.book_name)}"></label>
+      </div>
+      <label class="f" for="pDesc">وصف مختصر <span class="hint">اختياري</span><input id="pDesc" type="text" value="${esc(P.description)}"></label>
+      <div class="g3">
+        <label class="f" for="pAudio">رابط السماع<input id="pAudio" type="url" dir="ltr" value="${esc(P.audio_url)}"></label>
+        <label class="f" for="pBookUrl">رابط الكتاب<input id="pBookUrl" type="url" dir="ltr" value="${esc(P.book_url)}"></label>
+        <label class="f" for="pWa">رابط مجموعة واتساب<input id="pWa" type="url" dir="ltr" value="${esc(P.whatsapp_url)}"></label>
+      </div>
+      <label class="f" for="pStatus">الحالة<select id="pStatus">${[['draft', 'مسودة'], ['active', 'مفعّلة'], ['archived', 'مؤرشفة']].map(o => `<option value="${o[0]}"${P.status === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>
+    </fieldset>
+
+    <fieldset class="c-teal"><legend>أيام الخطة والتسميع</legend>
+      <div><b class="small">أيام تقدّم الخطة</b> <span class="hint">في هذه الأيام ينتقل الطالب ليوم جديد من الخطة</span>
+        <div class="choices" style="margin-top:6px">${DAYS.map((d, i) => `<label><input type="checkbox" data-wd="${i}"${P.workdays.includes(i) ? ' checked' : ''}>${d}</label>`).join('')}</div></div>
+      <div><b class="small">التسميع على المعلم</b>
+        <div class="choices" style="margin-top:6px">${[['daily', 'كل يوم من أيام الخطة'], ['days', 'أيام محددة'], ['none', 'لا يوجد تسميع']].map(o => `<label><input type="radio" name="recMode" value="${o[0]}"${P.recitation_mode === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div></div>
+      <div id="recDaysBox" ${P.recitation_mode === 'days' ? '' : 'hidden'}><b class="small">أيام التسميع</b>
+        <div class="choices" style="margin-top:6px">${DAYS.map((d, i) => `<label><input type="checkbox" data-rd="${i}"${P.recitation_days.includes(i) ? ' checked' : ''}>${d}</label>`).join('')}</div></div>
+    </fieldset>
+
+    <fieldset class="c-blue"><legend>تنفيذ الطالب والتقييم</legend>
+      <div class="choices">${[['none', 'لا يوجد تنفيذ عند الطالب'], ['record_only', 'الطالب ينفّذ للمتابعة فقط ولا يدخل في التقييم'], ['counts', 'تنفيذ الطالب يدخل في التقييم']].map(o => `<label><input type="radio" name="exec" value="${o[0]}"${P.student_execution === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div>
+      <div class="g2">
+        <label class="f" for="wExec">وزن تنفيذ الطالب في التقييم <span class="hint">نسبة مئوية تحددها أنت</span><input id="wExec" type="number" min="0" max="100" step="1" value="${P.execution_weight ?? ''}" ${P.student_execution === 'counts' ? '' : 'disabled'} placeholder="مثال: ٣٠"></label>
+        <label class="f" for="wRec">وزن التسميع في التقييم<input id="wRec" type="number" min="0" max="100" step="1" value="${P.recitation_weight ?? ''}" ${P.recitation_mode === 'none' ? 'disabled' : ''} placeholder="مثال: ٧٠"></label>
+      </div>
+      <div id="wMsg"></div>
+    </fieldset>
+
+    <fieldset class="c-violet"><legend>درجة التسميع</legend>
+      <label class="f" for="sMax" style="max-width:220px">الدرجة الكاملة<input id="sMax" type="number" min="1" step="0.5" value="${R.max ?? ''}"></label>
+      <div class="table-wrap"><table><thead><tr><th>نوع الخطأ</th><th>يُخصم لكل خطأ</th><th></th></tr></thead><tbody>
+        ${R.deductions.map((d, i) => `<tr><td><input type="text" data-dl="${i}" value="${esc(d.label)}"></td><td><input type="number" step="0.05" min="0" data-dv="${i}" value="${d.value}"></td><td><button class="btn sm danger" type="button" data-dd="${i}">حذف</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div><button class="btn sm ghost" type="button" id="addDed">+ نوع خطأ</button></div>
+    </fieldset>
+
+    <fieldset class="c-red"><legend>الانضباط</legend>
+      <p class="hint">كل القيم تحددها أنت، ولا توجد قيمة افتراضية. الحقل الفارغ يعني أن القاعدة غير مفعّلة.</p>
+      <div><b class="small">يُعدّ الطالب غائبًا في يوم الخطة إذا</b>
+        <div class="choices" style="margin-top:6px">${[['no_recitation', 'لم يسمّع (في أيام التسميع)'], ['no_execution', 'لم ينفّذ مهامه'], ['either', 'لم يسمّع أو لم ينفّذ'], ['both', 'لم يسمّع ولم ينفّذ']].map(o => `<label><input type="radio" name="absIs" value="${o[0]}"${D.absence_is === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div></div>
+      <div class="g3">
+        <label class="f" for="dWin">نافذة الاحتساب <span class="hint">أيام خطة</span><input id="dWin" type="number" min="1" value="${D.window_days ?? ''}"></label>
+        <label class="f" for="dAlert">غيابات تُنشئ تنبيهًا<input id="dAlert" type="number" min="1" value="${D.alert_after ?? ''}"></label>
+        <label class="f" for="dWarn">غيابات تُنشئ إنذارًا<input id="dWarn" type="number" min="1" value="${D.warning_after ?? ''}"></label>
+        <label class="f" for="dEsc">إنذارات قبل التصعيد للمشرف<input id="dEsc" type="number" min="1" value="${D.escalate_after ?? ''}"></label>
+        <label class="f" for="dLeave">أقصى استئذان في الشهر <span class="hint">أيام</span><input id="dLeave" type="number" min="0" value="${D.leave_max_month ?? ''}"></label>
+        <label class="f" for="dMk">مهلة التعويض <span class="hint">أيام بعد الغياب</span><input id="dMk" type="number" min="0" value="${D.makeup_within_days ?? ''}"></label>
+      </div>
+    </fieldset>
+  </div>`;
+
+  const bindTxt = (id, key) => $('#' + id).addEventListener('input', e => { P[key] = e.target.value; markDirty(); });
+  bindTxt('pName', 'name'); bindTxt('pBook', 'book_name'); bindTxt('pDesc', 'description'); bindTxt('pAudio', 'audio_url'); bindTxt('pBookUrl', 'book_url'); bindTxt('pWa', 'whatsapp_url');
+  $('#pStatus').onchange = e => { P.status = e.target.value; markDirty(); };
+  $$('[data-wd]').forEach(c => c.onchange = () => { P.workdays = $$('[data-wd]').filter(x => x.checked).map(x => +x.dataset.wd); markDirty(); });
+  $$('[data-rd]').forEach(c => c.onchange = () => { P.recitation_days = $$('[data-rd]').filter(x => x.checked).map(x => +x.dataset.rd); markDirty(); });
+  $$('[name=recMode]').forEach(r => r.onchange = () => { P.recitation_mode = r.value; markDirty(); $('#recDaysBox').hidden = r.value !== 'days'; $('#wRec').disabled = r.value === 'none'; weightMsg(); });
+  $$('[name=exec]').forEach(r => r.onchange = () => { P.student_execution = r.value; markDirty(); $('#wExec').disabled = r.value !== 'counts'; weightMsg(); });
+  $('#wExec').oninput = e => { P.execution_weight = numOrNull(e.target.value); markDirty(); weightMsg(); };
+  $('#wRec').oninput = e => { P.recitation_weight = numOrNull(e.target.value); markDirty(); weightMsg(); };
+  $('#sMax').oninput = e => { R.max = numOrNull(e.target.value); markDirty(); };
+  $$('[data-dl]').forEach(i => i.oninput = () => { R.deductions[+i.dataset.dl].label = i.value; markDirty(); });
+  $$('[data-dv]').forEach(i => i.oninput = () => { R.deductions[+i.dataset.dv].value = Number(i.value) || 0; markDirty(); });
+  $$('[data-dd]').forEach(b => b.onclick = () => { R.deductions.splice(+b.dataset.dd, 1); markDirty(); tabRules(); });
+  $('#addDed').onclick = () => { R.deductions.push({ key: 'd' + Date.now(), label: '', value: 0 }); markDirty(); tabRules(); };
+  $$('[name=absIs]').forEach(r => r.onchange = () => { D.absence_is = r.value; markDirty(); });
+  [['dWin', 'window_days'], ['dAlert', 'alert_after'], ['dWarn', 'warning_after'], ['dEsc', 'escalate_after'], ['dLeave', 'leave_max_month'], ['dMk', 'makeup_within_days']]
+    .forEach(([id, k]) => $('#' + id).oninput = e => { D[k] = numOrNull(e.target.value); markDirty(); });
+  weightMsg();
+}
+function weightMsg() {
+  const P = S.plan, box = $('#wMsg'); if (!box) return;
+  const parts = [];
+  if (P.student_execution === 'counts') parts.push(P.execution_weight);
+  if (P.recitation_mode !== 'none') parts.push(P.recitation_weight);
+  if (parts.some(v => v == null)) { box.innerHTML = '<div class="note">حدّد الأوزان لتُحسب النسبة النهائية للطالب.</div>'; return; }
+  const sum = parts.reduce((a, b) => a + b, 0);
+  box.innerHTML = sum === 100 ? '<div class="okbox">مجموع الأوزان ١٠٠٪.</div>' : `<div class="errbox">مجموع الأوزان ${sum}٪، ويجب أن يكون ١٠٠٪.</div>`;
+}
+
+// ---------- ٢. الأعمدة ----------
+function tabColumns() {
+  const cols = S.cols;
+  const issues = columnIssues();
+  $('#tab').innerHTML = `<div class="grid">
+    <p class="muted small">كل عمود هنا هو عمود في ملف الإكسل. اربط عمودَي «من» و«إلى» ليصبحا نطاقًا واحدًا: الأول بداية النطاق (الأدنى) والثاني نهايته (الأقصى).</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>#</th><th>اسم العمود في الإكسل</th><th>المهمة</th><th>نوع القيمة</th><th>دوره</th><th>مرتبط بعمود</th><th>من ينفّذ</th><th>في التقييم</th><th>الوزن</th><th>إلزامي</th><th></th></tr></thead>
+      <tbody>${cols.map((c, i) => `<tr data-i="${i}">
+        <td class="colnum">${i + 1}</td>
+        <td><input type="text" data-k="header" value="${esc(c.header)}" placeholder="مثال: الحفظ من حديث" style="min-width:150px"></td>
+        <td><select data-k="task">${Object.entries(TASKS).map(([k, v]) => `<option value="${k}"${c.task === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
+          ${c.task === 'custom' ? `<input type="text" data-k="task_label" value="${esc(c.task_label)}" placeholder="اسم المهمة" style="margin-top:4px">` : ''}</td>
+        <td><select data-k="value_type">${Object.entries(VTYPES).map(([k, v]) => `<option value="${k}"${c.value_type === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td><select data-k="range_role">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}"${c.range_role === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td><select data-k="pair_column_id"><option value="">لا</option>${cols.filter(o => o.id !== c.id).map(o => `<option value="${o.id}"${c.pair_column_id === o.id ? ' selected' : ''}>${esc(o.header || 'عمود ' + (cols.indexOf(o) + 1))}</option>`).join('')}</select></td>
+        <td><select data-k="executor">${Object.entries(EXEC).map(([k, v]) => `<option value="${k}"${c.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td style="text-align:center"><input type="checkbox" data-k="counts"${c.counts ? ' checked' : ''}${c.executor === 'info' ? ' disabled' : ''}></td>
+        <td><input type="number" data-k="weight" min="0" step="1" value="${c.weight ?? ''}" style="width:70px"${c.counts && c.executor !== 'info' ? '' : ' disabled'}></td>
+        <td style="text-align:center"><input type="checkbox" data-k="required"${c.required ? ' checked' : ''}></td>
+        <td style="white-space:nowrap"><button class="btn sm ghost" type="button" data-up="${i}" ${i ? '' : 'disabled'} aria-label="نقل لأعلى">↑</button> <button class="btn sm ghost" type="button" data-down="${i}" ${i < cols.length - 1 ? '' : 'disabled'} aria-label="نقل لأسفل">↓</button> <button class="btn sm danger" type="button" data-del="${i}">حذف</button></td>
+      </tr>`).join('')}</tbody></table></div>
+    <div class="row" style="justify-content:flex-start"><button class="btn sm gold" type="button" id="addCol">+ عمود</button><button class="btn sm ghost" type="button" id="addRange">+ نطاق (من / إلى)</button></div>
+    ${issues.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${issues.map(esc).join('<br>')}</div>` : '<div class="okbox">الأعمدة سليمة.</div>'}
+    <div class="note">«من ينفّذ» يحدد أين يظهر العمود: الطالب يراه مهمة يعلّم عليها، والمعلم يراه حقلًا في الرصد، و«للعرض فقط» يظهر معلومة دون تنفيذ مثل رابط الشرح.</div>
+  </div>`;
+  $$('#tab tbody tr').forEach(tr => {
+    const c = cols[+tr.dataset.i];
+    $$('[data-k]', tr).forEach(el => {
+      const k = el.dataset.k;
+      el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', () => {
+        let v = el.type === 'checkbox' ? el.checked : el.value;
+        if (k === 'weight') v = numOrNull(v);
+        if (k === 'pair_column_id') { setPair(c, v || null); markDirty(); return tabColumns(); }
+        c[k] = v; markDirty();
+        if (k === 'range_role' && c.pair_column_id) { const o = cols.find(x => x.id === c.pair_column_id); if (o && v !== 'single') o.range_role = v === 'start' ? 'end' : 'start'; }
+        if (['task', 'executor', 'counts', 'range_role'].includes(k)) {
+          if (k === 'task' && c.pair_column_id) { const o = cols.find(x => x.id === c.pair_column_id); if (o) o.task = v; }
+          tabColumns();
+        } else refreshIssues();
+      });
+    });
+  });
+  $$('[data-del]').forEach(b => b.onclick = () => { const c = cols[+b.dataset.del]; if (c.pair_column_id) setPair(c, null); if (!c._new) S.removedCols.push(c.id); cols.splice(+b.dataset.del, 1); markDirty(); tabColumns(); });
+  $$('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; [cols[i - 1], cols[i]] = [cols[i], cols[i - 1]]; markDirty(); tabColumns(); });
+  $$('[data-down]').forEach(b => b.onclick = () => { const i = +b.dataset.down; [cols[i + 1], cols[i]] = [cols[i], cols[i + 1]]; markDirty(); tabColumns(); });
+  $('#addCol').onclick = () => { cols.push(newCol({ task: 'custom', range_role: 'single' })); markDirty(); tabColumns(); };
+  $('#addRange').onclick = () => { const a = newCol({ task: 'review', range_role: 'start', header: 'من' }), b = newCol({ task: 'review', range_role: 'end', header: 'إلى' }); a.pair_column_id = b.id; b.pair_column_id = a.id; cols.push(a, b); markDirty(); tabColumns(); };
+}
+function setPair(c, otherId) {
+  const cols = S.cols;
+  if (c.pair_column_id) { const old = cols.find(x => x.id === c.pair_column_id); if (old) { old.pair_column_id = null; old.range_role = 'single'; } }
+  c.pair_column_id = otherId;
+  if (!otherId) { c.range_role = 'single'; return; }
+  const o = cols.find(x => x.id === otherId);
+  if (o.pair_column_id && o.pair_column_id !== c.id) { const o2 = cols.find(x => x.id === o.pair_column_id); if (o2) { o2.pair_column_id = null; o2.range_role = 'single'; } }
+  o.pair_column_id = c.id;
+  const first = cols.indexOf(c) < cols.indexOf(o) ? c : o;
+  first.range_role = 'start'; (first === c ? o : c).range_role = 'end';
+  o.task = c.task; o.task_label = c.task_label; o.executor = c.executor; o.value_type = c.value_type === 'text' ? 'text' : 'number';
+}
+function columnIssues() {
+  const out = [], seen = {};
+  S.cols.forEach((c, i) => {
+    const n = 'العمود ' + (i + 1);
+    if (!c.header.trim()) out.push(n + ': اكتب اسم العمود كما في الإكسل.');
+    else if (seen[c.header.trim()]) out.push(n + ': الاسم «' + c.header + '» مكرر.'); else seen[c.header.trim()] = 1;
+    if (c.task === 'custom' && !String(c.task_label || '').trim()) out.push(n + ': اكتب اسم المهمة.');
+    if (c.range_role !== 'single' && !c.pair_column_id) out.push(n + ': بداية النطاق أو نهايته يجب أن يرتبط بعمود آخر.');
+    if (c.pair_column_id) { const o = S.cols.find(x => x.id === c.pair_column_id); if (!o) out.push(n + ': العمود المرتبط محذوف.'); else if (o.range_role === c.range_role) out.push(n + ': العمودان المرتبطان يجب أن يكون أحدهما بداية والآخر نهاية.'); }
+    if (c.range_role !== 'single' && !['number', 'text'].includes(c.value_type)) out.push(n + ': النطاق يكون رقمًا أو نصًا.');
+  });
+  if (!S.cols.length) out.push('أضف عمودًا واحدًا على الأقل.');
+  return out;
+}
+function refreshIssues() { const box = $('#tab .errbox, #tab .okbox:last-of-type'); const is = columnIssues(); const html = is.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${is.map(esc).join('<br>')}</div>` : '<div class="okbox">الأعمدة سليمة.</div>'; const holder = $$('#tab > .grid > div').find(d => d.classList.contains('errbox') || d.classList.contains('okbox')); if (holder) holder.outerHTML = html; }
+
+// ---------- ٣. الأيام والإكسل ----------
+const DAY_HEADERS = ['اليوم', 'رقم اليوم', 'يوم', 'day'];
+function tabDays() {
+  const cols = S.cols, imp = S.imported;
+  const rows = imp ? imp.rows : S.days.map(d => ({ day_number: d.day_number, vals: d.vals, errors: {} }));
+  const errCount = imp ? imp.rows.reduce((a, r) => a + Object.keys(r.errors).length, 0) + imp.problems.length : 0;
+  $('#tab').innerHTML = `<div class="grid">
+    <div class="drop" id="drop">
+      <p><b>ارفع ملف إكسل للخطة</b></p>
+      <p class="muted small">الصف الأول رؤوس الأعمدة. تُطابَق الرؤوس بأسماء أعمدة الخطة. عمود رقم اليوم اختياري باسم «اليوم»، وإن لم يوجد تُرقَّم الصفوف بالترتيب.</p>
+      <div class="row" style="justify-content:center;margin-top:10px"><label class="btn gold" for="xfile" style="cursor:pointer">اختيار ملف</label><input id="xfile" type="file" accept=".xlsx,.xls,.csv" hidden><button class="btn ghost" type="button" id="tpl">تنزيل نموذج فارغ بأعمدة الخطة</button></div>
+    </div>
+    ${imp ? `<div class="${errCount ? 'errbox' : 'okbox'}">
+        <b>${esc(imp.file)}</b>: ${imp.rows.length} يوم.
+        ${imp.matched.length ? `الأعمدة المطابقة: ${imp.matched.map(esc).join('، ')}.` : ''}
+        ${imp.unknown.length ? `<br>أعمدة في الملف ليست في الخطة (ستُتجاهل): ${imp.unknown.map(esc).join('، ')}.` : ''}
+        ${imp.missing.length ? `<br>أعمدة في الخطة غير موجودة في الملف: ${imp.missing.map(esc).join('، ')}.` : ''}
+        ${imp.problems.map(p => '<br>' + esc(p)).join('')}
+        ${errCount ? `<br><b>${errCount} خطأ</b> مظلل بالأحمر في الجدول. صحّح الملف وارفعه مجددًا.` : '<br>لا أخطاء. اضغط «اعتماد الأيام» ثم «حفظ الخطة».'}
+      </div>
+      <div class="row" style="justify-content:flex-start"><button class="btn" type="button" id="acceptImp" ${errCount ? 'disabled' : ''}>اعتماد الأيام (${imp.rows.length})</button><button class="btn ghost" type="button" id="cancelImp">إلغاء</button></div>` : ''}
+    ${rows.length ? `<div class="table-wrap" style="max-height:480px;overflow:auto"><table>
+      <thead><tr><th>اليوم</th>${cols.map(c => `<th>${esc(c.header)}<br><span class="hint">${esc(taskName(c))}</span></th>`).join('')}</tr></thead>
+      <tbody>${rows.slice(0, 400).map(r => `<tr><td class="colnum${r.errors._day ? ' err' : ''}" title="${esc(r.errors._day || '')}">${esc(r.day_number)}</td>${cols.map(c => { const e = r.errors[c.id]; const v = r.vals[c.id]; return `<td class="${e ? 'err' : ''}" title="${esc(e || '')}">${v == null || v === '' ? '<span class="muted">—</span>' : c.value_type === 'url' ? `<a href="${esc(v)}" target="_blank" rel="noopener">رابط</a>` : c.value_type === 'bool' ? (v ? 'نعم' : 'لا') : esc(v)}${e ? `<div class="small">${esc(e)}</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+      ${rows.length > 400 ? `<p class="muted small">يُعرض أول ٤٠٠ يوم من ${rows.length}.</p>` : ''}` : '<div class="empty">لا توجد أيام بعد. ارفع ملف الإكسل.</div>'}
+  </div>`;
+  const fi = $('#xfile');
+  fi.onchange = () => fi.files[0] && readExcel(fi.files[0]);
+  const drop = $('#drop');
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+  drop.ondragleave = () => drop.classList.remove('over');
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) readExcel(f); };
+  $('#tpl').onclick = downloadTemplate;
+  if (imp) {
+    $('#acceptImp').onclick = () => { S.days = imp.rows.map(r => ({ day_number: r.day_number, vals: r.vals })); S.imported = null; markDirty(); toast('اعتُمدت الأيام. اضغط «حفظ الخطة» لحفظها.'); render(); };
+    $('#cancelImp').onclick = () => { S.imported = null; tabDays(); };
+  }
+}
+function downloadTemplate() {
+  if (columnIssues().length) return toast('أصلح الأعمدة أولًا', true);
+  const ws = XLSX.utils.aoa_to_sheet([['اليوم', ...S.cols.map(c => c.header)], [1, ...S.cols.map(() => '')]]);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الخطة');
+  try { XLSX.writeFile(wb, (S.plan.name || 'خطة') + '.xlsx'); } catch (e) { toast('المتصفح منع التنزيل', true); }
+}
+function readExcel(file) {
+  if (columnIssues().length) return toast('أصلح أعمدة الخطة أولًا (تبويب ٢)', true);
+  const r = new FileReader();
+  const isCsv = /\.csv$/i.test(file.name);
+  r.onload = () => {
+    try {
+      // ملفات CSV تُقرأ نصًا بترميز UTF-8 حتى لا تتشوه الحروف العربية
+      const wb = isCsv ? XLSX.read(String(r.result).replace(/^﻿/, ''), { type: 'string' }) : XLSX.read(r.result, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+      S.imported = parseSheet(file.name, aoa);
+      tabDays();
+    } catch (e) { toast('تعذّرت قراءة الملف: ' + e.message, true); }
+  };
+  if (isCsv) r.readAsText(file, 'UTF-8'); else r.readAsArrayBuffer(file);
+}
+const norm = s => String(s ?? '').replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ى/g, 'ي').replace(/ة/g, 'ه').replace(/\s+/g, ' ').trim().toLowerCase();
+const toWestern = s => String(s).replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d)).replace(/[۰-۹]/g, d => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/٫/g, '.');
+function parseSheet(fileName, aoa) {
+  const problems = [];
+  let hi = aoa.findIndex(r => r.some(v => String(v).trim() !== ''));
+  if (hi < 0) return { file: fileName, rows: [], matched: [], unknown: [], missing: S.cols.map(c => c.header), problems: ['الملف فارغ.'] };
+  const headers = aoa[hi].map(h => String(h).trim());
+  const map = {}, matched = [], unknown = [];
+  let dayIdx = -1;
+  headers.forEach((h, i) => {
+    if (!h) return;
+    if (DAY_HEADERS.map(norm).includes(norm(h)) && dayIdx < 0) { dayIdx = i; return; }
+    const c = S.cols.find(c => norm(c.header) === norm(h));
+    if (c) { if (map[c.id] != null) problems.push('العمود «' + h + '» مكرر في الملف.'); map[c.id] = i; matched.push(h); } else unknown.push(h);
+  });
+  const missing = S.cols.filter(c => map[c.id] == null).map(c => c.header);
+  if (!matched.length) problems.push('لا يوجد في الملف أي عمود يطابق أسماء أعمدة الخطة. تأكد أن الصف الأول فيه رؤوس الأعمدة بنفس الأسماء.');
+  S.cols.filter(c => c.required && map[c.id] == null).forEach(c => problems.push('العمود الإلزامي «' + c.header + '» غير موجود في الملف.'));
+  const rows = [], seenDays = {};
+  let seq = 0;
+  aoa.slice(hi + 1).forEach((r, ri) => {
+    if (!r.some(v => String(v).trim() !== '')) return;
+    seq++;
+    const errors = {}, vals = {};
+    let dn = seq;
+    if (dayIdx >= 0) { const n = Number(toWestern(r[dayIdx])); if (!Number.isInteger(n) || n < 1) errors._day = 'رقم يوم غير صالح'; else dn = n; }
+    if (seenDays[dn]) errors._day = 'اليوم ' + dn + ' مكرر'; seenDays[dn] = 1;
+    S.cols.forEach(c => {
+      if (map[c.id] == null) return;
+      let v = r[map[c.id]];
+      v = typeof v === 'string' ? v.trim() : v;
+      if (v === '' || v == null) { if (c.required) errors[c.id] = 'مطلوب'; return; }
+      if (c.value_type === 'number') { const n = Number(toWestern(v)); if (isNaN(n)) errors[c.id] = 'ليس رقمًا'; else v = n; }
+      else if (c.value_type === 'bool') { const s = norm(v); v = ['1', 'نعم', 'yes', 'true', '✓', 'صح'].includes(s); }
+      else if (c.value_type === 'url') { if (!/^https?:\/\//i.test(String(v))) errors[c.id] = 'رابط غير صالح'; }
+      else v = String(v);
+      vals[c.id] = v;
+    });
+    S.cols.filter(c => c.range_role === 'start' && c.value_type === 'number').forEach(c => {
+      const e = S.cols.find(x => x.id === c.pair_column_id);
+      if (e && typeof vals[c.id] === 'number' && typeof vals[e.id] === 'number' && vals[c.id] > vals[e.id]) errors[e.id] = '«' + c.header + '» أكبر من «' + e.header + '»';
+      if (e && (vals[c.id] != null) !== (vals[e.id] != null)) errors[vals[c.id] == null ? c.id : e.id] = 'النطاق ناقص';
+    });
+    rows.push({ day_number: dn, vals, errors, line: hi + ri + 2 });
+  });
+  rows.sort((a, b) => a.day_number - b.day_number);
+  return { file: fileName, rows, matched, unknown, missing, problems };
+}
+
+// ---------- ٤. المعاينة ----------
+function groupTasks(filterFn) {
+  // يجمع كل عمودين مرتبطين في مهمة واحدة
+  const out = [], used = {};
+  S.cols.forEach(c => {
+    if (used[c.id] || !filterFn(c)) return;
+    if (c.pair_column_id) { const o = S.cols.find(x => x.id === c.pair_column_id); if (o) { used[o.id] = 1; const [a, b] = c.range_role === 'start' ? [c, o] : [o, c]; out.push({ key: a.id, name: taskName(a), from: a, to: b, cols: [a, b] }); return; } }
+    out.push({ key: c.id, name: taskName(c), single: c, cols: [c] });
+  });
+  return out;
+}
+function fmtTask(t, vals) {
+  if (t.single) { const v = vals[t.single.id]; if (v == null || v === '') return null; return t.single.value_type === 'bool' ? (v ? 'نعم' : 'لا') : t.single.value_type === 'url' ? 'رابط' : `${t.single.header}: ${v}`; }
+  const a = vals[t.from.id], b = vals[t.to.id];
+  if (a == null && b == null) return null;
+  return `من ${a ?? '؟'} إلى ${b ?? '؟'}`;
+}
+function tabPreview() {
+  const P = S.plan;
+  if (!S.days.length) { $('#tab').innerHTML = '<div class="empty">ارفع أيام الخطة أولًا لتظهر المعاينة.</div>'; return; }
+  const day = S.days.find(d => d.day_number === S.previewDay) || S.days[0];
+  S.previewDay = day.day_number;
+  const vals = day.vals || {};
+  const studentTasks = groupTasks(c => c.executor === 'student' || c.executor === 'both' || c.executor === 'info');
+  const teacherTasks = groupTasks(c => c.executor === 'teacher' || c.executor === 'both');
+  const canExec = P.student_execution !== 'none';
+  const R = P.score_rules;
+  const score = Math.max(0, (R.max || 0) - R.deductions.reduce((s, d) => s + (S.previewDed[d.key] || 0) * (Number(d.value) || 0), 0));
+  const recDays = P.recitation_mode === 'daily' ? P.workdays : P.recitation_mode === 'days' ? P.recitation_days : [];
+  $('#tab').innerHTML = `<div class="grid">
+    <div class="row" style="justify-content:flex-start"><label class="f" for="pvDay" style="width:200px">يوم الخطة<select id="pvDay">${S.days.map(d => `<option value="${d.day_number}"${d.day_number === day.day_number ? ' selected' : ''}>اليوم ${d.day_number}</option>`).join('')}</select></label>
+      <p class="muted small">هكذا يرى الطالب والمعلم هذا اليوم حسب إعدادات الخطة. التعليم والأخطاء هنا للتجربة ولا تُحفظ.</p></div>
+    <div class="preview-cols">
+      <div><h3 style="margin-bottom:8px">شاشة الطالب</h3><div class="phone">
+        <div class="row"><b>اليوم ${day.day_number}</b><span class="pill ${canExec ? 'gold' : 'plain'}">${P.student_execution === 'none' ? 'لا تنفيذ على الطالب' : P.student_execution === 'counts' ? 'تنفيذك يدخل في تقييمك' : 'تنفيذك للمتابعة'}</span></div>
+        ${studentTasks.map(t => { const txt = fmtTask(t, vals); if (txt == null) return ''; const info = t.cols[0].executor === 'info'; const exec = canExec && !info; const on = S.previewTicks[t.key];
+          return `<div class="task"><button type="button" class="tick ${exec ? (on ? 'on' : '') : 'none'}" data-tick="${t.key}" ${exec ? '' : 'tabindex="-1" aria-hidden="true"'}>${on ? '✓' : ''}</button><div><b>${esc(t.name)}</b><span class="small muted">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span></div></div>`; }).join('') || '<p class="muted small">لا توجد مهام للطالب في هذا اليوم.</p>'}
+        <p class="muted small">التسميع: ${P.recitation_mode === 'none' ? 'لا يوجد' : recDays.map(i => DAYS[i]).join('، ') || 'لم تُحدد أيام'}</p>
+      </div></div>
+      <div><h3 style="margin-bottom:8px">رصد المعلم</h3><div class="phone" style="--c:var(--blue)">
+        ${P.recitation_mode === 'none' ? '<p class="muted">هذه الخطة بلا تسميع، فلا يظهر للمعلم نموذج رصد.</p>' : `
+        <p class="small muted">يظهر النموذج في أيام التسميع: ${recDays.map(i => DAYS[i]).join('، ') || 'لم تُحدد'}</p>
+        ${teacherTasks.map(t => `<div class="task" style="grid-template-columns:1fr"><div><b>${esc(t.name)}</b><span class="small muted"> المقرر: ${esc(fmtTask(t, vals) ?? '—')}</span>
+          <div class="g2" style="margin-top:6px">${t.cols.map(c => `<label class="f small">${esc(c.header)}<input type="${c.value_type === 'number' ? 'number' : 'text'}" value="${esc(vals[c.id] ?? '')}" step="0.5"></label>`).join('')}</div></div></div>`).join('') || '<p class="muted small">لا توجد أعمدة يرصدها المعلم.</p>'}
+        <div class="task" style="grid-template-columns:1fr"><b>الأخطاء</b>
+          ${R.deductions.map(d => `<div class="row"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ded"><button type="button" data-ded="${esc(d.key)}" data-dir="-1">−</button><b>${S.previewDed[d.key] || 0}</b><button type="button" data-ded="${esc(d.key)}" data-dir="1">+</button></span></div>`).join('')}
+          <div class="row"><span>الدرجة</span><span class="score">${score.toFixed(2)} <span class="hint">من ${R.max}</span></span></div></div>`}
+      </div></div>
+    </div></div>`;
+  $('#pvDay').onchange = e => { S.previewDay = +e.target.value; S.previewTicks = {}; S.previewDed = {}; tabPreview(); };
+  $$('[data-tick]').forEach(b => b.onclick = () => { S.previewTicks[b.dataset.tick] = !S.previewTicks[b.dataset.tick]; tabPreview(); });
+  $$('[data-ded]').forEach(b => b.onclick = () => { const k = b.dataset.ded; S.previewDed[k] = Math.max(0, (S.previewDed[k] || 0) + +b.dataset.dir); tabPreview(); });
+}
+
+// ---------- ٥. الإسناد ----------
+async function tabAssign() {
+  if (!S.plan.id) { $('#tab').innerHTML = '<div class="empty">احفظ الخطة أولًا ثم أسندها للطلاب.</div>'; return; }
+  $('#tab').innerHTML = '<div class="empty">جارٍ التحميل…</div>';
+  const [st, as] = await Promise.all([
+    db.from('students').select('id, status, users!students_user_id_fkey(name, email)').eq('is_archived', false).order('join_date'),
+    db.from('plan_assignments').select('id, student_id, plan_id, start_date, start_day, program_plans(name)').is('ended_at', null)
+  ]);
+  if (st.error) { $('#tab').innerHTML = `<div class="errbox">${esc(st.error.message)}</div>`; return; }
+  const cur = {}; (as.data || []).forEach(a => cur[a.student_id] = a);
+  const today = todayMakkah();
+  $('#tab').innerHTML = `<div class="grid">
+    <div class="g3">
+      <label class="f" for="aStart">تبدأ من تاريخ<input id="aStart" type="date" value="${today}"></label>
+      <label class="f" for="aDay">من يوم الخطة رقم<input id="aDay" type="number" min="1" value="1"></label>
+      <label class="f" for="aSearch">بحث<input id="aSearch" type="text" placeholder="اسم الطالب أو بريده"></label>
+    </div>
+    <p class="hint">إذا كان الطالب على خطة أخرى تُغلق خطته السابقة ويبقى سجله فيها كما هو.</p>
+    <div class="table-wrap"><table><thead><tr><th><input type="checkbox" id="aAll" aria-label="تحديد الكل"></th><th>الطالب</th><th>البريد</th><th>الخطة الحالية</th></tr></thead><tbody>
+      ${(st.data || []).map(s => { const a = cur[s.id]; return `<tr data-name="${esc(norm((s.users?.name || '') + ' ' + (s.users?.email || '')))}"><td><input type="checkbox" data-stu="${s.id}"></td><td><b>${esc(s.users?.name || '—')}</b></td><td dir="ltr" style="text-align:right">${esc(s.users?.email || '')}</td><td>${a ? (a.plan_id === S.plan.id ? `<span class="pill ok">هذه الخطة · من يوم ${a.start_day}</span>` : `<span class="pill plain">${esc(a.program_plans?.name || 'خطة أخرى')}</span>`) : '<span class="muted">—</span>'}</td></tr>`; }).join('') || '<tr><td colspan="4" class="empty">لا يوجد طلاب.</td></tr>'}
+    </tbody></table></div>
+    <div class="sticky-save"><button class="btn" type="button" id="doAssign">إسناد الخطة للمحددين</button><span class="muted small" id="selCount">لم يُحدد أحد</span></div>
+  </div>`;
+  const upd = () => { const n = $$('[data-stu]:checked').length; $('#selCount').textContent = n ? `محدد ${n}` : 'لم يُحدد أحد'; };
+  $$('[data-stu]').forEach(c => c.onchange = upd);
+  $('#aAll').onchange = e => { $$('tbody tr').filter(tr => !tr.hidden).forEach(tr => { const c = $('[data-stu]', tr); if (c) c.checked = e.target.checked; }); upd(); };
+  $('#aSearch').oninput = e => { const q = norm(e.target.value); $$('tbody tr[data-name]').forEach(tr => tr.hidden = q && !tr.dataset.name.includes(q)); };
+  $('#doAssign').onclick = async () => {
+    if (S.dirty) return toast('احفظ تغييرات الخطة أولًا', true);
+    const ids = $$('[data-stu]:checked').map(c => c.dataset.stu);
+    if (!ids.length) return toast('حدّد طالبًا واحدًا على الأقل', true);
+    const startDay = Math.max(1, +$('#aDay').value || 1), startDate = $('#aStart').value || today;
+    const btn = $('#doAssign'); btn.disabled = true;
+    const close = await db.from('plan_assignments').update({ ended_at: new Date().toISOString() }).in('student_id', ids).is('ended_at', null);
+    if (close.error) { btn.disabled = false; return toast(close.error.message, true); }
+    const ins = await db.from('plan_assignments').insert(ids.map(id => ({ plan_id: S.plan.id, student_id: id, start_date: startDate, start_day: startDay, assigned_by: S.user.id })));
+    btn.disabled = false;
+    if (ins.error) return toast(ins.error.message, true);
+    toast(`أُسندت الخطة إلى ${ids.length} طالب`);
+    tabAssign();
+  };
+}
+
+// ============ الحفظ ============
+async function savePlan() {
+  const P = S.plan;
+  if (!String(P.name).trim()) { S.tab = 'rules'; render(); return toast('اكتب اسم الخطة', true); }
+  const issues = columnIssues();
+  if (issues.length) { S.tab = 'columns'; render(); return toast('في الأعمدة أخطاء يجب تصحيحها', true); }
+  if (P.recitation_mode === 'days' && !P.recitation_days.length) { S.tab = 'rules'; render(); return toast('اختر أيام التسميع', true); }
+  if (!P.workdays.length) { S.tab = 'rules'; render(); return toast('اختر يومًا واحدًا على الأقل لتقدّم الخطة', true); }
+  const btn = $('#savePlan'); btn.disabled = true; btn.textContent = 'جارٍ الحفظ…';
+  try {
+    const row = { name: P.name.trim(), description: P.description || null, book_name: P.book_name || null, audio_url: P.audio_url || null, book_url: P.book_url || null, whatsapp_url: P.whatsapp_url || null, status: P.status,
+      workdays: P.workdays, recitation_mode: P.recitation_mode, recitation_days: P.recitation_days, student_execution: P.student_execution,
+      execution_weight: P.execution_weight, recitation_weight: P.recitation_weight, score_rules: P.score_rules, discipline_rules: P.discipline_rules };
+    let planId = P.id;
+    if (planId) { const r = await db.from('program_plans').update(row).eq('id', planId); if (r.error) throw r.error; }
+    else { row.created_by = S.user.id; const r = await db.from('program_plans').insert(row).select('id').single(); if (r.error) throw r.error; planId = r.data.id; }
+    if (S.removedCols.length) { const r = await db.from('plan_columns').delete().in('id', S.removedCols); if (r.error) throw r.error; }
+    // الأعمدة بطلب واحد: الترتيب والاسم والارتباط معًا (قيود التفرد مؤجلة لنهاية الطلب)
+    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, executor: c.executor, counts: c.executor === 'info' ? false : !!c.counts, weight: c.weight, required: !!c.required }));
+    let r = await db.from('plan_columns').upsert(colRows); if (r.error) throw r.error;
+    // الأيام: تُستبدل بالكامل عند تغييرها
+    const ids = new Set(S.cols.map(c => c.id));
+    const dayRows = S.days.map(d => ({ plan_id: planId, day_number: d.day_number, vals: Object.fromEntries(Object.entries(d.vals || {}).filter(([k]) => ids.has(k))) }));
+    const existing = await db.from('plan_days').select('id, day_number').eq('plan_id', planId);
+    const keep = new Set(dayRows.map(d => d.day_number));
+    const drop = (existing.data || []).filter(d => !keep.has(d.day_number)).map(d => d.id);
+    if (drop.length) { r = await db.from('plan_days').delete().in('id', drop); if (r.error) throw r.error; }
+    for (let i = 0; i < dayRows.length; i += 500) { r = await db.from('plan_days').upsert(dayRows.slice(i, i + 500), { onConflict: 'plan_id,day_number' }); if (r.error) throw r.error; }
+    S.dirty = false;
+    await loadPlans();
+    toast('حُفظت الخطة');
+    const tab = S.tab; await openPlan(planId); S.tab = tab; render();
+  } catch (e) {
+    toast('لم تُحفظ: ' + (e.message || e), true);
+    btn.disabled = false; btn.textContent = 'حفظ الخطة';
+  }
+}
+window.addEventListener('beforeunload', e => { if (S.dirty) { e.preventDefault(); e.returnValue = ''; } });
+boot();
+</script>
+</body>
+</html>
