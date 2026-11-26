@@ -57,7 +57,7 @@ $('#menuBtn').onclick = () => $('#side').classList.toggle('open');
 
 // ============ القائمة ============
 const NAV = [
-  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية', 'chart'], ['recs', 'سجل الرصد', 'list']]],
+  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية', 'chart'], ['recs', 'سجل رصد المعلم', 'list'], ['srecs', 'سجل رصد الطالب', 'exam']]],
   ['الطلاب', [['students', 'الطلاب وملفاتهم', 'users'], ['leaves', 'الاستئذان', 'leave'], ['discipline', 'الانضباط والمتابعة', 'alert'], ['exams', 'الاختبارات المرحلية', 'exam'], ['honor', 'لوحة الشرف', 'star']]],
   ['البرامج', [['plans', 'خطط البرامج', 'plan']]],
   ['المعلمون والفترات', [['teachers', 'المعلمون', 'teacher'], ['rooms', 'الفترات والغرف الصوتية', 'room']]],
@@ -240,7 +240,7 @@ async function adminRecord(stuId, editId) {
     A.recordWidget($('#rwAdm', root), { stu: s, assign: a, P: a ? PL[a.plan_id] : null, roomId: D.roomOfStudent[s.id] || null, roomName: s.room !== '—' ? s.room : '',
       teacherId: s.teacher_id || D.teachers.find(t => !t.is_archived)?.id, teachers: D.teachers.filter(t => !t.is_archived).map(t => ({ id: t.id, name: t.name })),
       meId: me.id, canEdit: () => true, canDelete: true, teacherName: id => D.teacherById[id]?.name || '', layout: 'stack', editId,
-      onDelete: (r, done) => cancelRec(r.id, done), onSaved: async () => { await loadRecs(true); if (current === 'recs') route(); } });
+      onDelete: (r, done) => cancelRec(r.id, done), onSaved: async () => { await loadRecs(true); if (current === 'recs' || current === 'srecs') route(); } });
   });
 }
 function pickStudentThenRecord() {
@@ -252,27 +252,28 @@ function pickStudentThenRecord() {
   });
 }
 // سجل الرصد: يُختار البرنامج/الخطة أولًا، وتُبنى الأعمدة من أعمدة الخطة نفسها
-SECTIONS.recs = async el => {
+SECTIONS.recs = el => recsSection(el, 'teacher');
+SECTIONS.srecs = el => recsSection(el, 'student');
+const RECS_ST = { plan: '', from: A.addDays(TODAY, -6), to: TODAY };
+async function recsSection(el, kind) {
   await loadRecs();
   const PL = await plansFull();
-  const st = SECTIONS.recs.st ||= { kind: 'teacher', plan: '', from: A.addDays(TODAY, -6), to: TODAY };
+  const st = RECS_ST; st.kind = kind;
   const usable = D.plans.filter(p => p.status !== 'archived');
   if (!st.plan || !PL[st.plan]) st.plan = (usable.find(p => p.status === 'active') || usable[0])?.id || '';
   const P = PL[st.plan];
-  const seg = (k, l) => `<button type="button" data-kind="${k}" aria-pressed="${st.kind === k}">${l}</button>`;
-  el.innerHTML = `${secHead('سجل الرصد', P ? esc(P.name) : '', 'blue', `<button class="btn gold sm" id="newRec">+ رصد جلسة تسميع</button>`)}
-    <div class="card" style="--a:var(--blue);margin-bottom:10px"><div class="tbl-tools" style="margin:0">
-      <div class="seg">${seg('teacher', 'سجل رصد المعلم')}${seg('student', 'سجل رصد الطالب')}</div>
+  const isT = kind === 'teacher';
+  el.innerHTML = `${secHead(isT ? 'سجل رصد المعلم' : 'سجل رصد الطالب', P ? esc(P.name) : '', isT ? 'blue' : 'violet', isT ? `<button class="btn gold sm" id="newRec">+ رصد جلسة تسميع</button>` : '')}
+    <div class="card" style="--a:var(--${isT ? 'blue' : 'violet'});margin-bottom:10px"><div class="tbl-tools" style="margin:0">
       <label class="small">الخطة <select id="rPlan" style="width:auto">${usable.map(p => opt(p.id, p.name, p.id === st.plan)).join('')}</select></label>
       <label class="small">من <input type="date" id="rFrom" value="${st.from}" style="width:auto"></label>
       <label class="small">إلى <input type="date" id="rTo" value="${st.to}" style="width:auto"></label>
     </div></div>
     <div class="card c-blue" id="rCard"><div class="head"><h3 id="rTitle"></h3><div class="row" style="gap:6px"><span class="hint" id="rHint"></span><button class="btn ghost sm" id="rExport">تصدير إلى إكسل</button></div></div><div id="rTbl"></div></div>`;
-  $$('[data-kind]', el).forEach(b => b.onclick = () => { st.kind = b.dataset.kind; route(); });
   $('#rPlan').onchange = e => { st.plan = e.target.value; route(); };
   $('#rFrom').onchange = e => { st.from = e.target.value; route(); };
   $('#rTo').onchange = e => { st.to = e.target.value; route(); };
-  $('#newRec').onclick = pickStudentThenRecord;
+  $('#newRec') && ($('#newRec').onclick = pickStudentThenRecord);
   cardFull($('#rCard'));
   if (!P) { $('#rTbl').innerHTML = '<div class="empty">لا توجد خطط. أنشئ خطة من «خطط البرامج».</div>'; return; }
   const cellVal = (t, vals) => { const v = A.fmtTaskVal(t, vals || {}); return v == null ? '' : (t.single?.value_type === 'url' ? vals[t.single.id] : v.replace(/^من (.+) إلى (.+)$/, '$1–$2')); };
@@ -332,7 +333,7 @@ SECTIONS.recs = async el => {
     } });
   $('#rExport').onclick = () => A.exportXlsx(`سجل رصد الطالب - ${P.name} - ${st.from} إلى ${st.to}`, 'سجل رصد الطالب',
     [['تاريخ التعليم', x => x.date], ['الطالب', x => x.name], ['البريد', x => x.email], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['يوم الخطة', x => x.day], ...tasks.map(t => [t.name, x => x['t_' + t.key]]), ['الإنجاز ٪', x => x.pct]], tbl.getRows());
-};
+}
 function editProgress(P, tasks, r) {
   const dayVals = P.days[r.day]?.vals || {};
   drawer(`تعديل رصد الطالب: ${r.name} · اليوم ${r.day}`, `<div class="stack">${tasks.map(t => { const v = A.fmtTaskVal(t, dayVals); if (v == null) return ''; return `<label class="chips"><label style="width:100%;justify-content:space-between"><span><input type="checkbox" data-pk="${t.key}"${r.o.cols.has(t.key) || t.cols.some(c => r.o.cols.has(c.id)) ? ' checked' : ''}> ${esc(t.name)}</span><span class="hint">${esc(v)}</span></label></label>`; }).join('')}</div>
