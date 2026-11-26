@@ -138,3 +138,6 @@ create trigger nationality_canon before insert or update of nationality on publi
 
 update public.students set nationality = nationality where nationality is not null;
 update public.user_profiles set nationality = nationality where nationality is not null;
+
+-- ما يظهر للمعلم في «رصد جلسة التسميع»: كل الطلاب، أو طلاب فتراته المسندة إليه فقط
+alter table public.teachers add column if not exists record_scope text not null default 'all' check (record_scope in ('all', 'assigned'));

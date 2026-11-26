@@ -178,18 +178,21 @@ const ctxFor = s => {
   return { stu: s, assign: a, P: a ? PLANS[a.plan_id] : null, roomId: roomOf[s.id] || null, roomName: roomById[roomOf[s.id]]?.name || '',
     teacherId: T.id, meId: me.id, canEdit: r => r.teacher_id === T.id && inWindow(r), lockReason: r => r.teacher_id !== T.id ? 'رصده معلم آخر' : 'انتهت مهلة التعديل (24 ساعة) — للتعديل راسل المشرف',teacherName: id => id === T.id ? 'أنت' : (teacherName[id] || ''), onSaved: () => { RECS = null; } };
 };
+// يحدد المشرف من «المعلمون»: كل الطلاب، أو طلاب فتراته المسندة إليه (ومن أُسند إليه مباشرة)
+const myRoomIds = new Set(ra.filter(x => x.assignee_type === 'teacher' && x.assignee_id === T.id).map(x => x.room_id));
+const recPool = T.record_scope === 'assigned' ? allStudents.filter(s => s.status === 'active' && (myRoomIds.has(roomOf[s.id]) || s.teacher_id === T.id)) : allStudents;
 SECTIONS.record = el => {
-  el.innerHTML = `<div class="sec-h" style="--c:var(--teal)"><b>رصد جلسة التسميع</b><span>${allStudents.length} طالبًا · طلابي ${students.length}</span></div>
+  el.innerHTML = `<div class="sec-h" style="--c:var(--teal)"><b>رصد جلسة التسميع</b><span>${T.record_scope === 'assigned' ? 'طلاب فتراتك: ' + recPool.length : allStudents.length + ' طالبًا · طلابي ' + students.length}</span></div>
     <div class="card c-teal" style="margin-bottom:10px"><label class="f" for="q">اختر الطالب
       <div class="search"><input id="q" type="search" placeholder="اكتب اسم الطالب أو بريده…" autocomplete="off" value="${esc(recPick?.name || '')}"><div class="dd" id="dd" hidden></div></div></label></div>
     <div id="rwBox"></div>`;
   const q = $('#q'), dd = $('#dd');
   const showList = () => {
     const t = norm(q.value);
-    const list = allStudents.filter(s => !t || norm(s.name + ' ' + s.email).includes(t)).sort((a, b) => (b.teacher_id === T.id) - (a.teacher_id === T.id) || a.name.localeCompare(b.name, 'ar')).slice(0, 80);
-    dd.innerHTML = list.map(s => `<button type="button" data-id="${s.id}"><span>${esc(s.name)}${s.teacher_id === T.id ? ' <span class="pill ok">طالبي</span>' : ''}</span><span class="small muted">${esc(roomById[roomOf[s.id]]?.name || '')}</span></button>`).join('') || '<div class="muted small" style="padding:10px">لا يوجد طالب بهذا الاسم</div>';
+    const list = recPool.filter(s => !t || norm(s.name + ' ' + s.email).includes(t)).sort((a, b) => (b.teacher_id === T.id) - (a.teacher_id === T.id) || a.name.localeCompare(b.name, 'ar')).slice(0, 80);
+    dd.innerHTML = list.map(s => `<button type="button" data-id="${s.id}"><span>${esc(s.name)}${s.teacher_id === T.id ? ' <span class="pill ok">طالبي</span>' : ''}</span><span class="small muted">${esc(roomById[roomOf[s.id]]?.name || '')}</span></button>`).join('') || `<div class="muted small" style="padding:10px">${recPool.length ? 'لا يوجد طالب بهذا الاسم' : 'لا يوجد طلاب في فتراتك. تواصل مع المشرف.'}</div>`;
     dd.hidden = false;
-    $$('button', dd).forEach(b => b.onclick = () => { dd.hidden = true; recPick = allStudents.find(s => s.id === b.dataset.id); q.value = recPick.name; A.recordWidget($('#rwBox'), ctxFor(recPick)); });
+    $$('button', dd).forEach(b => b.onclick = () => { dd.hidden = true; recPick = recPool.find(s => s.id === b.dataset.id); q.value = recPick.name; A.recordWidget($('#rwBox'), ctxFor(recPick)); });
   };
   q.addEventListener('focus', showList);
   q.addEventListener('input', showList);
