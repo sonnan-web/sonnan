@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>خطط البرامج — منصة رواد سنن</title>
+<title>خطط البرامج — منصة سنن</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
@@ -118,9 +118,9 @@ td.err{background:#FFF4F4;color:#8F2530}
 </head>
 <body>
 
-<header class="top">
-  <div class="brand"><span class="mark">سنن</span><div><b>خطط البرامج</b><small>منصة رواد سنن</small></div></div>
-  <div class="row" style="gap:8px"><span id="who" class="small"></span><a href="dashboard.html">لوحة المشرف</a><button type="button" id="logout" hidden>خروج</button></div>
+<header class="top" id="topbar">
+  <div class="brand"><span class="mark">سنن</span><div><b>خطط البرامج</b><small>منصة سنن</small></div></div>
+  <div class="row" style="gap:8px"><span id="who" class="small"></span><a href="admin.html">لوحة المشرف</a><button type="button" id="logout" hidden>خروج</button></div>
 </header>
 
 <div id="app"></div>
@@ -132,7 +132,7 @@ td.err{background:#FFF4F4;color:#8F2530}
 const SUPABASE_URL = 'https://ijkotzbzpduaqykumqtq.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_0Ug3AHf8CWHpa4N1Hp9TvA_Ls7NMXaS';
 const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, storage: localStorage, storageKey: 'huffaz-auth' }
+  auth: { persistSession: true, autoRefreshToken: true, storage: localStorage, storageKey: 'sonnan-app-auth' }
 });
 
 // ============ أدوات ============
@@ -165,16 +165,22 @@ function newCol(over) { return Object.assign({ id: uid(), header: '', task: 'mem
 function taskName(c) { return c.task === 'custom' ? (c.task_label || 'مهمة أخرى') : TASKS[c.task]; }
 
 // ============ الدخول ============
+const QS = new URLSearchParams(location.search);
+const EMBED = QS.get('embed') === '1';
+if (EMBED) { document.getElementById('topbar').hidden = true; document.body.style.background = 'transparent'; }
+function tellParent(type, extra) { if (EMBED && window.parent !== window) window.parent.postMessage(Object.assign({ source: 'plans', type }, extra || {}), location.origin); }
 async function boot() {
   const { data: { session } } = await db.auth.getSession();
-  if (!session) return renderLogin();
+  if (!session) { if (EMBED) { $('#app').innerHTML = '<div class="empty">انتهت الجلسة. أعد الدخول من صفحة الدخول.</div>'; return; } return renderLogin(); }
   const { data: me } = await db.from('users').select('id, name, role').eq('id', session.user.id).maybeSingle();
   if (!me || me.role !== 'admin') { renderLogin('هذه الصفحة للمشرف فقط.'); return; }
   S.user = me;
   $('#who').textContent = me.name;
   $('#logout').hidden = false;
   await loadPlans();
-  if (S.plans.length) await openPlan(S.plans[0].id); else startNew();
+  if (QS.get('id')) await openPlan(QS.get('id'));
+  else if (QS.get('new') === '1' || !S.plans.length) startNew();
+  else await openPlan(S.plans[0].id);
 }
 function renderLogin(msg) {
   $('#app').innerHTML = `<form class="card login grid" id="loginForm">
@@ -228,8 +234,8 @@ function startNew() {
 // ============ العرض ============
 function render() {
   const P = S.plan;
-  $('#app').innerHTML = `<div class="layout">
-    <aside class="card grid">
+  $('#app').innerHTML = `<div class="layout"${EMBED ? ' style="grid-template-columns:minmax(0,1fr);padding:0"' : ''}>
+    <aside class="card grid"${EMBED ? ' hidden' : ''}>
       <div class="row"><h3>الخطط</h3><button class="btn sm gold" type="button" id="newPlan">+ خطة جديدة</button></div>
       <div class="plans-list">${S.plans.map(p => `<button type="button" data-open="${p.id}" aria-current="${P && p.id === P.id}">${esc(p.name)}<small>${esc(p.book_name || '')} · ${p.status === 'active' ? 'مفعّلة' : p.status === 'archived' ? 'مؤرشفة' : 'مسودة'}</small></button>`).join('') || '<p class="muted small">لا توجد خطط بعد.</p>'}</div>
       <p class="hint">الخطة هي طريقة البرنامج: أعمدتها، ومن ينفّذ، وأيام التسميع، وقواعد التنبيه والإنذار. أنشئها ثم أسندها للطلاب.</p>
@@ -244,7 +250,9 @@ function render() {
       </div>
       <div id="tab"></div>
     </section></div>`;
-  $('#newPlan').onclick = () => { if (S.dirty && !confirmLeave()) return; startNew(); };
+  if (EMBED) $('aside').remove();
+  $('#newPlan')?.addEventListener('click', () => { if (S.dirty && !confirmLeave()) return; startNew(); });
+  if (false) $('#newPlan').onclick = () => { if (S.dirty && !confirmLeave()) return; startNew(); };
   $$('[data-open]').forEach(b => b.onclick = () => { if (S.dirty && !confirmLeave()) return; openPlan(b.dataset.open); });
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
   $('#savePlan').onclick = savePlan;
@@ -256,59 +264,76 @@ function markDirty() { if (!S.dirty) { S.dirty = true; const h = $('.layout sect
 const numOrNull = v => v === '' || v == null ? null : Number(v);
 
 // ---------- ١. القواعد ----------
+function validAbsence(P) {
+  const rec = P.recitation_mode !== 'none', ex = P.student_execution !== 'none';
+  const opts = [];
+  if (rec) opts.push(['no_recitation', 'لم يسمّع في يوم تسميع', 'يُحسب غيابًا كل يوم تسميع لم يُرصد له تسميع (ولا تعويض ولا استئذان).']);
+  if (ex) opts.push(['no_execution', 'لم ينفّذ مهامه', 'يُحسب غيابًا كل يوم خطة لم يعلّم فيه الطالب على مهامه.']);
+  if (rec && ex) { opts.push(['either', 'لم يسمّع أو لم ينفّذ', 'يكفي أن يفوته واحد منهما.']); opts.push(['both', 'لم يسمّع ولم ينفّذ معًا', 'لا يُحسب غيابًا إلا إذا فاته الاثنان.']); }
+  if (opts.length && !opts.some(o => o[0] === P.discipline_rules.absence_is)) P.discipline_rules.absence_is = opts[0][0];
+  return opts;
+}
 function tabRules() {
   const P = S.plan, D = P.discipline_rules, R = P.score_rules;
+  const rec = P.recitation_mode !== 'none', ex = P.student_execution !== 'none';
+  const absOpts = validAbsence(P);
   $('#tab').innerHTML = `<div class="grid">
     <fieldset class="c-gold"><legend>بيانات الخطة</legend>
       <div class="g2">
-        <label class="f" for="pName">اسم الخطة<input id="pName" type="text" value="${esc(P.name)}" placeholder="مثال: الجمع بين الصحيحين — المجلد الثاني"></label>
+        <label class="f" for="pName">اسم الخطة <span class="hint">يظهر للمشرف والمعلم والطالب</span><input id="pName" type="text" value="${esc(P.name)}" placeholder="مثال: الجمع بين الصحيحين — المجلد الثاني"></label>
         <label class="f" for="pBook">الكتاب<input id="pBook" type="text" value="${esc(P.book_name)}"></label>
       </div>
-      <label class="f" for="pDesc">وصف مختصر <span class="hint">اختياري</span><input id="pDesc" type="text" value="${esc(P.description)}"></label>
+      <label class="f" for="pDesc">وصف مختصر <span class="hint">اختياري، يظهر للطالب أعلى خطته</span><input id="pDesc" type="text" value="${esc(P.description)}"></label>
       <div class="g3">
-        <label class="f" for="pAudio">رابط السماع<input id="pAudio" type="url" dir="ltr" value="${esc(P.audio_url)}"></label>
+        <label class="f" for="pAudio">رابط السماع <span class="hint">يظهر للطالب في صفحته</span><input id="pAudio" type="url" dir="ltr" value="${esc(P.audio_url)}"></label>
         <label class="f" for="pBookUrl">رابط الكتاب<input id="pBookUrl" type="url" dir="ltr" value="${esc(P.book_url)}"></label>
         <label class="f" for="pWa">رابط مجموعة واتساب<input id="pWa" type="url" dir="ltr" value="${esc(P.whatsapp_url)}"></label>
       </div>
-      <label class="f" for="pStatus">الحالة<select id="pStatus">${[['draft', 'مسودة'], ['active', 'مفعّلة'], ['archived', 'مؤرشفة']].map(o => `<option value="${o[0]}"${P.status === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>
+      <label class="f" for="pStatus">الحالة <span class="hint">«مسودة» لا تظهر للطلاب حتى لو أُسندت لهم. «مؤرشفة» تبقى سجلاتها ولا تُسند لطلاب جدد</span><select id="pStatus">${[['draft', 'مسودة'], ['active', 'مفعّلة'], ['archived', 'مؤرشفة']].map(o => `<option value="${o[0]}"${P.status === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>
     </fieldset>
 
     <fieldset class="c-teal"><legend>أيام الخطة والتسميع</legend>
-      <div><b class="small">أيام تقدّم الخطة</b> <span class="hint">في هذه الأيام ينتقل الطالب ليوم جديد من الخطة</span>
+      <div><b class="small">أيام تقدّم الخطة</b> <span class="hint">في كل يوم من هذه الأيام ينتقل الطالب ليوم جديد من أيام الخطة. الأيام غير المختارة إجازة لا تُحسب فيها مهام ولا غياب.</span>
         <div class="choices" style="margin-top:6px">${DAYS.map((d, i) => `<label><input type="checkbox" data-wd="${i}"${P.workdays.includes(i) ? ' checked' : ''}>${d}</label>`).join('')}</div></div>
-      <div><b class="small">التسميع على المعلم</b>
-        <div class="choices" style="margin-top:6px">${[['daily', 'كل يوم من أيام الخطة'], ['days', 'أيام محددة'], ['none', 'لا يوجد تسميع']].map(o => `<label><input type="radio" name="recMode" value="${o[0]}"${P.recitation_mode === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div></div>
-      <div id="recDaysBox" ${P.recitation_mode === 'days' ? '' : 'hidden'}><b class="small">أيام التسميع</b>
-        <div class="choices" style="margin-top:6px">${DAYS.map((d, i) => `<label><input type="checkbox" data-rd="${i}"${P.recitation_days.includes(i) ? ' checked' : ''}>${d}</label>`).join('')}</div></div>
+      <div><b class="small">التسميع على المعلم</b> <span class="hint">هل يسمّع الطالب لمعلم ويُرصد له؟</span>
+        <div class="choices" style="margin-top:6px">${[['daily', 'كل يوم من أيام الخطة'], ['days', 'في أيام محددة فقط (شبه يومي)'], ['none', 'لا يوجد تسميع']].map(o => `<label><input type="radio" name="recMode" value="${o[0]}"${P.recitation_mode === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div></div>
+      ${P.recitation_mode === 'days' ? `<div><b class="small">أيام التسميع</b> <span class="hint">يظهر نموذج الرصد للمعلم في هذه الأيام فقط، وما يُحفظ في الأيام الأخرى يُسمَّع في أقرب يوم تسميع</span>
+        <div class="choices" style="margin-top:6px">${DAYS.map((d, i) => `<label><input type="checkbox" data-rd="${i}"${P.recitation_days.includes(i) ? ' checked' : ''}>${d}</label>`).join('')}</div></div>` : ''}
+      ${!rec ? '<div class="note">بلا تسميع: لا يظهر للمعلم نموذج رصد لهذه الخطة، وتُخفى درجة التسميع وكل ما يتعلق به.</div>' : ''}
     </fieldset>
 
     <fieldset class="c-blue"><legend>تنفيذ الطالب والتقييم</legend>
-      <div class="choices">${[['none', 'لا يوجد تنفيذ عند الطالب'], ['record_only', 'الطالب ينفّذ للمتابعة فقط ولا يدخل في التقييم'], ['counts', 'تنفيذ الطالب يدخل في التقييم']].map(o => `<label><input type="radio" name="exec" value="${o[0]}"${P.student_execution === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div>
-      <div class="g2">
-        <label class="f" for="wExec">وزن تنفيذ الطالب في التقييم <span class="hint">نسبة مئوية تحددها أنت</span><input id="wExec" type="number" min="0" max="100" step="1" value="${P.execution_weight ?? ''}" ${P.student_execution === 'counts' ? '' : 'disabled'} placeholder="مثال: ٣٠"></label>
-        <label class="f" for="wRec">وزن التسميع في التقييم<input id="wRec" type="number" min="0" max="100" step="1" value="${P.recitation_weight ?? ''}" ${P.recitation_mode === 'none' ? 'disabled' : ''} placeholder="مثال: ٧٠"></label>
-      </div>
-      <div id="wMsg"></div>
+      <div><b class="small">تنفيذ الطالب</b> <span class="hint">هل يعلّم الطالب بنفسه على مهام يومه (حفظت، كررت، راجعت)؟</span>
+      <div class="choices" style="margin-top:6px">${[['none', 'لا يوجد تنفيذ عند الطالب'], ['record_only', 'ينفّذ للمتابعة فقط، ولا يدخل في التقييم'], ['counts', 'ينفّذ، وتنفيذه يدخل في التقييم']].map(o => `<label><input type="radio" name="exec" value="${o[0]}"${P.student_execution === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div></div>
+      ${(P.student_execution === 'counts' && rec) ? `<div class="g2">
+        <label class="f" for="wExec">وزن تنفيذ الطالب <span class="hint">نسبة مئوية من التقييم النهائي</span><input id="wExec" type="number" min="0" max="100" step="1" value="${P.execution_weight ?? ''}" placeholder="مثال: 30"></label>
+        <label class="f" for="wRec">وزن التسميع <span class="hint">والمجموع يجب أن يكون 100</span><input id="wRec" type="number" min="0" max="100" step="1" value="${P.recitation_weight ?? ''}" placeholder="مثال: 70"></label>
+      </div><div id="wMsg"></div>` : ''}
+      ${(P.student_execution === 'counts' && !rec) ? '<div class="note">التقييم كله من تنفيذ الطالب (100٪) لأن الخطة بلا تسميع.</div>' : ''}
+      ${(P.student_execution !== 'counts' && rec) ? '<div class="note">التقييم كله من درجة التسميع (100٪).</div>' : ''}
+      ${(!ex && !rec) ? '<div class="errbox">الخطة بلا تسميع وبلا تنفيذ عند الطالب، فلا يوجد ما يُقيَّم. اختر أحدهما على الأقل.</div>' : ''}
     </fieldset>
 
-    <fieldset class="c-violet"><legend>درجة التسميع</legend>
+    ${rec ? `<fieldset class="c-violet"><legend>درجة التسميع</legend>
+      <p class="hint">الدرجة = الدرجة الكاملة − (عدد كل نوع خطأ × قيمة خصمه). يرى المعلم هذه الأنواع في نموذج الرصد ويضغط + لكل خطأ.</p>
       <label class="f" for="sMax" style="max-width:220px">الدرجة الكاملة<input id="sMax" type="number" min="1" step="0.5" value="${R.max ?? ''}"></label>
-      <div class="table-wrap"><table><thead><tr><th>نوع الخطأ</th><th>يُخصم لكل خطأ</th><th></th></tr></thead><tbody>
+      <div class="table-wrap"><table><thead><tr><th>نوع الخطأ (كما يراه المعلم)</th><th>يُخصم لكل خطأ</th><th></th></tr></thead><tbody>
         ${R.deductions.map((d, i) => `<tr><td><input type="text" data-dl="${i}" value="${esc(d.label)}"></td><td><input type="number" step="0.05" min="0" data-dv="${i}" value="${d.value}"></td><td><button class="btn sm danger" type="button" data-dd="${i}">حذف</button></td></tr>`).join('')}
       </tbody></table></div>
       <div><button class="btn sm ghost" type="button" id="addDed">+ نوع خطأ</button></div>
-    </fieldset>
+    </fieldset>` : ''}
 
     <fieldset class="c-red"><legend>الانضباط</legend>
-      <p class="hint">كل القيم تحددها أنت، ولا توجد قيمة افتراضية. الحقل الفارغ يعني أن القاعدة غير مفعّلة.</p>
-      <div><b class="small">يُعدّ الطالب غائبًا في يوم الخطة إذا</b>
-        <div class="choices" style="margin-top:6px">${[['no_recitation', 'لم يسمّع (في أيام التسميع)'], ['no_execution', 'لم ينفّذ مهامه'], ['either', 'لم يسمّع أو لم ينفّذ'], ['both', 'لم يسمّع ولم ينفّذ']].map(o => `<label><input type="radio" name="absIs" value="${o[0]}"${D.absence_is === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div></div>
+      <p class="hint">كل القيم تحددها أنت، ولا توجد قيمة افتراضية. الحقل الفارغ يعني أن القاعدة غير مفعّلة. الاستئذان المقبول لا يُحسب غيابًا، والتعويض في المهلة يلغي غياب اليوم الفائت.</p>
+      ${absOpts.length ? `<div><b class="small">يُعدّ الطالب غائبًا في يوم الخطة إذا</b>
+        <div class="choices" style="margin-top:6px">${absOpts.map(o => `<label title="${esc(o[2])}"><input type="radio" name="absIs" value="${o[0]}"${D.absence_is === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div>
+        <p class="hint" style="margin-top:4px">${esc((absOpts.find(o => o[0] === D.absence_is) || absOpts[0])[2])}</p></div>` : '<div class="note">لا يُحسب الغياب تلقائيًا لهذه الخطة لأنها بلا تسميع وبلا تنفيذ.</div>'}
       <div class="g3">
-        <label class="f" for="dWin">نافذة الاحتساب <span class="hint">أيام خطة</span><input id="dWin" type="number" min="1" value="${D.window_days ?? ''}"></label>
-        <label class="f" for="dAlert">غيابات تُنشئ تنبيهًا<input id="dAlert" type="number" min="1" value="${D.alert_after ?? ''}"></label>
-        <label class="f" for="dWarn">غيابات تُنشئ إنذارًا<input id="dWarn" type="number" min="1" value="${D.warning_after ?? ''}"></label>
-        <label class="f" for="dEsc">إنذارات قبل التصعيد للمشرف<input id="dEsc" type="number" min="1" value="${D.escalate_after ?? ''}"></label>
-        <label class="f" for="dLeave">أقصى استئذان في الشهر <span class="hint">أيام</span><input id="dLeave" type="number" min="0" value="${D.leave_max_month ?? ''}"></label>
+        <label class="f" for="dWin">نافذة الاحتساب <span class="hint">آخر كم يوم خطة تُعدّ فيها الغيابات</span><input id="dWin" type="number" min="1" value="${D.window_days ?? ''}"></label>
+        <label class="f" for="dAlert">غيابات تُنشئ تنبيهًا <span class="hint">داخل النافذة</span><input id="dAlert" type="number" min="1" value="${D.alert_after ?? ''}"></label>
+        <label class="f" for="dWarn">غيابات تُنشئ إنذارًا <span class="hint">داخل النافذة</span><input id="dWarn" type="number" min="1" value="${D.warning_after ?? ''}"></label>
+        <label class="f" for="dEsc">إنذارات قبل الإحالة للفصل<input id="dEsc" type="number" min="1" value="${D.escalate_after ?? ''}"></label>
+        <label class="f" for="dLeave">أقصى استئذان في الشهر <span class="hint">أيام؛ ما زاد يُعرض على المشرف</span><input id="dLeave" type="number" min="0" value="${D.leave_max_month ?? ''}"></label>
         <label class="f" for="dMk">مهلة التعويض <span class="hint">أيام بعد الغياب</span><input id="dMk" type="number" min="0" value="${D.makeup_within_days ?? ''}"></label>
       </div>
     </fieldset>
@@ -319,55 +344,68 @@ function tabRules() {
   $('#pStatus').onchange = e => { P.status = e.target.value; markDirty(); };
   $$('[data-wd]').forEach(c => c.onchange = () => { P.workdays = $$('[data-wd]').filter(x => x.checked).map(x => +x.dataset.wd); markDirty(); });
   $$('[data-rd]').forEach(c => c.onchange = () => { P.recitation_days = $$('[data-rd]').filter(x => x.checked).map(x => +x.dataset.rd); markDirty(); });
-  $$('[name=recMode]').forEach(r => r.onchange = () => { P.recitation_mode = r.value; markDirty(); $('#recDaysBox').hidden = r.value !== 'days'; $('#wRec').disabled = r.value === 'none'; weightMsg(); });
-  $$('[name=exec]').forEach(r => r.onchange = () => { P.student_execution = r.value; markDirty(); $('#wExec').disabled = r.value !== 'counts'; weightMsg(); });
-  $('#wExec').oninput = e => { P.execution_weight = numOrNull(e.target.value); markDirty(); weightMsg(); };
-  $('#wRec').oninput = e => { P.recitation_weight = numOrNull(e.target.value); markDirty(); weightMsg(); };
-  $('#sMax').oninput = e => { R.max = numOrNull(e.target.value); markDirty(); };
+  $$('[name=recMode]').forEach(r => r.onchange = () => { P.recitation_mode = r.value; if (r.value === 'none') P.recitation_weight = null; markDirty(); tabRules(); });
+  $$('[name=exec]').forEach(r => r.onchange = () => { P.student_execution = r.value; if (r.value !== 'counts') P.execution_weight = null; markDirty(); tabRules(); });
+  $('#wExec') && ($('#wExec').oninput = e => { P.execution_weight = numOrNull(e.target.value); markDirty(); weightMsg(); });
+  $('#wRec') && ($('#wRec').oninput = e => { P.recitation_weight = numOrNull(e.target.value); markDirty(); weightMsg(); });
+  $('#sMax') && ($('#sMax').oninput = e => { R.max = numOrNull(e.target.value); markDirty(); });
   $$('[data-dl]').forEach(i => i.oninput = () => { R.deductions[+i.dataset.dl].label = i.value; markDirty(); });
   $$('[data-dv]').forEach(i => i.oninput = () => { R.deductions[+i.dataset.dv].value = Number(i.value) || 0; markDirty(); });
   $$('[data-dd]').forEach(b => b.onclick = () => { R.deductions.splice(+b.dataset.dd, 1); markDirty(); tabRules(); });
-  $('#addDed').onclick = () => { R.deductions.push({ key: 'd' + Date.now(), label: '', value: 0 }); markDirty(); tabRules(); };
-  $$('[name=absIs]').forEach(r => r.onchange = () => { D.absence_is = r.value; markDirty(); });
+  $('#addDed') && ($('#addDed').onclick = () => { R.deductions.push({ key: 'd' + Date.now(), label: '', value: 0 }); markDirty(); tabRules(); });
+  $$('[name=absIs]').forEach(r => r.onchange = () => { D.absence_is = r.value; markDirty(); tabRules(); });
   [['dWin', 'window_days'], ['dAlert', 'alert_after'], ['dWarn', 'warning_after'], ['dEsc', 'escalate_after'], ['dLeave', 'leave_max_month'], ['dMk', 'makeup_within_days']]
     .forEach(([id, k]) => $('#' + id).oninput = e => { D[k] = numOrNull(e.target.value); markDirty(); });
   weightMsg();
 }
 function weightMsg() {
   const P = S.plan, box = $('#wMsg'); if (!box) return;
-  const parts = [];
-  if (P.student_execution === 'counts') parts.push(P.execution_weight);
-  if (P.recitation_mode !== 'none') parts.push(P.recitation_weight);
-  if (parts.some(v => v == null)) { box.innerHTML = '<div class="note">حدّد الأوزان لتُحسب النسبة النهائية للطالب.</div>'; return; }
-  const sum = parts.reduce((a, b) => a + b, 0);
-  box.innerHTML = sum === 100 ? '<div class="okbox">مجموع الأوزان ١٠٠٪.</div>' : `<div class="errbox">مجموع الأوزان ${sum}٪، ويجب أن يكون ١٠٠٪.</div>`;
+  if (P.execution_weight == null || P.recitation_weight == null) { box.innerHTML = '<div class="note">حدّد الوزنين لتُحسب النسبة النهائية للطالب.</div>'; return; }
+  const sum = P.execution_weight + P.recitation_weight;
+  box.innerHTML = sum === 100 ? '<div class="okbox">مجموع الأوزان 100٪.</div>' : `<div class="errbox">مجموع الأوزان ${sum}٪، ويجب أن يكون 100٪.</div>`;
 }
 
 // ---------- ٢. الأعمدة ----------
+const COL_HELP = `
+  <details class="note" open><summary><b>شرح كل خانة في الأعمدة</b></summary>
+  <ul style="margin:6px 0 0;padding-inline-start:18px;line-height:1.9">
+    <li><b>اسم العمود في الإكسل:</b> يجب أن يطابق رأس العمود في ملف الإكسل حرفيًا، وبه تتعرف المنصة على العمود عند الرفع. ويظهر أيضًا للمعلم والطالب.</li>
+    <li><b>المهمة:</b> نوع العمل: حفظ، ربط، مراجعة، تكرار، شرح، سماع، أو «مهمة أخرى» تكتب اسمها. أعمدة مهمة «حفظ» منها يُحسب عدد الأحاديث المحفوظة للطالب.</li>
+    <li><b>نوع القيمة:</b> رقم (مثل رقم الحديث أو عدد مرات التكرار)، نص (مثل اسم باب)، رابط (مثل رابط شرح يفتحه الطالب)، أو نعم/لا.</li>
+    <li><b>نعم/لا:</b> مهمة يُعلَّم عليها دون قيمة، مثل «استمع للدرس». في الإكسل تكتب «نعم» في الأيام التي فيها هذه المهمة وتتركه فارغًا في غيرها. الطالب يرى زر إنجاز، والمعلم يرى خانة اختيار في الرصد.</li>
+    <li><b>دوره:</b> «قيمة مفردة» عمود مستقل. «بداية نطاق» و«نهاية نطاق» عمودان يُربطان معًا مثل «من حديث» و«إلى حديث»؛ البداية هي القيمة الدنيا والنهاية هي القيمة القصوى، وتتأكد المنصة أن البداية لا تزيد على النهاية.</li>
+    <li><b>مرتبط بعمود:</b> العمود الآخر من النطاق. عند الربط يصبح العمودان مهمة واحدة تظهر «من … إلى …».</li>
+    <li><b>من ينفّذ:</b> «الطالب» تظهر له مهمة يعلّم عليها في صفحته ولا تظهر للمعلم. «المعلم» تظهر في نموذج الرصد عند المعلم فقط. «الطالب والمعلم» تظهر للطالب مهمةً وللمعلم حقلًا في الرصد. «للعرض فقط» معلومة بلا تنفيذ، تظهر للطالب في يومه (مثل رابط الشرح) وتظهر للمعلم مرجعًا في الرصد دون أن يدخلها.</li>
+    <li><b>في التقييم والوزن:</b> هل يدخل إنجاز هذه المهمة في نسبة الطالب، وبأي وزن مقارنة بالمهام الأخرى.</li>
+    <li><b>إلزامي:</b> لا يقبل رفع الإكسل إذا كانت خانة هذا العمود فارغة في أي يوم.</li>
+    <li><b>التكرار:</b> قيمته رقم مفرد دائمًا (عدد مرات التكرار المطلوبة)، لذلك يُقفل نوع القيمة ودوره.</li>
+  </ul></details>`;
 function tabColumns() {
   const cols = S.cols;
   const issues = columnIssues();
+  const P = S.plan;
   $('#tab').innerHTML = `<div class="grid">
-    <p class="muted small">كل عمود هنا هو عمود في ملف الإكسل. اربط عمودَي «من» و«إلى» ليصبحا نطاقًا واحدًا: الأول بداية النطاق (الأدنى) والثاني نهايته (الأقصى).</p>
+    ${COL_HELP}
+    ${P.recitation_mode === 'none' && cols.some(c => c.executor === 'teacher' || c.executor === 'both') ? '<div class="errbox">الخطة بلا تسميع، فالأعمدة التي منفّذها «المعلم» لن تظهر لأحد. غيّر منفّذها أو فعّل التسميع.</div>' : ''}
+    ${P.student_execution === 'none' && cols.some(c => c.executor === 'student') ? '<div class="errbox">الخطة بلا تنفيذ عند الطالب، فالأعمدة التي منفّذها «الطالب» تظهر له للاطلاع فقط دون تعليم.</div>' : ''}
     <div class="table-wrap"><table>
       <thead><tr><th>#</th><th>اسم العمود في الإكسل</th><th>المهمة</th><th>نوع القيمة</th><th>دوره</th><th>مرتبط بعمود</th><th>من ينفّذ</th><th>في التقييم</th><th>الوزن</th><th>إلزامي</th><th></th></tr></thead>
-      <tbody>${cols.map((c, i) => `<tr data-i="${i}">
+      <tbody>${cols.map((c, i) => { const rep = c.task === 'repeat'; return `<tr data-i="${i}">
         <td class="colnum">${i + 1}</td>
         <td><input type="text" data-k="header" value="${esc(c.header)}" placeholder="مثال: الحفظ من حديث" style="min-width:150px"></td>
         <td><select data-k="task">${Object.entries(TASKS).map(([k, v]) => `<option value="${k}"${c.task === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
           ${c.task === 'custom' ? `<input type="text" data-k="task_label" value="${esc(c.task_label)}" placeholder="اسم المهمة" style="margin-top:4px">` : ''}</td>
-        <td><select data-k="value_type">${Object.entries(VTYPES).map(([k, v]) => `<option value="${k}"${c.value_type === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td><select data-k="range_role">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}"${c.range_role === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td><select data-k="pair_column_id"><option value="">لا</option>${cols.filter(o => o.id !== c.id).map(o => `<option value="${o.id}"${c.pair_column_id === o.id ? ' selected' : ''}>${esc(o.header || 'عمود ' + (cols.indexOf(o) + 1))}</option>`).join('')}</select></td>
+        <td><select data-k="value_type"${rep ? ' disabled title="التكرار رقم دائمًا"' : ''}>${Object.entries(VTYPES).filter(([k]) => !rep || k === 'number').map(([k, v]) => `<option value="${k}"${c.value_type === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td><select data-k="range_role"${rep ? ' disabled title="التكرار قيمة مفردة دائمًا"' : ''}>${Object.entries(ROLES).filter(([k]) => !rep || k === 'single').map(([k, v]) => `<option value="${k}"${c.range_role === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td><select data-k="pair_column_id"${rep ? ' disabled' : ''}><option value="">لا</option>${rep ? '' : cols.filter(o => o.id !== c.id && o.task !== 'repeat').map(o => `<option value="${o.id}"${c.pair_column_id === o.id ? ' selected' : ''}>${esc(o.header || 'عمود ' + (cols.indexOf(o) + 1))}</option>`).join('')}</select></td>
         <td><select data-k="executor">${Object.entries(EXEC).map(([k, v]) => `<option value="${k}"${c.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
         <td style="text-align:center"><input type="checkbox" data-k="counts"${c.counts ? ' checked' : ''}${c.executor === 'info' ? ' disabled' : ''}></td>
         <td><input type="number" data-k="weight" min="0" step="1" value="${c.weight ?? ''}" style="width:70px"${c.counts && c.executor !== 'info' ? '' : ' disabled'}></td>
         <td style="text-align:center"><input type="checkbox" data-k="required"${c.required ? ' checked' : ''}></td>
         <td style="white-space:nowrap"><button class="btn sm ghost" type="button" data-up="${i}" ${i ? '' : 'disabled'} aria-label="نقل لأعلى">↑</button> <button class="btn sm ghost" type="button" data-down="${i}" ${i < cols.length - 1 ? '' : 'disabled'} aria-label="نقل لأسفل">↓</button> <button class="btn sm danger" type="button" data-del="${i}">حذف</button></td>
-      </tr>`).join('')}</tbody></table></div>
+      </tr>`; }).join('')}</tbody></table></div>
     <div class="row" style="justify-content:flex-start"><button class="btn sm gold" type="button" id="addCol">+ عمود</button><button class="btn sm ghost" type="button" id="addRange">+ نطاق (من / إلى)</button></div>
-    ${issues.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${issues.map(esc).join('<br>')}</div>` : '<div class="okbox">الأعمدة سليمة.</div>'}
-    <div class="note">«من ينفّذ» يحدد أين يظهر العمود: الطالب يراه مهمة يعلّم عليها، والمعلم يراه حقلًا في الرصد، و«للعرض فقط» يظهر معلومة دون تنفيذ مثل رابط الشرح.</div>
+    ${issues.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${issues.map(esc).join('<br>')}</div>` : '<div class="okbox">الأعمدة سليمة. أي تعديل هنا يظهر فورًا في تبويب «أيام الخطة والإكسل» وفي نموذج الإكسل الذي تنزّله.</div>'}
   </div>`;
   $$('#tab tbody tr').forEach(tr => {
     const c = cols[+tr.dataset.i];
@@ -378,9 +416,11 @@ function tabColumns() {
         if (k === 'weight') v = numOrNull(v);
         if (k === 'pair_column_id') { setPair(c, v || null); markDirty(); return tabColumns(); }
         c[k] = v; markDirty();
+        if (k === 'task' && v === 'repeat') { if (c.pair_column_id) setPair(c, null); c.value_type = 'number'; c.range_role = 'single'; }
         if (k === 'range_role' && c.pair_column_id) { const o = cols.find(x => x.id === c.pair_column_id); if (o && v !== 'single') o.range_role = v === 'start' ? 'end' : 'start'; }
-        if (['task', 'executor', 'counts', 'range_role'].includes(k)) {
-          if (k === 'task' && c.pair_column_id) { const o = cols.find(x => x.id === c.pair_column_id); if (o) o.task = v; }
+        if (k === 'range_role' && v === 'single' && c.pair_column_id) setPair(c, null);
+        if (['task', 'executor', 'counts', 'range_role', 'value_type'].includes(k)) {
+          if (c.pair_column_id && ['task', 'executor', 'counts'].includes(k)) { const o = cols.find(x => x.id === c.pair_column_id); if (o) o[k] = v; }
           tabColumns();
         } else refreshIssues();
       });
@@ -390,7 +430,7 @@ function tabColumns() {
   $$('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; [cols[i - 1], cols[i]] = [cols[i], cols[i - 1]]; markDirty(); tabColumns(); });
   $$('[data-down]').forEach(b => b.onclick = () => { const i = +b.dataset.down; [cols[i + 1], cols[i]] = [cols[i], cols[i + 1]]; markDirty(); tabColumns(); });
   $('#addCol').onclick = () => { cols.push(newCol({ task: 'custom', range_role: 'single' })); markDirty(); tabColumns(); };
-  $('#addRange').onclick = () => { const a = newCol({ task: 'review', range_role: 'start', header: 'من' }), b = newCol({ task: 'review', range_role: 'end', header: 'إلى' }); a.pair_column_id = b.id; b.pair_column_id = a.id; cols.push(a, b); markDirty(); tabColumns(); };
+  $('#addRange').onclick = () => { const a = newCol({ task: 'review', range_role: 'start', header: 'المراجعة من' }), b = newCol({ task: 'review', range_role: 'end', header: 'المراجعة إلى' }); a.pair_column_id = b.id; b.pair_column_id = a.id; cols.push(a, b); markDirty(); tabColumns(); };
 }
 function setPair(c, otherId) {
   const cols = S.cols;
@@ -416,9 +456,10 @@ function columnIssues() {
     if (c.range_role !== 'single' && !['number', 'text'].includes(c.value_type)) out.push(n + ': النطاق يكون رقمًا أو نصًا.');
   });
   if (!S.cols.length) out.push('أضف عمودًا واحدًا على الأقل.');
+  S.cols.forEach((c, i) => { if (c.task === 'repeat' && (c.value_type !== 'number' || c.range_role !== 'single')) out.push('العمود ' + (i + 1) + ': التكرار يكون رقمًا مفردًا.'); });
   return out;
 }
-function refreshIssues() { const box = $('#tab .errbox, #tab .okbox:last-of-type'); const is = columnIssues(); const html = is.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${is.map(esc).join('<br>')}</div>` : '<div class="okbox">الأعمدة سليمة.</div>'; const holder = $$('#tab > .grid > div').find(d => d.classList.contains('errbox') || d.classList.contains('okbox')); if (holder) holder.outerHTML = html; }
+function refreshIssues() { const is = columnIssues(); const html = is.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${is.map(esc).join('<br>')}</div>` : '<div class="okbox">الأعمدة سليمة. أي تعديل هنا يظهر فورًا في تبويب «أيام الخطة والإكسل» وفي نموذج الإكسل الذي تنزّله.</div>'; const holder = $$('#tab > .grid > div').filter(d => d.classList.contains('errbox') || d.classList.contains('okbox')).pop(); if (holder) holder.outerHTML = html; }
 
 // ---------- ٣. الأيام والإكسل ----------
 const DAY_HEADERS = ['اليوم', 'رقم اليوم', 'يوم', 'day'];
@@ -441,10 +482,10 @@ function tabDays() {
         ${errCount ? `<br><b>${errCount} خطأ</b> مظلل بالأحمر في الجدول. صحّح الملف وارفعه مجددًا.` : '<br>لا أخطاء. اضغط «اعتماد الأيام» ثم «حفظ الخطة».'}
       </div>
       <div class="row" style="justify-content:flex-start"><button class="btn" type="button" id="acceptImp" ${errCount ? 'disabled' : ''}>اعتماد الأيام (${imp.rows.length})</button><button class="btn ghost" type="button" id="cancelImp">إلغاء</button></div>` : ''}
-    ${rows.length ? `<div class="table-wrap" style="max-height:480px;overflow:auto"><table>
+    ${cols.length ? `<p class="muted small">الجدول يعرض أعمدة الخطة الحالية كما في تبويب «أعمدة الخطة»${S.dirty ? '، بما فيها التعديلات غير المحفوظة' : ''}.</p><div class="table-wrap" style="max-height:480px;overflow:auto"><table>
       <thead><tr><th>اليوم</th>${cols.map(c => `<th>${esc(c.header)}<br><span class="hint">${esc(taskName(c))}</span></th>`).join('')}</tr></thead>
-      <tbody>${rows.slice(0, 400).map(r => `<tr><td class="colnum${r.errors._day ? ' err' : ''}" title="${esc(r.errors._day || '')}">${esc(r.day_number)}</td>${cols.map(c => { const e = r.errors[c.id]; const v = r.vals[c.id]; return `<td class="${e ? 'err' : ''}" title="${esc(e || '')}">${v == null || v === '' ? '<span class="muted">—</span>' : c.value_type === 'url' ? `<a href="${esc(v)}" target="_blank" rel="noopener">رابط</a>` : c.value_type === 'bool' ? (v ? 'نعم' : 'لا') : esc(v)}${e ? `<div class="small">${esc(e)}</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
-      ${rows.length > 400 ? `<p class="muted small">يُعرض أول ٤٠٠ يوم من ${rows.length}.</p>` : ''}` : '<div class="empty">لا توجد أيام بعد. ارفع ملف الإكسل.</div>'}
+      <tbody>${rows.length ? '' : `<tr><td colspan="${cols.length + 1}" class="muted" style="text-align:center;padding:16px">لا توجد أيام بعد. نزّل النموذج، املأه، ثم ارفعه.</td></tr>`}${rows.slice(0, 400).map(r => `<tr><td class="colnum${r.errors._day ? ' err' : ''}" title="${esc(r.errors._day || '')}">${esc(r.day_number)}</td>${cols.map(c => { const e = r.errors[c.id]; const v = r.vals[c.id]; return `<td class="${e ? 'err' : ''}" title="${esc(e || '')}">${v == null || v === '' ? '<span class="muted">—</span>' : c.value_type === 'url' ? `<a href="${esc(v)}" target="_blank" rel="noopener">رابط</a>` : c.value_type === 'bool' ? (v ? 'نعم' : 'لا') : esc(v)}${e ? `<div class="small">${esc(e)}</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+      ${rows.length > 400 ? `<p class="muted small">يُعرض أول ٤٠٠ يوم من ${rows.length}.</p>` : ''}` : '<div class="empty">أضف أعمدة الخطة أولًا من تبويب «أعمدة الخطة».</div>'}
   </div>`;
   const fi = $('#xfile');
   fi.onchange = () => fi.files[0] && readExcel(fi.files[0]);
@@ -459,10 +500,16 @@ function tabDays() {
   }
 }
 function downloadTemplate() {
-  if (columnIssues().length) return toast('أصلح الأعمدة أولًا', true);
-  const ws = XLSX.utils.aoa_to_sheet([['اليوم', ...S.cols.map(c => c.header)], [1, ...S.cols.map(() => '')]]);
-  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الخطة');
-  try { XLSX.writeFile(wb, (S.plan.name || 'خطة') + '.xlsx'); } catch (e) { toast('المتصفح منع التنزيل', true); }
+  const is = columnIssues();
+  if (is.length) { S.tab = 'columns'; render(); return toast('صحّح الأعمدة أولًا: ' + is[0], true); }
+  const sample = c => c.value_type === 'number' ? (c.range_role === 'end' ? 3 : c.task === 'repeat' ? 20 : 1) : c.value_type === 'bool' ? 'نعم' : c.value_type === 'url' ? 'https://' : '';
+  const rows = [['اليوم', ...S.cols.map(c => c.header)], [1, ...S.cols.map(sample)]];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 8 }, ...S.cols.map(c => ({ wch: Math.max(12, c.header.length + 4) }))];
+  const help = XLSX.utils.aoa_to_sheet([['العمود', 'المهمة', 'نوع القيمة', 'دوره', 'ما يُكتب فيه'], ...S.cols.map(c => [c.header, taskName(c), VTYPES[c.value_type], ROLES[c.range_role],
+    c.value_type === 'bool' ? 'نعم في الأيام التي فيها المهمة، وفارغ في غيرها' : c.value_type === 'url' ? 'رابط يبدأ بـ https://' : c.value_type === 'number' ? 'رقم (يقبل الكسور مثل 12.5)' : 'نص'])]);
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الخطة'); XLSX.utils.book_append_sheet(wb, help, 'شرح الأعمدة');
+  try { XLSX.writeFile(wb, (S.plan.name || 'خطة') + ' - نموذج.xlsx'); toast('نُزّل النموذج بأعمدة الخطة الحالية (' + S.cols.length + ' عمود)'); } catch (e) { toast('المتصفح منع التنزيل', true); }
 }
 function readExcel(file) {
   if (columnIssues().length) return toast('أصلح أعمدة الخطة أولًا (تبويب ٢)', true);
@@ -573,6 +620,7 @@ function tabPreview() {
         <p class="small muted">يظهر النموذج في أيام التسميع: ${recDays.map(i => DAYS[i]).join('، ') || 'لم تُحدد'}</p>
         ${teacherTasks.map(t => `<div class="task" style="grid-template-columns:1fr"><div><b>${esc(t.name)}</b><span class="small muted"> المقرر: ${esc(fmtTask(t, vals) ?? '—')}</span>
           <div class="g2" style="margin-top:6px">${t.cols.map(c => `<label class="f small">${esc(c.header)}<input type="${c.value_type === 'number' ? 'number' : 'text'}" value="${esc(vals[c.id] ?? '')}" step="0.5"></label>`).join('')}</div></div></div>`).join('') || '<p class="muted small">لا توجد أعمدة يرصدها المعلم.</p>'}
+        ${groupTasks(c => c.executor === 'info').map(t => { const txt = fmtTask(t, vals); return txt == null ? '' : `<div class="task" style="grid-template-columns:1fr;--teal:var(--slate)"><div><b>${esc(t.name)} <span class="hint">للعرض فقط</span></b><span class="small muted">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span></div></div>`; }).join('')}
         <div class="task" style="grid-template-columns:1fr"><b>الأخطاء</b>
           ${R.deductions.map(d => `<div class="row"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ded"><button type="button" data-ded="${esc(d.key)}" data-dir="-1">−</button><b>${S.previewDed[d.key] || 0}</b><button type="button" data-ded="${esc(d.key)}" data-dir="1">+</button></span></div>`).join('')}
           <div class="row"><span>الدرجة</span><span class="score">${score.toFixed(2)} <span class="hint">من ${R.max}</span></span></div></div>`}
@@ -634,6 +682,8 @@ async function savePlan() {
   if (issues.length) { S.tab = 'columns'; render(); return toast('في الأعمدة أخطاء يجب تصحيحها', true); }
   if (P.recitation_mode === 'days' && !P.recitation_days.length) { S.tab = 'rules'; render(); return toast('اختر أيام التسميع', true); }
   if (!P.workdays.length) { S.tab = 'rules'; render(); return toast('اختر يومًا واحدًا على الأقل لتقدّم الخطة', true); }
+  if (P.recitation_mode === 'none' && P.student_execution === 'none') { S.tab = 'rules'; render(); return toast('اختر التسميع أو تنفيذ الطالب، فالخطة بلا الاثنين لا يُقيَّم فيها شيء', true); }
+  if (P.recitation_mode !== 'none' && P.student_execution === 'counts' && P.execution_weight != null && P.recitation_weight != null && P.execution_weight + P.recitation_weight !== 100) { S.tab = 'rules'; render(); return toast('مجموع وزن التنفيذ ووزن التسميع يجب أن يكون 100', true); }
   const btn = $('#savePlan'); btn.disabled = true; btn.textContent = 'جارٍ الحفظ…';
   try {
     const row = { name: P.name.trim(), description: P.description || null, book_name: P.book_name || null, audio_url: P.audio_url || null, book_url: P.book_url || null, whatsapp_url: P.whatsapp_url || null, status: P.status,
@@ -657,6 +707,7 @@ async function savePlan() {
     S.dirty = false;
     await loadPlans();
     toast('حُفظت الخطة');
+    tellParent('saved', { id: planId });
     const tab = S.tab; await openPlan(planId); S.tab = tab; render();
   } catch (e) {
     toast('لم تُحفظ: ' + (e.message || e), true);

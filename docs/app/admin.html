@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>لوحة المشرف — منصة سنن</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
+<link rel="stylesheet" href="app.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="app.js"></script>
+<style>
+.plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
+.cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
+.cols-chart .col{flex:1;min-width:14px;display:flex;flex-direction:column;align-items:center}
+.cols-chart .v{font-size:10px;font-weight:800;min-height:14px;font-variant-numeric:tabular-nums}
+.cols-chart .bw{flex:1;width:100%;display:flex;align-items:flex-end;justify-content:center}
+.cols-chart .b{width:72%;min-height:2px;border-radius:4px 4px 0 0;background:var(--teal)}
+.cols-chart .l{font-size:9px;color:var(--muted);white-space:nowrap}
+.rank-row{display:grid;grid-template-columns:40px 1fr auto auto;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px dashed var(--soft-line)}
+.rank-row .r{font-weight:800;color:#7A6534;text-align:center}
+.rank-row:nth-child(-n+3) .r{color:#fff;background:var(--gold);border-radius:8px;padding:2px 0}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><button class="pillbtn menu-btn" type="button" id="menuBtn" aria-label="القائمة">☰</button><span class="mark">سنن</span><h1>لوحة المشرف<span class="sep">|</span><span class="prog" id="secTitle">الرئيسية</span></h1></div>
+  <div class="tools"><span id="today"></span><span id="who"></span><button class="pillbtn" type="button" id="logout">خروج</button></div>
+</header>
+<div class="shell">
+  <nav class="side" id="side" aria-label="أقسام لوحة المشرف"></nav>
+  <main class="main" id="main"><div class="loading">جارٍ التحميل…</div></main>
+</div>
+<script>
+(async () => {
+'use strict';
+const A = App, { db, $, $$, esc, norm, fmtNum, toast, fetchAll, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox, statusPill, STATUS, STU_STATUS, svg } = A;
+const me = await A.requireRole(['admin']);
+if (!me) return;
+$('#who').textContent = me.name;
+const TODAY = A.todayMakkah();
+$('#today').textContent = A.hijri(TODAY) + ' · ' + A.greg(TODAY);
+$('#logout').onclick = A.logout;
+$('#menuBtn').onclick = () => $('#side').classList.toggle('open');
+
+// ============ القائمة ============
+const NAV = [
+  ['التشغيل اليومي', [['home', 'الرئيسية', 'home'], ['daily', 'المتابعة اليومية', 'chart'], ['recs', 'سجل الرصد', 'list']]],
+  ['الطلاب', [['students', 'الطلاب وملفاتهم', 'users'], ['leaves', 'الاستئذان', 'leave'], ['discipline', 'الانضباط والمتابعة', 'alert'], ['exams', 'الاختبارات المرحلية', 'exam'], ['honor', 'لوحة الشرف', 'star']]],
+  ['البرامج', [['plans', 'خطط البرامج', 'plan']]],
+  ['المعلمون والفترات', [['teachers', 'المعلمون', 'teacher'], ['rooms', 'الفترات والغرف الصوتية', 'room']]],
+  ['التواصل', [['notify', 'الإشعارات', 'bell']]],
+  ['التقارير', [['reports', 'لوحة التقارير', 'report']]],
+  ['الحساب', [['profile', 'ملفي الشخصي', 'user']]]
+];
+const TITLES = Object.fromEntries(NAV.flatMap(g => g[1].map(x => [x[0], x[1]])));
+function drawNav(cur) {
+  $('#side').innerHTML = NAV.map(([g, items]) => `<div class="grp">${g}</div>${items.map(([k, l, ic]) => `<a href="#${k}" aria-current="${cur === k ? 'page' : 'false'}">${svg(ic)}<span>${l}</span>${k === 'leaves' && D.pendingLeaves ? `<span class="badge">${D.pendingLeaves}</span>` : ''}</a>`).join('')}`).join('');
+}
+
+// ============ البيانات ============
+const D = { loaded: false };
+async function loadCore() {
+  const [users, students, teachers, rooms, ra, plans, pa, leaves] = await Promise.all([
+    fetchAll(() => db.from('users').select('id, name, email, role, phone, created_at')),
+    fetchAll(() => db.from('students').select('*')),
+    db.from('teachers').select('*').then(r => r.data || []),
+    db.from('audio_rooms').select('*').order('sort').then(r => r.data || []),
+    fetchAll(() => db.from('room_assignments').select('*')),
+    db.from('program_plans').select('*').order('created_at').then(r => r.data || []),
+    fetchAll(() => db.from('plan_assignments').select('*').is('ended_at', null)),
+    db.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+  ]);
+  D.users = users; D.userById = Object.fromEntries(users.map(u => [u.id, u]));
+  D.teachers = teachers.map(t => ({ ...t, name: D.userById[t.user_id]?.name || '—', email: D.userById[t.user_id]?.email }));
+  D.teacherById = Object.fromEntries(D.teachers.map(t => [t.id, t]));
+  D.rooms = rooms; D.roomById = Object.fromEntries(rooms.map(r => [r.id, r]));
+  D.ra = ra;
+  D.plans = plans; D.planById = Object.fromEntries(plans.map(p => [p.id, p]));
+  D.assignByStudent = Object.fromEntries(pa.map(a => [a.student_id, a]));
+  D.roomOfStudent = {}; D.roomsOfTeacher = {};
+  ra.forEach(a => { if (a.assignee_type === 'student') D.roomOfStudent[a.assignee_id] = a.room_id; else (D.roomsOfTeacher[a.assignee_id] ||= []).push(a.room_id); });
+  D.students = students.map(s => { const u = D.userById[s.user_id] || {}; const a = D.assignByStudent[s.id]; return { ...s, name: u.name || '—', email: u.email, teacher: D.teacherById[s.teacher_id]?.name || '—', room: D.roomById[D.roomOfStudent[s.id]]?.name || '—', plan: a ? (D.planById[a.plan_id]?.name || '—') : '—', planObj: a ? D.planById[a.plan_id] : null, assign: a, statusLabel: (STU_STATUS[s.status] || [s.status])[0] }; });
+  D.studentById = Object.fromEntries(D.students.map(s => [s.id, s]));
+  D.pendingLeaves = leaves.count || 0;
+  D.loaded = true;
+}
+async function loadRecs(force) {
+  if (D.recs && !force) return D.recs;
+  D.recs = await fetchAll(() => db.from('plan_recitations').select('id, student_id, teacher_id, rec_date, status, score, memo_from, memo_to, errors_total, notes, room_id, plan_id, vals, deductions, makes_up_date, created_at').is('superseded_by', null).order('rec_date', { ascending: false }));
+  D.recsByStudent = {};
+  D.recs.forEach(r => (D.recsByStudent[r.student_id] ||= []).push(r));
+  return D.recs;
+}
+const actives = () => D.students.filter(s => s.status === 'active' && !s.is_archived);
+const ACH = ['present', 'makeup', 'review_only'];
+// إحصاءات طالب في فترة
+function statsOf(s, from, to) {
+  const rs = (D.recsByStudent[s.id] || []).filter(r => (!from || r.rec_date >= from) && (!to || r.rec_date <= to));
+  const c = { present: 0, makeup: 0, review_only: 0, excused: 0, absent: 0 };
+  rs.forEach(r => c[r.status] = (c[r.status] || 0) + 1);
+  const scores = rs.filter(r => r.score != null).map(r => +r.score);
+  const plan = s.planObj, wd = plan?.workdays || [0, 1, 2, 3, 4];
+  const start = [s.assign?.start_date, s.join_date, from].filter(Boolean).sort().pop();
+  const end = [to || TODAY, TODAY].sort()[0];
+  const expected = A.workdaysBetween(start, end, wd);
+  const achDays = new Set(rs.filter(r => ACH.includes(r.status)).map(r => r.rec_date)).size;
+  const excDays = new Set(rs.filter(r => r.status === 'excused').map(r => r.rec_date)).size;
+  const base = Math.max(0, expected - excDays);
+  return { count: rs.length, ...c, avg: scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null,
+    memorized: A.unionCount(rs.filter(r => ['present', 'makeup'].includes(r.status)).map(r => [r.memo_from == null ? null : +r.memo_from, r.memo_to == null ? null : +r.memo_to])),
+    last: rs[0]?.rec_date || null, expected, achDays, absences: Math.max(0, base - achDays), pct: base ? Math.min(100, Math.round(achDays / base * 100)) : null };
+}
+const lastRecOf = s => (D.recsByStudent[s.id] || [])[0]?.rec_date || null;
+
+// ============ التوجيه ============
+const SECTIONS = {};
+let current = null;
+async function route() {
+  const key = (location.hash || '#home').slice(1);
+  const sec = SECTIONS[key] ? key : 'home';
+  current = sec;
+  if (!D.loaded) await loadCore();
+  drawNav(sec);
+  $('#side').classList.remove('open');
+  $('#secTitle').textContent = TITLES[sec];
+  document.title = TITLES[sec] + ' — لوحة المشرف';
+  $('#main').innerHTML = '<div class="loading">جارٍ التحميل…</div>';
+  try { await SECTIONS[sec]($('#main')); }
+  catch (e) { console.error(e); $('#main').innerHTML = `<div class="error">تعذّر تحميل القسم: ${esc(e.message || e)}</div>`; }
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+const secHead = (title, sub, color, acts) => `<div class="sec-h" style="--c:var(--${color || 'gold'})"><b>${esc(title)}</b>${sub ? `<span>${sub}</span>` : ''}${acts ? `<div class="acts">${acts}</div>` : ''}</div>`;
+const mini = (label, val, color, small) => `<div class="mini" style="--c:var(--${color})"><span>${esc(label)}</span><b>${val}</b>${small ? `<small>${small}</small>` : ''}</div>`;
+const cardFull = el => { const h = el.querySelector('.head'); if (h) h.appendChild(fullscreenBtn(el)); };
+function bars(items, color, fmt) {
+  const max = Math.max(1, ...items.map(i => i[1]));
+  return `<div class="bars">${items.map(([l, v, c]) => `<div class="br"><span class="lb" title="${esc(l)}">${esc(l)}</span><span class="t"><span class="f" style="width:${(v / max * 100).toFixed(1)}%;background:${c || color || 'var(--teal)'}"></span></span><span class="n">${fmt ? fmt(v) : fmtNum(v)}</span></div>`).join('') || '<div class="empty">لا توجد بيانات</div>'}</div>`;
+}
+function donut(parts, centerLabel) {
+  const total = parts.reduce((a, p) => a + p[1], 0) || 1;
+  let acc = 0;
+  const grad = parts.map(([, v, c]) => { const a = acc / total * 360; acc += v; return `${c} ${a}deg ${acc / total * 360}deg`; }).join(',');
+  return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${grad || 'var(--track) 0deg 360deg'})"><div class="mid"><b>${fmtNum(total === 1 && !parts.some(p => p[1]) ? 0 : total)}</b><span>${esc(centerLabel)}</span></div></div>
+    <div class="legend">${parts.map(([l, v, c]) => `<div class="lg"><i style="background:${c}"></i><em>${esc(l)}</em><span class="n">${fmtNum(v)}</span><span class="p">${(v / total * 100).toFixed(0)}٪</span></div>`).join('')}</div></div>`;
+}
+const opt = (v, l, sel) => `<option value="${esc(v)}"${sel ? ' selected' : ''}>${esc(l)}</option>`;
+const teacherOpts = sel => D.teachers.filter(t => !t.is_archived).map(t => opt(t.id, t.name, t.id === sel)).join('');
+const roomOpts = sel => D.rooms.map(r => opt(r.id, r.name + (r.start_time ? ' (' + r.start_time.slice(0, 5) + ')' : ''), r.id === sel)).join('');
+const planOpts = sel => D.plans.filter(p => p.status !== 'archived').map(p => opt(p.id, p.name, p.id === sel)).join('');
+
+// ============ الرئيسية ============
+SECTIONS.home = async el => {
+  await loadRecs();
+  const act = actives();
+  const todayRecs = D.recs.filter(r => r.rec_date === TODAY);
+  const todayStu = new Set(todayRecs.map(r => r.student_id));
+  const { data: warns } = await db.from('discipline_events').select('id, kind').eq('status', 'active').gte('event_date', A.addDays(TODAY, -30));
+  const cut = A.addDays(TODAY, -5);
+  const stale = act.filter(s => { const l = lastRecOf(s); return !l || l < cut; }).map(s => ({ s, l: lastRecOf(s) })).sort((a, b) => (a.l || '') < (b.l || '') ? -1 : 1);
+  const stats = act.map(s => ({ s, st: statsOf(s) }));
+  const top = stats.slice().sort((a, b) => b.st.memorized - a.st.memorized).slice(0, 5);
+  const tAct = D.teachers.map(t => ({ t, n: todayRecs.filter(r => r.teacher_id === t.id).length, stu: D.students.filter(s => s.teacher_id === t.id && s.status === 'active').length })).sort((a, b) => b.n - a.n);
+  el.innerHTML = `${secHead('أهلًا بك، ' + me.name, A.hijri(TODAY) + ' · ' + A.dayName(TODAY), 'gold')}
+    <div class="card" style="--a:var(--teal);margin-bottom:10px"><div class="minis">
+      ${mini('الطلاب المنتظمون', fmtNum(act.length), 'teal', 'من ' + fmtNum(D.students.length) + ' مسجلًا')}
+      ${mini('المعلمون', fmtNum(D.teachers.filter(t => !t.is_archived).length), 'blue')}
+      ${mini('رُصد اليوم', fmtNum(todayStu.size) + '<em>طالبًا</em>', 'green', act.length ? Math.round(todayStu.size / act.length * 100) + '٪ من المنتظمين' : '')}
+      ${mini('لم يُرصدوا اليوم', fmtNum(act.length - todayStu.size), 'amber')}
+      ${mini('استئذانات بانتظار القرار', fmtNum(D.pendingLeaves), 'violet')}
+      ${mini('تنبيهات وإنذارات (30 يومًا)', fmtNum((warns || []).length), 'red')}
+    </div></div>
+    <div class="grid">
+      <div class="card c-red span6"><div class="head"><h3>منقطعون عن التسميع أكثر من 5 أيام</h3><span class="pill bad">${stale.length}</span></div>
+        <div class="tbl-wrap" style="max-height:340px"><table><thead><tr><th>الطالب</th><th>المعلم</th><th>آخر رصد</th><th>منذ</th></tr></thead><tbody>
+        ${stale.slice(0, 50).map(x => `<tr class="click" data-stu="${x.s.id}"><td>${esc(x.s.name)}</td><td>${esc(x.s.teacher)}</td><td>${x.l ? A.greg(x.l) : 'لا يوجد'}</td><td class="num">${x.l ? A.daysBetween(x.l, TODAY) + ' يوم' : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">لا يوجد</td></tr>'}</tbody></table></div></div>
+      <div class="card c-green span6"><div class="head"><h3>الأعلى حفظًا</h3><a href="#honor" class="small">لوحة الشرف كاملة</a></div>
+        ${bars(top.map(x => [x.s.name, x.st.memorized]), 'var(--green)', v => fmtNum(v, 1) + ' حديث')}</div>
+      <div class="card c-blue span12"><div class="head"><h3>نشاط المعلمين اليوم</h3></div>
+        ${bars(tAct.map(x => [x.t.name + ' (' + x.stu + ' طالب)', x.n]), 'var(--blue)', v => fmtNum(v) + ' رصد')}</div>
+    </div>`;
+  $$('[data-stu]', el).forEach(tr => tr.onclick = () => studentFile(tr.dataset.stu));
+};
+
+// ============ المتابعة اليومية ============
+SECTIONS.daily = async el => {
+  await loadRecs();
+  let date = SECTIONS.daily.date || TODAY;
+  const draw = () => {
+    const recs = D.recs.filter(r => r.rec_date === date);
+    const byStu = {}; recs.forEach(r => (byStu[r.student_id] ||= []).push(r));
+    const rows = actives().map(s => { const rs = byStu[s.id] || []; const r = rs[0]; const pd = s.assign && s.planObj ? A.planDayFor(s.assign, s.planObj, 9999, date) : null;
+      return { s, name: s.name, teacher: s.teacher, room: s.room, plan: s.plan, day: pd, status: r ? r.status : 'none', statusLabel: STATUS[r ? r.status : 'none'].label, score: r?.score != null ? +r.score : null, memo: r?.memo_from ? `${+r.memo_from}–${+r.memo_to}` : '', more: rs.length > 1 ? rs.length : '' }; });
+    const cnt = k => rows.filter(r => r.status === k).length;
+    el.innerHTML = `${secHead('المتابعة اليومية', A.dayName(date) + ' · ' + A.hijri(date) + ' · ' + A.greg(date), 'teal', `<input type="date" id="dDate" value="${date}" style="width:auto"><button class="btn ghost sm" id="dPrev">اليوم السابق</button><button class="btn ghost sm" id="dNext">اليوم التالي</button>`)}
+      <div class="card" style="--a:var(--teal);margin-bottom:10px"><div class="minis">
+        ${mini('منتظمون', fmtNum(rows.length), 'teal')}${['present', 'makeup', 'review_only', 'excused', 'absent', 'none'].map(k => mini(STATUS[k].label, fmtNum(cnt(k)), { present: 'green', makeup: 'amber', review_only: 'blue', excused: 'violet', absent: 'red', none: 'slate' }[k])).join('')}
+      </div></div>
+      <div class="card c-teal" id="dCard"><div class="head"><h3>حالة كل طالب في اليوم</h3></div><div id="dTbl"></div></div>`;
+    dataTable($('#dTbl'), { rows, sortKey: 'statusLabel', pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+      { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
+      { key: 'statusLabel', label: 'الحالة', filter: true, html: r => statusPill(r.status) }, { key: 'day', label: 'يوم الخطة', num: true },
+      { key: 'memo', label: 'الحفظ المسمَّع' }, { key: 'score', label: 'الدرجة', num: true, html: r => r.score == null ? '—' : fmtNum(r.score, 2) }, { key: 'plan', label: 'الخطة', filter: true }] });
+    cardFull($('#dCard'));
+    $('#dDate').onchange = e => { date = SECTIONS.daily.date = e.target.value || TODAY; draw(); };
+    $('#dPrev').onclick = () => { date = SECTIONS.daily.date = A.addDays(date, -1); draw(); };
+    $('#dNext').onclick = () => { date = SECTIONS.daily.date = A.addDays(date, 1); draw(); };
+  };
+  draw();
+};
+
+// ============ سجل الرصد ============
+SECTIONS.recs = async el => {
+  await loadRecs();
+  let from = SECTIONS.recs.from || A.addDays(TODAY, -6), to = SECTIONS.recs.to || TODAY;
+  const draw = () => {
+    const rows = D.recs.filter(r => r.rec_date >= from && r.rec_date <= to).map(r => { const s = D.studentById[r.student_id] || {}; return { r, id: r.id, date: r.rec_date, name: s.name || '—', teacher: D.teacherById[r.teacher_id]?.name || '—', room: D.roomById[r.room_id]?.name || '—', statusLabel: STATUS[r.status]?.label, memo: r.memo_from ? `${+r.memo_from}–${+r.memo_to}` : '', errors: r.errors_total != null ? +r.errors_total : null, score: r.score != null ? +r.score : null, notes: r.notes || '' }; });
+    el.innerHTML = `${secHead('سجل الرصد', fmtNum(rows.length) + ' سجل', 'blue', `<label class="small" style="color:#fff">من <input type="date" id="rFrom" value="${from}" style="width:auto"></label><label class="small" style="color:#fff">إلى <input type="date" id="rTo" value="${to}" style="width:auto"></label>`)}
+      <div class="card c-blue" id="rCard"><div class="head"><h3>السجلات</h3><span class="hint">إلغاء السجل لا يحذفه: يبقى في السجل التاريخي مع السبب، ويُستبعد من الحساب</span></div><div id="rTbl"></div></div>`;
+    dataTable($('#rTbl'), { rows, sortKey: 'date', dir: -1, pageSize: 200, cols: [
+      { key: 'date', label: 'التاريخ', html: x => A.greg(x.date) }, { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
+      { key: 'statusLabel', label: 'الحالة', filter: true, html: x => statusPill(x.r.status) }, { key: 'memo', label: 'الحفظ' }, { key: 'errors', label: 'الأخطاء', num: true },
+      { key: 'score', label: 'الدرجة', num: true, html: x => x.score == null ? '—' : fmtNum(x.score, 2) }, { key: 'notes', label: 'ملاحظات' },
+      { key: 'act', label: '', html: x => `<button class="btn danger sm" data-cancel="${x.id}">إلغاء</button>` }],
+      after: root => $$('[data-cancel]', root).forEach(b => b.onclick = () => cancelRec(b.dataset.cancel)) });
+    cardFull($('#rCard'));
+    $('#rFrom').onchange = e => { from = SECTIONS.recs.from = e.target.value; draw(); };
+    $('#rTo').onchange = e => { to = SECTIONS.recs.to = e.target.value; draw(); };
+  };
+  draw();
+};
+function cancelRec(id) {
+  drawer('إلغاء سجل رصد', `<p>اكتب سبب الإلغاء. يبقى السجل محفوظًا مع السبب ولا يدخل في الحساب.</p><label class="f" for="cr">السبب<textarea id="cr" required></textarea></label><button class="btn danger" id="crGo">إلغاء السجل</button>`, root => {
+    $('#crGo', root).onclick = async () => {
+      const reason = $('#cr', root).value.trim(); if (!reason) return toast('اكتب السبب', true);
+      const { error } = await db.from('plan_recitations').update({ superseded_by: id, edit_reason: 'ألغاه المشرف: ' + reason }).eq('id', id);
+      if (error) return toast(error.message, true);
+      closeDrawer(); toast('أُلغي السجل'); await loadRecs(true); route();
+    };
+  });
+}
+
+// ============ الطلاب ============
+SECTIONS.students = async el => {
+  await loadRecs();
+  const rows = D.students.map(s => { const st = statsOf(s); return { s, name: s.name, email: s.email, phone: s.phone || '', nationality: s.nationality || '', teacher: s.teacher, room: s.room, plan: s.plan, status: s.statusLabel, app: s.app_status || '', memorized: st.memorized, count: st.count, avg: st.avg, pct: st.pct, last: st.last }; });
+  el.innerHTML = `${secHead('الطلاب وملفاتهم', fmtNum(rows.length) + ' طالب', 'teal', `<button class="btn gold sm" id="addStu">+ إضافة طالب</button>`)}
+    <div class="card c-teal" id="sCard"><div class="head"><h3>كل الطلاب</h3><span class="hint">اضغط على أي طالب لفتح ملفه وتعديله</span></div><div id="sTbl"></div></div>`;
+  dataTable($('#sTbl'), { rows, sortKey: 'name', pageSize: 200, onRow: r => studentFile(r.s.id), cols: [
+    { key: 'name', label: 'الاسم' }, { key: 'email', label: 'البريد' }, { key: 'phone', label: 'الجوال' }, { key: 'nationality', label: 'الجنسية', filter: true },
+    { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'plan', label: 'الخطة', filter: true },
+    { key: 'status', label: 'الحالة', filter: true }, { key: 'app', label: 'حالة القبول', filter: true },
+    { key: 'memorized', label: 'المحفوظ', num: true, html: r => fmtNum(r.memorized, 1) }, { key: 'pct', label: 'الإنجاز ٪', num: true, html: r => r.pct == null ? '—' : r.pct + '٪' },
+    { key: 'avg', label: 'متوسط الدرجة', num: true, html: r => r.avg == null ? '—' : fmtNum(r.avg, 2) }, { key: 'count', label: 'السجلات', num: true }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' }] });
+  cardFull($('#sCard'));
+  $('#addStu').onclick = () => addAccount('student');
+};
+
+async function studentFile(id) {
+  await loadRecs();
+  const s = D.studentById[id]; if (!s) return;
+  const st = statsOf(s);
+  const [lv, de, fa, ex] = await Promise.all([
+    db.from('leave_requests').select('*').eq('student_id', id).order('date_from', { ascending: false }).limit(20),
+    db.from('discipline_events').select('*').eq('student_id', id).order('event_date', { ascending: false }),
+    db.from('follow_up_actions').select('*').eq('student_id', id).order('case_date', { ascending: false }),
+    db.from('periodic_exams').select('*').eq('student_id', id).order('date', { ascending: false })
+  ]);
+  const recs = (D.recsByStudent[id] || []).slice(0, 15);
+  drawer('ملف الطالب: ' + s.name, `
+    <div class="card c-teal"><div class="minis">${mini('المحفوظ', fmtNum(st.memorized, 1), 'green')}${mini('الإنجاز', st.pct == null ? '—' : st.pct + '٪', 'teal')}${mini('متوسط الدرجة', st.avg == null ? '—' : fmtNum(st.avg, 2), 'blue')}${mini('غياب تقديري', fmtNum(st.absences), 'red')}</div></div>
+    <div class="card"><h3>البيانات</h3><dl class="dl" style="margin-top:8px">
+      <dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(s.email || '')}</dd><dt>الجوال</dt><dd dir="ltr" style="text-align:right">${esc(s.phone || '—')}</dd>
+      <dt>الجنسية</dt><dd>${esc(s.nationality || '—')}</dd><dt>الإقامة</dt><dd>${esc(s.residence || '—')}</dd><dt>الجنس</dt><dd>${esc(s.gender || '—')}</dd>
+      <dt>التعليم</dt><dd>${esc(s.education || '—')}</dd><dt>حفظ القرآن</dt><dd>${s.quran_parts != null ? fmtNum(s.quran_parts, 1) + ' جزء' : '—'}</dd>
+      <dt>المجلد</dt><dd>${esc(s.volume || '—')}</dd><dt>تاريخ الانضمام</dt><dd>${s.join_date ? A.greg(s.join_date) : '—'}</dd><dt>حالة القبول</dt><dd>${esc(s.app_status || '—')}</dd><dt>ملاحظات</dt><dd>${esc(s.notes || '—')}</dd></dl></div>
+    <div class="card c-blue"><h3>الإسناد والحالة</h3><div class="g2" style="margin-top:8px">
+      <label class="f" for="fT">المعلم<select id="fT"><option value="">—</option>${teacherOpts(s.teacher_id)}</select></label>
+      <label class="f" for="fR">الفترة / الغرفة<select id="fR"><option value="">—</option>${roomOpts(D.roomOfStudent[id])}</select></label>
+      <label class="f" for="fP">الخطة<select id="fP"><option value="">—</option>${planOpts(s.assign?.plan_id)}</select></label>
+      <label class="f" for="fS">الحالة<select id="fS">${Object.entries(STU_STATUS).map(([k, v]) => opt(k, v[0], k === s.status)).join('')}</select></label>
+      <label class="f" for="fPD">يبدأ من يوم الخطة رقم <span class="hint">عند تغيير الخطة</span><input id="fPD" type="number" min="1" value="${s.assign?.start_day || 1}"></label>
+      <label class="f" for="fPS">تاريخ بداية الخطة<input id="fPS" type="date" value="${s.assign?.start_date || TODAY}"></label>
+    </div><div class="row" style="margin-top:10px;justify-content:flex-start"><button class="btn" id="fSave">حفظ التعديلات</button><button class="btn ghost" id="fPw">تعيين كلمة مرور</button><button class="btn ghost" id="fMsg">إرسال إشعار</button></div></div>
+    <div class="card c-green"><h3>آخر الرصد</h3><div class="tbl-wrap" style="margin-top:8px;max-height:300px"><table><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحفظ</th><th>الدرجة</th><th>المعلم</th></tr></thead><tbody>
+      ${recs.map(r => `<tr><td>${A.greg(r.rec_date)}</td><td>${statusPill(r.status)}</td><td>${r.memo_from ? +r.memo_from + '–' + +r.memo_to : '—'}</td><td>${r.score != null ? fmtNum(r.score, 2) : '—'}</td><td>${esc(D.teacherById[r.teacher_id]?.name || '—')}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا يوجد</td></tr>'}</tbody></table></div></div>
+    <div class="card c-violet"><h3>الاستئذانات</h3>${(lv.data || []).map(l => `<div class="row small" style="border-bottom:1px dashed var(--soft-line);padding:4px 0"><span>${A.greg(l.date_from)}${l.date_to !== l.date_from ? ' – ' + A.greg(l.date_to) : ''} · ${esc(l.reason)}</span>${leavePill(l.status)}</div>`).join('') || '<p class="muted small">لا يوجد</p>'}</div>
+    <div class="card c-red"><h3>الانضباط</h3>${(de.data || []).map(d => `<div class="row small" style="border-bottom:1px dashed var(--soft-line);padding:4px 0"><span>${A.greg(d.event_date)} · ${esc(d.reason || '')}</span><span class="pill ${d.kind === 'alert' ? 'warn' : 'bad'}">${KIND[d.kind]}</span></div>`).join('') || '<p class="muted small">لا يوجد</p>'}
+      ${(fa.data || []).length ? `<h3 style="margin-top:10px">إجراءات المشرف</h3>${fa.data.map(f => `<div class="small" style="border-bottom:1px dashed var(--soft-line);padding:5px 0"><b>${A.greg(f.case_date)}</b> · ${esc(f.reason || '')}<br>${esc(f.action_summary || '')}${f.student_reply ? '<br><span class="muted">رد الطالب: ' + esc(f.student_reply) + '</span>' : ''} <span class="pill plain">${esc(f.status)}</span></div>`).join('')}` : ''}</div>
+    <div class="card c-amber"><h3>الاختبارات</h3>${(ex.data || []).map(x => `<div class="row small" style="padding:4px 0"><span>${esc(x.exam_name)}</span><b>${x.score != null ? fmtNum(x.score, 2) : '—'}</b></div>`).join('') || '<p class="muted small">لا يوجد</p>'}</div>`, root => {
+    $('#fSave', root).onclick = async () => {
+      const b = $('#fSave', root); b.disabled = true;
+      try {
+        const tId = $('#fT', root).value || null, rId = $('#fR', root).value || null, pId = $('#fP', root).value || null, stt = $('#fS', root).value;
+        let r = await db.from('students').update({ teacher_id: tId, status: stt }).eq('id', id); if (r.error) throw r.error;
+        if (rId !== (D.roomOfStudent[id] || null)) {
+          r = await db.from('room_assignments').delete().eq('assignee_type', 'student').eq('assignee_id', id); if (r.error) throw r.error;
+          if (rId) { const room = D.roomById[rId]; const used = D.ra.filter(a => a.room_id === rId && a.assignee_type === 'student').length; if (room.capacity && used >= room.capacity) throw new Error('اكتملت سعة الفترة «' + room.name + '»'); r = await db.from('room_assignments').insert({ room_id: rId, assignee_type: 'student', assignee_id: id }); if (r.error) throw r.error; }
+        }
+        const cur = s.assign; const sd = $('#fPS', root).value || TODAY, sday = Math.max(1, +$('#fPD', root).value || 1);
+        if ((pId || null) !== (cur?.plan_id || null) || (cur && (cur.start_day !== sday || cur.start_date !== sd))) {
+          if (cur) { r = await db.from('plan_assignments').update({ ended_at: new Date().toISOString() }).eq('id', cur.id); if (r.error) throw r.error; }
+          if (pId) { r = await db.from('plan_assignments').insert({ plan_id: pId, student_id: id, start_date: sd, start_day: sday, assigned_by: me.id }); if (r.error) throw r.error; }
+        }
+        toast('حُفظت التعديلات'); closeDrawer(); await loadCore(); route();
+      } catch (e) { toast(e.message || String(e), true); b.disabled = false; }
+    };
+    $('#fPw', root).onclick = () => setPassword(s.user_id, s.name);
+    $('#fMsg', root).onclick = () => { closeDrawer(); location.hash = '#notify'; setTimeout(() => { const sel = $('#nAud'); if (sel) { sel.value = 'one'; sel.dispatchEvent(new Event('change')); const one = $('#nOne'); if (one) one.value = id; } }, 300); };
+  });
+}
+const KIND = { alert: 'تنبيه', warning: 'إنذار', dismissal: 'إحالة للفصل' };
+const leavePill = st => `<span class="pill ${{ pending: 'warn', approved: 'ok', rejected: 'bad', cancelled: 'plain' }[st]}">${{ pending: 'بانتظار القرار', approved: 'مقبول', rejected: 'مرفوض', cancelled: 'ملغى' }[st]}</span>`;
+
+function genPw() { const a = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; const r = crypto.getRandomValues(new Uint32Array(10)); r.forEach(x => s += a[x % a.length]); return s; }
+function setPassword(userId, name) {
+  const pw = genPw();
+  drawer('كلمة مرور جديدة: ' + name, `<p class="small">اكتب كلمة مرور لا تقل عن 8 أحرف، أو استخدم المقترحة. أرسلها للمستخدم بطريقة آمنة.</p><label class="f" for="np">كلمة المرور<input id="np" type="text" dir="ltr" value="${pw}"></label><button class="btn" id="npGo">حفظ كلمة المرور</button>`, root => {
+    $('#npGo', root).onclick = async () => { const { error } = await db.rpc('admin_set_password', { p_user: userId, p_password: $('#np', root).value }); if (error) return toast(error.message, true); toast('حُفظت كلمة المرور'); closeDrawer(); };
+  });
+}
+function addAccount(role) {
+  const isS = role === 'student';
+  drawer(isS ? 'إضافة طالب' : 'إضافة معلم', `
+    <div class="g2"><label class="f" for="aN">الاسم<input id="aN" type="text" required></label><label class="f" for="aE">البريد الإلكتروني<input id="aE" type="email" dir="ltr" required></label>
+    <label class="f" for="aP">كلمة المرور <span class="hint">8 أحرف على الأقل</span><input id="aP" type="text" dir="ltr" value="${genPw()}"></label><label class="f" for="aPh">الجوال<input id="aPh" type="tel" dir="ltr"></label></div>
+    ${isS ? `<div class="g2"><label class="f" for="aT">المعلم<select id="aT"><option value="">—</option>${teacherOpts()}</select></label><label class="f" for="aR">الفترة<select id="aR"><option value="">—</option>${roomOpts()}</select></label>
+      <label class="f" for="aPl">الخطة<select id="aPl"><option value="">—</option>${planOpts()}</select></label><label class="f" for="aG">الجنس<select id="aG"><option value="">—</option><option>ذكر</option><option>أنثى</option></select></label>
+      <label class="f" for="aNat">الجنسية<input id="aNat" type="text"></label><label class="f" for="aRes">مكان الإقامة<input id="aRes" type="text"></label></div>`
+    : `<div><b class="small">الغرف الصوتية المسندة</b><div class="chips" style="margin-top:6px">${D.rooms.map(r => `<label><input type="checkbox" data-room="${r.id}">${esc(r.name)}</label>`).join('')}</div></div>`}
+    <div class="hintbox">يُنشأ الحساب فورًا، ويدخل صاحبه من صفحة الدخول بالبريد وكلمة المرور. أرسل له كلمة المرور بطريقة آمنة.</div>
+    <button class="btn" id="aGo">إنشاء الحساب</button>`, root => {
+    $('#aGo', root).onclick = async () => {
+      const b = $('#aGo', root); b.disabled = true;
+      try {
+        const name = $('#aN', root).value.trim(), email = $('#aE', root).value.trim().toLowerCase(), pw = $('#aP', root).value;
+        if (!name || !email) throw new Error('اكتب الاسم والبريد');
+        const { data: uid, error } = await db.rpc('admin_create_account', { p_email: email, p_name: name, p_role: role, p_password: pw }); if (error) throw error;
+        await db.from('users').update({ phone: $('#aPh', root).value || null }).eq('id', uid);
+        if (isS) {
+          const { data: stu, error: e2 } = await db.from('students').insert({ user_id: uid, teacher_id: $('#aT', root).value || null, phone: $('#aPh', root).value || null, gender: $('#aG', root).value || null, nationality: $('#aNat', root).value || null, residence: $('#aRes', root).value || null, program_id: null }).select('id').single(); if (e2) throw e2;
+          if ($('#aR', root).value) await db.from('room_assignments').insert({ room_id: $('#aR', root).value, assignee_type: 'student', assignee_id: stu.id });
+          if ($('#aPl', root).value) await db.from('plan_assignments').insert({ plan_id: $('#aPl', root).value, student_id: stu.id, start_date: TODAY, start_day: 1, assigned_by: me.id });
+        } else {
+          const { data: t, error: e2 } = await db.from('teachers').insert({ user_id: uid, phone: $('#aPh', root).value || null }).select('id').single(); if (e2) throw e2;
+          const rooms = $$('[data-room]:checked', root).map(c => ({ room_id: c.dataset.room, assignee_type: 'teacher', assignee_id: t.id }));
+          if (rooms.length) await db.from('room_assignments').insert(rooms);
+        }
+        toast('أُنشئ الحساب'); closeDrawer(); await loadCore(); route();
+      } catch (e) { toast(e.message || String(e), true); b.disabled = false; }
+    };
+  });
+}
+
+// ============ الاستئذان ============
+SECTIONS.leaves = async el => {
+  const { data, error } = await db.from('leave_requests').select('*').order('created_at', { ascending: false }).limit(2000); if (error) throw error;
+  const rows = data.map(l => { const s = D.studentById[l.student_id] || {}; return { l, name: s.name || '—', teacher: s.teacher || '—', from: l.date_from, to: l.date_to, days: A.daysBetween(l.date_from, l.date_to) + 1, reason: l.reason, details: l.details || '', st: { pending: 'بانتظار القرار', approved: 'مقبول', rejected: 'مرفوض', cancelled: 'ملغى' }[l.status] }; });
+  const month = TODAY.slice(0, 7);
+  const lim = D.plans[0]?.discipline_rules?.leave_max_month;
+  el.innerHTML = `${secHead('الاستئذان', fmtNum(rows.filter(r => r.l.status === 'pending').length) + ' بانتظار القرار', 'violet', `<button class="btn gold sm" id="addLv">+ تسجيل استئذان</button>`)}
+    <div class="card c-violet" id="lCard"><div class="head"><h3>طلبات الاستئذان</h3><span class="hint">الاستئذان المقبول لا يُحسب غيابًا. حد الاستئذان الشهري من إعدادات خطة الطالب.</span></div><div id="lTbl"></div></div>`;
+  dataTable($('#lTbl'), { rows, sortKey: 'from', dir: -1, pageSize: 150, cols: [
+    { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'from', label: 'من', html: r => A.greg(r.from) }, { key: 'to', label: 'إلى', html: r => A.greg(r.to) },
+    { key: 'days', label: 'الأيام', num: true }, { key: 'month', label: 'استئذانات الشهر', num: true, val: r => rows.filter(x => x.l.student_id === r.l.student_id && x.l.status === 'approved' && x.from.slice(0, 7) === month).reduce((a, x) => a + x.days, 0), html: r => { const n = rows.filter(x => x.l.student_id === r.l.student_id && x.l.status === 'approved' && x.from.slice(0, 7) === month).reduce((a, x) => a + x.days, 0); const p = D.studentById[r.l.student_id]?.planObj?.discipline_rules?.leave_max_month; return `${n}${p != null ? ' / ' + p : ''}${p != null && n >= p ? ' <span class="pill bad">بلغ الحد</span>' : ''}`; } },
+    { key: 'reason', label: 'السبب' }, { key: 'details', label: 'التفاصيل' }, { key: 'st', label: 'الحالة', filter: true, html: r => leavePill(r.l.status) },
+    { key: 'act', label: '', html: r => r.l.status === 'pending' ? `<button class="btn ok sm" data-ap="${r.l.id}">قبول</button> <button class="btn danger sm" data-rj="${r.l.id}">رفض</button>` : '' }],
+    after: root => { $$('[data-ap]', root).forEach(b => b.onclick = () => decideLeave(b.dataset.ap, 'approved')); $$('[data-rj]', root).forEach(b => b.onclick = () => decideLeave(b.dataset.rj, 'rejected')); } });
+  cardFull($('#lCard'));
+  $('#addLv').onclick = () => drawer('تسجيل استئذان لطالب', `<label class="f" for="lS">الطالب<select id="lS">${actives().sort((a, b) => a.name.localeCompare(b.name, 'ar')).map(s => opt(s.id, s.name)).join('')}</select></label>
+    <div class="g2"><label class="f" for="lF">من<input id="lF" type="date" value="${TODAY}"></label><label class="f" for="lT">إلى<input id="lT" type="date" value="${TODAY}"></label></div>
+    <label class="f" for="lR">السبب<input id="lR" type="text" value="ظرف طارئ"></label><button class="btn" id="lGo">حفظ كاستئذان مقبول</button>`, root => {
+    $('#lGo', root).onclick = async () => { const { error } = await db.from('leave_requests').insert({ student_id: $('#lS', root).value, date_from: $('#lF', root).value, date_to: $('#lT', root).value, reason: $('#lR', root).value || 'استئذان', status: 'approved', decided_by: me.id, decided_at: new Date().toISOString() }); if (error) return toast(error.message, true); toast('سُجّل الاستئذان'); closeDrawer(); route(); };
+  });
+};
+async function decideLeave(id, status) {
+  const { data: l, error } = await db.from('leave_requests').update({ status, decided_by: me.id, decided_at: new Date().toISOString() }).eq('id', id).select('student_id, date_from, date_to').single();
+  if (error) return toast(error.message, true);
+  const s = D.studentById[l.student_id];
+  if (s) await notify([s.user_id], 'leave_decided', status === 'approved' ? 'قُبل طلب استئذانك' : 'رُفض طلب استئذانك', `طلب الاستئذان من ${A.greg(l.date_from)} إلى ${A.greg(l.date_to)}: ${status === 'approved' ? 'مقبول' : 'مرفوض'}.`, ['inbox', 'email', 'push'], 'leave:' + id);
+  const { count } = await db.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'); D.pendingLeaves = count || 0;
+  toast(status === 'approved' ? 'قُبل الطلب وأُشعر الطالب' : 'رُفض الطلب وأُشعر الطالب'); route();
+}
+
+// ============ الإشعارات: كل رسالة تُسجَّل لكل قناة، وتُرسل البريد والجوال لاحقًا دالة خادم ============
+async function notify(userIds, kind, title, body, channels, dedupe) {
+  const rows = [];
+  userIds.forEach(u => channels.forEach(ch => rows.push({ recipient_user_id: u, channel: ch, kind, title, body, created_by: me.id, status: ch === 'inbox' ? 'sent' : 'queued', sent_at: ch === 'inbox' ? new Date().toISOString() : null, dedupe_key: dedupe ? `${dedupe}:${u}:${ch}` : null })));
+  for (let i = 0; i < rows.length; i += 500) { const { error } = await db.from('notifications').upsert(rows.slice(i, i + 500), { onConflict: 'dedupe_key', ignoreDuplicates: true }); if (error) throw error; }
+  return rows.length;
+}
+
+// ============ الانضباط والمتابعة ============
+SECTIONS.discipline = async el => {
+  await loadRecs();
+  const [{ data: ev }, { data: fa }, { data: lv }] = await Promise.all([
+    db.from('discipline_events').select('*').order('event_date', { ascending: false }),
+    db.from('follow_up_actions').select('*').order('case_date', { ascending: false }),
+    db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved')
+  ]);
+  const leaveDays = {}; (lv || []).forEach(l => { for (let d = l.date_from; d <= l.date_to; d = A.addDays(d, 1)) (leaveDays[l.student_id] ||= new Set()).add(d); });
+  const rows = actives().map(s => {
+    const P = s.planObj, R = P?.discipline_rules || {}, wd = P?.workdays || [0, 1, 2, 3, 4];
+    const win = R.window_days || 14;
+    // آخر «win» يوم خطة حتى أمس
+    const days = []; let d = A.addDays(TODAY, -1), g = 0;
+    const startD = s.assign?.start_date || s.join_date;
+    while (days.length < win && g++ < 400 && (!startD || d >= startD)) { if (wd.includes(new Date(d + 'T12:00:00Z').getUTCDay())) days.push(d); d = A.addDays(d, -1); }
+    const rs = D.recsByStudent[s.id] || [];
+    const doneDays = new Set(rs.filter(r => ACH.includes(r.status) || r.status === 'excused').map(r => r.rec_date));
+    rs.filter(r => r.status === 'makeup' && r.makes_up_date).forEach(r => doneDays.add(r.makes_up_date));
+    const recDay = dd => !P || P.recitation_mode === 'daily' || (P.recitation_mode === 'days' && P.recitation_days.includes(new Date(dd + 'T12:00:00Z').getUTCDay()));
+    const absent = days.filter(dd => recDay(dd) && !doneDays.has(dd) && !(leaveDays[s.id]?.has(dd)));
+    const mine = (ev || []).filter(e => e.student_id === s.id && e.status === 'active');
+    const alerts = mine.filter(e => e.kind === 'alert').length, warns = mine.filter(e => e.kind === 'warning').length;
+    let sug = '', sev = 0;
+    if (R.escalate_after && warns >= R.escalate_after) { sug = 'إحالة للفصل'; sev = 3; }
+    else if (R.warning_after && absent.length >= R.warning_after) { sug = 'إنذار مستحق'; sev = 2; }
+    else if (R.alert_after && absent.length >= R.alert_after) { sug = 'تنبيه مستحق'; sev = 1; }
+    return { s, name: s.name, teacher: s.teacher, win, absent: absent.length, absentDays: absent, alerts, warns, last: lastRecOf(s), sug, sev };
+  });
+  el.innerHTML = `${secHead('الانضباط والمتابعة', 'الغياب يُحسب من قواعد خطة كل طالب', 'red')}
+    <div class="card" style="--a:var(--red);margin-bottom:10px"><div class="minis">${mini('إحالة للفصل', fmtNum(rows.filter(r => r.sev === 3).length), 'red')}${mini('إنذار مستحق', fmtNum(rows.filter(r => r.sev === 2).length), 'orange')}${mini('تنبيه مستحق', fmtNum(rows.filter(r => r.sev === 1).length), 'amber')}${mini('منضبطون', fmtNum(rows.filter(r => !r.sev).length), 'green')}</div></div>
+    <div class="card c-red" id="dCard"><div class="head"><h3>حالة الانضباط لكل طالب</h3><span class="hint">إصدار التنبيه أو الإنذار يسجّله ويرسل إشعارًا للطالب. لا يُصدر شيء تلقائيًا حتى تعتمده.</span></div><div id="dTbl"></div></div>
+    <div class="card c-orange" id="fCard" style="margin-top:10px"><div class="head"><h3>سجل إجراءات المشرف</h3><button class="btn gold sm" id="addFa">+ إجراء جديد</button></div><div id="fTbl"></div></div>`;
+  dataTable($('#dTbl'), { rows, sortKey: 'sev', dir: -1, pageSize: 200, cols: [
+    { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'absent', label: 'غياب في النافذة', num: true, html: r => `${r.absent} <span class="hint">/ ${r.win} يوم</span>` },
+    { key: 'alerts', label: 'تنبيهات', num: true }, { key: 'warns', label: 'إنذارات', num: true }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' },
+    { key: 'sug', label: 'المقترح', filter: true, html: r => r.sug ? `<span class="pill ${r.sev >= 2 ? 'bad' : 'warn'}">${r.sug}</span>` : '<span class="pill ok">منضبط</span>' },
+    { key: 'act', label: '', html: r => `<button class="btn ghost sm" data-ev="alert" data-s="${r.s.id}">تنبيه</button> <button class="btn danger sm" data-ev="warning" data-s="${r.s.id}">إنذار</button>` }],
+    onRow: r => studentFile(r.s.id),
+    after: root => $$('[data-ev]', root).forEach(b => b.onclick = () => issueEvent(b.dataset.s, b.dataset.ev, rows.find(x => x.s.id === b.dataset.s))) });
+  const frows = (fa || []).map(f => ({ f, date: f.case_date, name: D.studentById[f.student_id]?.name || '—', reason: f.reason || '', method: f.contact_method || '', action: f.action_summary || '', reply: f.student_reply || '', status: f.status }));
+  dataTable($('#fTbl'), { rows: frows, sortKey: 'date', dir: -1, cols: [{ key: 'date', label: 'تاريخ الحالة', html: r => A.greg(r.date) }, { key: 'name', label: 'الطالب' }, { key: 'reason', label: 'سبب التعثر' }, { key: 'method', label: 'طريقة التواصل', filter: true }, { key: 'action', label: 'خلاصة الإجراء' }, { key: 'reply', label: 'رد الطالب' }, { key: 'status', label: 'الحالة', filter: true }] });
+  cardFull($('#dCard')); cardFull($('#fCard'));
+  $('#addFa').onclick = () => drawer('إجراء متابعة جديد', `<label class="f" for="fS">الطالب<select id="fS">${D.students.slice().sort((a, b) => a.name.localeCompare(b.name, 'ar')).map(s => opt(s.id, s.name)).join('')}</select></label>
+    <div class="g2"><label class="f" for="fD">تاريخ الحالة<input id="fD" type="date" value="${TODAY}"></label><label class="f" for="fC">تاريخ التواصل<input id="fC" type="date" value="${TODAY}"></label></div>
+    <label class="f" for="fR">سبب التعثر<input id="fR" type="text"></label><label class="f" for="fM">طريقة التواصل<select id="fM"><option>واتس اب</option><option>اتصال</option><option>بريد</option><option>لقاء</option></select></label>
+    <label class="f" for="fA">خلاصة إجراء المشرف<textarea id="fA"></textarea></label><label class="f" for="fRp">خلاصة رد الطالب<textarea id="fRp"></textarea></label>
+    <label class="f" for="fSt">حالة الإجراء<select id="fSt"><option>مفتوحة</option><option>أغلقت الحالة</option><option>لم يتم التجاوب</option><option>انسحب</option><option>مفصول</option></select></label><button class="btn" id="fGo">حفظ</button>`, root => {
+    $('#fGo', root).onclick = async () => { const { error } = await db.from('follow_up_actions').insert({ student_id: $('#fS', root).value, case_date: $('#fD', root).value, contact_date: $('#fC', root).value || null, reason: $('#fR', root).value, contact_method: $('#fM', root).value, action_summary: $('#fA', root).value, student_reply: $('#fRp', root).value, status: $('#fSt', root).value, created_by: me.id }); if (error) return toast(error.message, true); toast('حُفظ الإجراء'); closeDrawer(); route(); };
+  });
+};
+function issueEvent(studentId, kind, row) {
+  const s = D.studentById[studentId];
+  const days = (row?.absentDays || []).slice(0, 10).map(A.greg).join('، ');
+  drawer(`إصدار ${KIND[kind]}: ${s.name}`, `<p class="small">أيام الغياب في النافذة: ${days || 'لا يوجد'}</p>
+    <label class="f" for="eR">السبب (يصل للطالب)<textarea id="eR">${kind === 'alert' ? 'تغيب عن التسميع دون استئذان' : 'تكرر الغياب عن التسميع دون استئذان'}${days ? ' في: ' + days : ''}</textarea></label>
+    <div class="chips"><label><input type="checkbox" id="eMail" checked>إرسال بالبريد أيضًا</label><label><input type="checkbox" id="ePush" checked>إشعار على الجوال</label></div>
+    <button class="btn ${kind === 'alert' ? '' : 'danger'}" id="eGo">إصدار ${KIND[kind]}</button>`, root => {
+    $('#eGo', root).onclick = async () => {
+      const reason = $('#eR', root).value.trim();
+      const { data, error } = await db.from('discipline_events').insert({ student_id: studentId, kind, event_date: TODAY, reason, details: { absent_days: row?.absentDays || [] }, created_by: me.id }).select('id').single();
+      if (error) return toast(error.code === '23505' ? 'صدر لهذا الطالب ' + KIND[kind] + ' اليوم مسبقًا' : error.message, true);
+      const ch = ['inbox']; if ($('#eMail', root).checked) ch.push('email'); if ($('#ePush', root).checked) ch.push('push');
+      await notify([s.user_id], 'discipline_' + kind, KIND[kind] + ' من إدارة البرنامج', reason, ch, 'disc:' + data.id);
+      toast('صدر ' + KIND[kind] + ' وأُشعر الطالب'); closeDrawer(); route();
+    };
+  });
+}
+
+// ============ الاختبارات ============
+SECTIONS.exams = async el => {
+  const { data, error } = await db.from('periodic_exams').select('*').order('date', { ascending: false }); if (error) throw error;
+  const rows = data.map(x => ({ x, name: D.studentById[x.student_id]?.name || '—', teacher: D.studentById[x.student_id]?.teacher || '—', exam: x.exam_name, volume: x.volume || '', stage: x.stage, score: x.score != null ? +x.score : null, date: x.date, notes: x.notes || '' }));
+  el.innerHTML = `${secHead('الاختبارات المرحلية', fmtNum(rows.length) + ' نتيجة', 'amber', `<button class="btn gold sm" id="addEx">+ رصد نتيجة</button>`)}
+    <div class="card c-amber" id="eCard"><div class="head"><h3>النتائج</h3></div><div id="eTbl"></div></div>`;
+  dataTable($('#eTbl'), { rows, sortKey: 'date', dir: -1, cols: [{ key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'exam', label: 'الاختبار', filter: true }, { key: 'volume', label: 'المجلد', filter: true }, { key: 'stage', label: 'المرحلة', num: true }, { key: 'score', label: 'الدرجة', num: true, html: r => r.score == null ? '—' : `<b style="color:${r.score >= 70 ? 'var(--green)' : 'var(--red)'}">${fmtNum(r.score, 2)}</b>` }, { key: 'date', label: 'التاريخ', html: r => A.greg(r.date) }, { key: 'notes', label: 'ملاحظات' }] });
+  cardFull($('#eCard'));
+  $('#addEx').onclick = () => drawer('رصد نتيجة اختبار', `<label class="f" for="xS">الطالب<select id="xS">${actives().sort((a, b) => a.name.localeCompare(b.name, 'ar')).map(s => opt(s.id, s.name)).join('')}</select></label>
+    <div class="g2"><label class="f" for="xN">اسم الاختبار<input id="xN" type="text" value="اختبار المرحلة الأولى"></label><label class="f" for="xV">المجلد<input id="xV" type="text" value="المجلد الأول"></label>
+    <label class="f" for="xSt">المرحلة<input id="xSt" type="number" min="1" value="1"></label><label class="f" for="xSc">الدرجة من 100<input id="xSc" type="number" min="0" max="100" step="0.5"></label>
+    <label class="f" for="xD">التاريخ<input id="xD" type="date" value="${TODAY}"></label></div><label class="f" for="xNo">ملاحظات<textarea id="xNo"></textarea></label><button class="btn" id="xGo">حفظ</button>`, root => {
+    $('#xGo', root).onclick = async () => { const { error } = await db.from('periodic_exams').insert({ student_id: $('#xS', root).value, exam_name: $('#xN', root).value, volume: $('#xV', root).value, stage: +$('#xSt', root).value || null, score: $('#xSc', root).value === '' ? null : +$('#xSc', root).value, date: $('#xD', root).value, notes: $('#xNo', root).value || null, created_by: me.id }); if (error) return toast(error.message, true); toast('حُفظت النتيجة'); closeDrawer(); route(); };
+  });
+};
+
+// ============ لوحة الشرف ============
+SECTIONS.honor = async el => {
+  const st = SECTIONS.honor.st ||= { period: 'month', plan: '', more: false };
+  const from = st.period === 'month' ? TODAY.slice(0, 8) + '01' : st.period === '30' ? A.addDays(TODAY, -29) : null;
+  const { data, error } = await db.rpc('honor_board', { p_plan: st.plan || null, p_from: from, p_to: null }); if (error) throw error;
+  const list = (data || []).filter(x => +x.memorized > 0);
+  const shown = st.more ? list : list.slice(0, 10);
+  el.innerHTML = `${secHead('لوحة الشرف', 'الترتيب بعدد الأحاديث المحفوظة ثم متوسط الدرجة', 'gold', `<select id="hP" style="width:auto">${opt('month', 'هذا الشهر', st.period === 'month')}${opt('30', 'آخر 30 يومًا', st.period === '30')}${opt('all', 'منذ البداية', st.period === 'all')}</select><select id="hPl" style="width:auto"><option value="">كل الخطط</option>${D.plans.map(p => opt(p.id, p.name, p.id === st.plan)).join('')}</select>`)}
+    <div class="card" id="hCard"><div class="head"><h3>${st.period === 'month' ? 'متميزو الشهر' : st.period === '30' ? 'متميزو آخر 30 يومًا' : 'المتميزون منذ البداية'}</h3></div>
+      ${shown.map((x, i) => `<div class="rank-row"><span class="r">${i + 1}</span><b>${esc(x.name)}</b><span class="small muted">${x.sessions} جلسة · متوسط ${x.avg_score != null ? fmtNum(x.avg_score, 2) : '—'}</span><b class="num" style="color:var(--teal)">${fmtNum(x.memorized, 1)} حديث</b></div>`).join('') || '<div class="empty">لا توجد بيانات في هذه الفترة</div>'}
+      ${list.length > 10 ? `<button class="btn ghost block" id="hMore" style="margin-top:8px">${st.more ? 'عرض أول 10 فقط' : 'عرض المزيد (' + list.length + ')'}</button>` : ''}</div>`;
+  cardFull($('#hCard'));
+  $('#hP').onchange = e => { st.period = e.target.value; st.more = false; route(); };
+  $('#hPl').onchange = e => { st.plan = e.target.value; route(); };
+  $('#hMore') && ($('#hMore').onclick = () => { st.more = !st.more; route(); });
+};
+
+// ============ خطط البرامج ============
+SECTIONS.plans = async el => {
+  const edit = SECTIONS.plans.edit; SECTIONS.plans.edit = null;
+  if (edit) {
+    el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
+      <iframe class="plan-frame" id="pf" src="plans.html?embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}" title="محرر الخطة"></iframe>`;
+    $('#back').onclick = () => route();
+    const f = $('#pf');
+    const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
+    f.onload = () => { fit(); try { new ResizeObserver(fit).observe(f.contentDocument.body); } catch (e) {} };
+    return;
+  }
+  const [{ data: cols }, { data: days }] = await Promise.all([db.from('plan_columns').select('plan_id'), fetchAll(() => db.from('plan_days').select('plan_id')).then(d => ({ data: d }))]);
+  const cnt = (arr, id) => (arr || []).filter(x => x.plan_id === id).length;
+  const rows = D.plans.map(p => ({ p, name: p.name, book: p.book_name || '', status: { draft: 'مسودة', active: 'مفعّلة', archived: 'مؤرشفة' }[p.status], rec: { daily: 'يومي', days: 'أيام محددة: ' + (p.recitation_days || []).map(i => A.DAYS[i]).join('، '), none: 'بلا تسميع' }[p.recitation_mode], exec: { none: 'لا يوجد', record_only: 'للمتابعة', counts: 'يدخل في التقييم' }[p.student_execution], cols: cnt(cols, p.id), days: cnt(days, p.id), students: D.students.filter(s => s.assign?.plan_id === p.id).length }));
+  el.innerHTML = `${secHead('خطط البرامج', 'الخطة هي طريقة البرنامج: أعمدتها وأيام التسميع وقواعد الانضباط', 'gold', `<button class="btn gold sm" id="newPlan">+ إضافة خطة</button>`)}
+    <div class="card" id="pCard"><div class="head"><h3>الخطط الموجودة</h3></div><div id="pTbl"></div></div>`;
+  dataTable($('#pTbl'), { rows, sortKey: 'name', cols: [
+    { key: 'name', label: 'الخطة' }, { key: 'book', label: 'الكتاب' }, { key: 'status', label: 'الحالة', filter: true, html: r => `<span class="pill ${r.p.status === 'active' ? 'ok' : r.p.status === 'draft' ? 'warn' : 'plain'}">${r.status}</span>` },
+    { key: 'rec', label: 'التسميع' }, { key: 'exec', label: 'تنفيذ الطالب' }, { key: 'cols', label: 'الأعمدة', num: true }, { key: 'days', label: 'الأيام', num: true }, { key: 'students', label: 'الطلاب', num: true },
+    { key: 'act', label: '', html: r => `<button class="btn sm" data-edit="${r.p.id}">تعديل</button> <button class="btn danger sm" data-del="${r.p.id}">حذف</button>` }],
+    after: root => {
+      $$('[data-edit]', root).forEach(b => b.onclick = () => { SECTIONS.plans.edit = b.dataset.edit; route(); });
+      $$('[data-del]', root).forEach(b => b.onclick = async () => {
+        const r = rows.find(x => x.p.id === b.dataset.del);
+        const ok = await confirmBox(`حذف خطة «${r.name}»؟ ستُحذف أعمدتها وأيامها${r.students ? ` وتُلغى عن ${r.students} طالبًا` : ''}. سجلات الرصد السابقة تبقى كما هي.`, 'حذف الخطة');
+        if (!ok) return;
+        const { error } = await db.from('program_plans').delete().eq('id', r.p.id);
+        if (error) return toast(error.message, true);
+        toast('حُذفت الخطة'); await loadCore(); route();
+      });
+    } });
+  $('#newPlan').onclick = () => { SECTIONS.plans.edit = 'new'; route(); };
+};
+window.addEventListener('message', async e => { if (e.origin === location.origin && e.data?.source === 'plans' && e.data.type === 'saved') { await loadCore(); toast('حُفظت الخطة'); } });
+
+// ============ المعلمون ============
+SECTIONS.teachers = async el => {
+  await loadRecs();
+  const wk = A.addDays(TODAY, -6);
+  const rows = D.teachers.map(t => { const rs = D.recs.filter(r => r.teacher_id === t.id); return { t, name: t.name, email: t.email || '', phone: t.phone || '', students: D.students.filter(s => s.teacher_id === t.id && s.status === 'active').length, rooms: (D.roomsOfTeacher[t.id] || []).map(id => D.roomById[id]?.name).filter(Boolean).join('، '), week: rs.filter(r => r.rec_date >= wk).length, today: rs.filter(r => r.rec_date === TODAY).length, avg: (() => { const sc = rs.filter(r => r.score != null).map(r => +r.score); return sc.length ? sc.reduce((a, b) => a + b, 0) / sc.length : null; })(), last: rs[0]?.rec_date || null, state: t.is_archived ? 'موقوف' : 'نشط' }; });
+  el.innerHTML = `${secHead('المعلمون', fmtNum(rows.length) + ' معلم', 'blue', `<button class="btn gold sm" id="addT">+ إضافة معلم</button>`)}
+    <div class="card c-blue" id="tCard"><div class="head"><h3>المعلمون ونشاطهم</h3></div><div id="tTbl"></div></div>`;
+  dataTable($('#tTbl'), { rows, sortKey: 'name', onRow: r => teacherFile(r.t), cols: [{ key: 'name', label: 'المعلم' }, { key: 'email', label: 'البريد' }, { key: 'students', label: 'طلابه', num: true }, { key: 'rooms', label: 'الغرف' }, { key: 'today', label: 'رصد اليوم', num: true }, { key: 'week', label: 'رصد 7 أيام', num: true }, { key: 'avg', label: 'متوسط درجات طلابه', num: true, html: r => r.avg == null ? '—' : fmtNum(r.avg, 2) }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' }, { key: 'state', label: 'الحالة', filter: true }] });
+  cardFull($('#tCard'));
+  $('#addT').onclick = () => addAccount('teacher');
+};
+function teacherFile(t) {
+  const mine = new Set(D.roomsOfTeacher[t.id] || []);
+  drawer('المعلم: ' + t.name, `<dl class="dl"><dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(t.email || '')}</dd><dt>طلابه المنتظمون</dt><dd>${D.students.filter(s => s.teacher_id === t.id && s.status === 'active').length}</dd></dl>
+    <div><b class="small">الغرف الصوتية المسندة</b><div class="chips" style="margin-top:6px">${D.rooms.map(r => `<label><input type="checkbox" data-room="${r.id}"${mine.has(r.id) ? ' checked' : ''}>${esc(r.name)}</label>`).join('')}</div></div>
+    <label class="chips"><label><input type="checkbox" id="tArch"${t.is_archived ? ' checked' : ''}>إيقاف الحساب مؤقتًا</label></label>
+    <div class="row" style="justify-content:flex-start"><button class="btn" id="tSave">حفظ</button><button class="btn ghost" id="tPw">تعيين كلمة مرور</button></div>`, root => {
+    $('#tSave', root).onclick = async () => {
+      const want = new Set($$('[data-room]:checked', root).map(c => c.dataset.room));
+      const del = [...mine].filter(x => !want.has(x)), add = [...want].filter(x => !mine.has(x));
+      if (del.length) await db.from('room_assignments').delete().eq('assignee_type', 'teacher').eq('assignee_id', t.id).in('room_id', del);
+      if (add.length) await db.from('room_assignments').insert(add.map(r => ({ room_id: r, assignee_type: 'teacher', assignee_id: t.id })));
+      const { error } = await db.from('teachers').update({ is_archived: $('#tArch', root).checked }).eq('id', t.id);
+      if (error) return toast(error.message, true);
+      toast('حُفظ'); closeDrawer(); await loadCore(); route();
+    };
+    $('#tPw', root).onclick = () => setPassword(t.user_id, t.name);
+  });
+}
+
+// ============ الفترات والغرف الصوتية ============
+SECTIONS.rooms = async el => {
+  const rows = D.rooms.map(r => { const used = D.ra.filter(a => a.room_id === r.id && a.assignee_type === 'student').length; return { r, name: r.name, days: (r.days || []).join('، '), time: r.start_time ? `${r.start_time.slice(0, 5)} – ${(r.end_time || '').slice(0, 5)}` : '—', cap: r.capacity, used, free: r.capacity != null ? r.capacity - used : null, teachers: D.ra.filter(a => a.room_id === r.id && a.assignee_type === 'teacher').map(a => D.teacherById[a.assignee_id]?.name).filter(Boolean).join('، '), state: r.active ? 'مفعّلة' : 'معطلة' }; });
+  el.innerHTML = `${secHead('الفترات والغرف الصوتية', 'الأوقات بتوقيت مكة', 'teal', `<button class="btn gold sm" id="addR">+ إضافة فترة</button>`)}
+    <div class="card c-teal" id="roCard"><div class="head"><h3>الفترات</h3><span class="hint">الفترة = موعد التسميع ورابط غرفته وسعتها. يُسند الطالب للفترة من ملفه.</span></div><div id="roTbl"></div></div>`;
+  dataTable($('#roTbl'), { rows, sortKey: 'time', onRow: r => roomForm(r.r), cols: [{ key: 'name', label: 'الفترة' }, { key: 'time', label: 'الوقت' }, { key: 'days', label: 'الأيام' }, { key: 'teachers', label: 'المعلم' }, { key: 'used', label: 'الطلاب', num: true }, { key: 'cap', label: 'السعة', num: true }, { key: 'free', label: 'المتبقي', num: true, html: r => r.free == null ? '—' : `<b style="color:${r.free <= 0 ? 'var(--red)' : 'var(--green)'}">${r.free}</b>` }, { key: 'state', label: 'الحالة', filter: true }] });
+  cardFull($('#roCard'));
+  $('#addR').onclick = () => roomForm(null);
+};
+function roomForm(r) {
+  const x = r || { name: '', meet_url: '', days: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس'], start_time: '', end_time: '', capacity: 16, outside_behavior: 'disabled', active: true, sort: D.rooms.length + 1 };
+  drawer(r ? 'تعديل الفترة' : 'فترة جديدة', `<div class="g2"><label class="f" for="rN">الاسم<input id="rN" type="text" value="${esc(x.name)}"></label><label class="f" for="rU">رابط الغرفة<input id="rU" type="url" dir="ltr" value="${esc(x.meet_url || '')}"></label>
+    <label class="f" for="rS">من (بتوقيت مكة)<input id="rS" type="time" value="${(x.start_time || '').slice(0, 5)}"></label><label class="f" for="rE">إلى<input id="rE" type="time" value="${(x.end_time || '').slice(0, 5)}"></label>
+    <label class="f" for="rC">السعة<input id="rC" type="number" min="1" value="${x.capacity ?? ''}"></label><label class="f" for="rB">زر الدخول خارج الوقت<select id="rB">${opt('disabled', 'يظهر معطلًا', x.outside_behavior === 'disabled')}${opt('hidden', 'لا يظهر', x.outside_behavior === 'hidden')}${opt('always_visible', 'يعمل دائمًا', x.outside_behavior === 'always_visible')}</select></label></div>
+    <div><b class="small">الأيام</b><div class="chips" style="margin-top:6px">${A.DAYS.map(d => `<label><input type="checkbox" data-d="${d}"${(x.days || []).includes(d) ? ' checked' : ''}>${d}</label>`).join('')}</div></div>
+    <div class="chips"><label><input type="checkbox" id="rA"${x.active ? ' checked' : ''}>مفعّلة</label></div>
+    <div class="row" style="justify-content:flex-start"><button class="btn" id="rGo">حفظ</button>${r ? '<button class="btn danger" id="rDel">حذف الفترة</button>' : ''}</div>`, root => {
+    $('#rGo', root).onclick = async () => {
+      const row = { name: $('#rN', root).value.trim(), meet_url: $('#rU', root).value || null, start_time: $('#rS', root).value || null, end_time: $('#rE', root).value || null, capacity: $('#rC', root).value ? +$('#rC', root).value : null, outside_behavior: $('#rB', root).value, days: $$('[data-d]:checked', root).map(c => c.dataset.d), active: $('#rA', root).checked, sort: x.sort };
+      if (!row.name) return toast('اكتب اسم الفترة', true);
+      const { error } = r ? await db.from('audio_rooms').update(row).eq('id', r.id) : await db.from('audio_rooms').insert(row);
+      if (error) return toast(error.message, true); toast('حُفظت الفترة'); closeDrawer(); await loadCore(); route();
+    };
+    $('#rDel', root) && ($('#rDel', root).onclick = async () => { if (!await confirmBox('حذف الفترة «' + x.name + '»؟ يُلغى إسناد طلابها ومعلميها إليها.', 'حذف')) return; const { error } = await db.from('audio_rooms').delete().eq('id', r.id); if (error) return toast(error.message, true); toast('حُذفت'); await loadCore(); route(); });
+  });
+}
+
+// ============ الإشعارات ============
+SECTIONS.notify = async el => {
+  const { data: log } = await db.from('notifications').select('id, recipient_user_id, channel, kind, title, status, created_at, read_at').order('created_at', { ascending: false }).limit(1500);
+  const rows = (log || []).map(n => ({ n, date: n.created_at.slice(0, 10), who: D.userById[n.recipient_user_id]?.name || '—', title: n.title, kind: { manual: 'رسالة', leave_decided: 'قرار استئذان', discipline_alert: 'تنبيه', discipline_warning: 'إنذار' }[n.kind] || n.kind, channel: { inbox: 'داخل المنصة', email: 'بريد', push: 'جوال' }[n.channel], status: n.channel === 'inbox' ? (n.read_at ? 'مقروء' : 'لم يُقرأ') : { queued: 'بانتظار خدمة الإرسال', sent: 'أُرسل', failed: 'فشل', skipped: 'تُخطي' }[n.status] }));
+  el.innerHTML = `${secHead('الإشعارات', 'رسائل داخل المنصة، ومعها البريد وإشعار الجوال', 'blue')}
+    <div class="grid"><div class="card c-blue span5"><div class="head"><h3>رسالة جديدة</h3></div>
+      <label class="f" for="nAud">المستلمون<select id="nAud">${opt('all', 'كل الطلاب المنتظمين')}${opt('teacher', 'طلاب معلم')}${opt('room', 'طلاب فترة')}${opt('plan', 'طلاب خطة')}${opt('one', 'طالب واحد')}${opt('teachers', 'كل المعلمين')}</select></label>
+      <div id="nSub" style="margin-top:8px"></div>
+      <label class="f" for="nT" style="margin-top:8px">العنوان<input id="nT" type="text"></label>
+      <label class="f" for="nB" style="margin-top:8px">النص<textarea id="nB"></textarea></label>
+      <div class="chips" style="margin-top:8px"><label><input type="checkbox" checked disabled>داخل المنصة</label><label><input type="checkbox" id="nMail">بريد إلكتروني</label><label><input type="checkbox" id="nPush" checked>إشعار الجوال</label></div>
+      <p class="hint" style="margin-top:6px" id="nCount"></p>
+      <button class="btn" id="nGo" style="margin-top:8px">إرسال</button>
+      <div class="hintbox" style="margin-top:10px">الرسالة تظهر فورًا في صندوق إشعارات الطالب داخل المنصة. البريد وإشعار الجوال يُسجَّلان الآن «بانتظار خدمة الإرسال»، وعند تفعيل خدمة البريد ومفاتيح الإشعارات تُرسَل تلقائيًا دون تكرار.</div></div>
+      <div class="card span7" id="nCard"><div class="head"><h3>سجل الإشعارات</h3></div><div id="nTbl"></div></div></div>`;
+  const sub = () => {
+    const a = $('#nAud').value;
+    $('#nSub').innerHTML = a === 'teacher' ? `<select id="nTe">${teacherOpts()}</select>` : a === 'room' ? `<select id="nRo">${roomOpts()}</select>` : a === 'plan' ? `<select id="nPl">${planOpts()}</select>` : a === 'one' ? `<select id="nOne">${D.students.slice().sort((x, y) => x.name.localeCompare(y.name, 'ar')).map(s => opt(s.id, s.name)).join('')}</select>` : '';
+    $$('#nSub select').forEach(s => s.onchange = count); count();
+  };
+  const recipients = () => {
+    const a = $('#nAud').value, act = actives();
+    if (a === 'all') return act.map(s => s.user_id);
+    if (a === 'teacher') return act.filter(s => s.teacher_id === $('#nTe').value).map(s => s.user_id);
+    if (a === 'room') return act.filter(s => D.roomOfStudent[s.id] === $('#nRo').value).map(s => s.user_id);
+    if (a === 'plan') return act.filter(s => s.assign?.plan_id === $('#nPl').value).map(s => s.user_id);
+    if (a === 'one') return [D.studentById[$('#nOne').value]?.user_id].filter(Boolean);
+    if (a === 'teachers') return D.teachers.filter(t => !t.is_archived).map(t => t.user_id);
+    return [];
+  };
+  const count = () => { $('#nCount').textContent = 'سيصل إلى ' + recipients().length + ' مستلم'; };
+  $('#nAud').onchange = sub; sub();
+  $('#nGo').onclick = async () => {
+    const t = $('#nT').value.trim(), b = $('#nB').value.trim(); if (!t || !b) return toast('اكتب العنوان والنص', true);
+    const ids = recipients(); if (!ids.length) return toast('لا يوجد مستلمون', true);
+    const ch = ['inbox']; if ($('#nMail').checked) ch.push('email'); if ($('#nPush').checked) ch.push('push');
+    const btn = $('#nGo'); btn.disabled = true;
+    try { await notify(ids, 'manual', t, b, ch, 'manual:' + Date.now()); toast('أُرسلت الرسالة إلى ' + ids.length); route(); } catch (e) { toast(e.message, true); btn.disabled = false; }
+  };
+  dataTable($('#nTbl'), { rows, sortKey: 'date', dir: -1, cols: [{ key: 'date', label: 'التاريخ', html: r => A.greg(r.date) }, { key: 'who', label: 'المستلم' }, { key: 'title', label: 'العنوان' }, { key: 'kind', label: 'النوع', filter: true }, { key: 'channel', label: 'القناة', filter: true }, { key: 'status', label: 'الحالة', filter: true }] });
+  cardFull($('#nCard'));
+};
+
+// ============ لوحة التقارير ============
+SECTIONS.reports = async el => {
+  await loadRecs();
+  const st = SECTIONS.reports.st ||= { preset: '30', from: A.addDays(TODAY, -29), to: TODAY, teacher: '', room: '', plan: '' };
+  const setPreset = p => { st.preset = p; if (p === 'week') { st.from = A.addDays(TODAY, -A.dowMakkah()); st.to = TODAY; } else if (p === 'month') { st.from = TODAY.slice(0, 8) + '01'; st.to = TODAY; } else if (p === '30') { st.from = A.addDays(TODAY, -29); st.to = TODAY; } else if (p === 'all') { st.from = D.recs.length ? D.recs[D.recs.length - 1].rec_date : TODAY; st.to = TODAY; } };
+  const inScope = s => (!st.teacher || s.teacher_id === st.teacher) && (!st.room || D.roomOfStudent[s.id] === st.room) && (!st.plan || s.assign?.plan_id === st.plan);
+  const studs = D.students.filter(s => s.status === 'active' && inScope(s));
+  const sIds = new Set(studs.map(s => s.id));
+  const recs = D.recs.filter(r => r.rec_date >= st.from && r.rec_date <= st.to && sIds.has(r.student_id));
+  const by = k => recs.filter(r => r.status === k).length;
+  const scores = recs.filter(r => r.score != null).map(r => +r.score);
+  const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+  const per = studs.map(s => ({ s, st: statsOf(s, st.from, st.to) }));
+  const memTotal = per.reduce((a, x) => a + x.st.memorized, 0);
+  const avgPct = (() => { const v = per.map(x => x.st.pct).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; })();
+  const tBars = D.teachers.map(t => { const rs = recs.filter(r => r.teacher_id === t.id); const sc = rs.filter(r => r.score != null).map(r => +r.score); return [t.name, rs.length, sc.length ? sc.reduce((a, b) => a + b, 0) / sc.length : 0]; }).filter(x => x[1]).sort((a, b) => b[1] - a[1]);
+  const rBars = D.rooms.map(r => [r.name, recs.filter(x => x.room_id === r.id).length]).filter(x => x[1]).sort((a, b) => b[1] - a[1]);
+  const daysList = []; for (let d = st.from; d <= st.to && daysList.length < 120; d = A.addDays(d, 1)) daysList.push(d);
+  const perDay = daysList.map(d => [d, recs.filter(r => r.rec_date === d).length]);
+  const maxDay = Math.max(1, ...perDay.map(x => x[1]));
+  const pctBands = [['90٪ فأكثر', per.filter(x => x.st.pct >= 90).length, 'var(--green)'], ['70–89٪', per.filter(x => x.st.pct >= 70 && x.st.pct < 90).length, 'var(--teal)'], ['50–69٪', per.filter(x => x.st.pct >= 50 && x.st.pct < 70).length, 'var(--amber)'], ['أقل من 50٪', per.filter(x => x.st.pct != null && x.st.pct < 50).length, 'var(--red)']];
+  el.innerHTML = `<div id="repRoot">${secHead('لوحة تقارير التعليم عن بعد', A.greg(st.from) + ' – ' + A.greg(st.to), 'gold', `<button class="btn ghost sm" id="repFull">ملء الشاشة</button>`)}
+    <div class="card" style="--a:var(--teal);margin-bottom:10px"><div class="tbl-tools" style="margin:0">
+      <div class="seg" id="pre">${[['week', 'هذا الأسبوع'], ['month', 'هذا الشهر'], ['30', 'آخر 30 يومًا'], ['all', 'منذ البداية'], ['custom', 'مخصص']].map(([k, l]) => `<button type="button" data-p="${k}" aria-pressed="${st.preset === k}">${l}</button>`).join('')}</div>
+      <input type="date" id="rF" value="${st.from}" style="width:auto"><input type="date" id="rT" value="${st.to}" style="width:auto">
+      <select id="fTe" style="width:auto"><option value="">كل المعلمين</option>${teacherOpts(st.teacher)}</select><select id="fRo" style="width:auto"><option value="">كل الفترات</option>${roomOpts(st.room)}</select><select id="fPl" style="width:auto"><option value="">كل الخطط</option>${D.plans.map(p => opt(p.id, p.name, p.id === st.plan)).join('')}</select>
+    </div></div>
+    <div class="sec-h" style="--c:var(--teal)"><b>المؤشرات العامة</b><span>${fmtNum(studs.length)} طالبًا منتظمًا</span></div>
+    <div class="card" style="--a:var(--teal);margin-bottom:10px"><div class="minis">
+      ${mini('جلسات مرصودة', fmtNum(recs.length), 'teal')}${mini('حضور', fmtNum(by('present')), 'green')}${mini('تعويض', fmtNum(by('makeup')), 'amber')}${mini('ربط ومراجعة فقط', fmtNum(by('review_only')), 'blue')}${mini('استئذان', fmtNum(by('excused')), 'violet')}
+      ${mini('متوسط الدرجة', avg == null ? '—' : fmtNum(avg, 2) + '<em>/10</em>', 'orange')}${mini('أحاديث محفوظة في الفترة', fmtNum(memTotal, 1), 'green')}${mini('متوسط نسبة الإنجاز', avgPct == null ? '—' : avgPct + '٪', 'teal')}
+    </div></div>
+    <div class="grid">
+      <div class="card span5 c-teal"><div class="head"><h3>توزيع حالات الرصد</h3></div>${donut(['present', 'makeup', 'review_only', 'excused'].map(k => [STATUS[k].label, by(k), STATUS[k].color]), 'جلسة')}</div>
+      <div class="card span7 c-green"><div class="head"><h3>نسبة الإنجاز للطلاب</h3></div>${donut(pctBands, 'طالب')}<p class="note">نسبة الإنجاز = أيام الإنجاز (حضور، تعويض، ربط ومراجعة) ÷ أيام الخطة في الفترة بعد طرح أيام الاستئذان.</p></div>
+      <div class="card span6 c-blue"><div class="head"><h3>الجلسات حسب المعلم</h3></div>${bars(tBars.map(x => [x[0], x[1]]), 'var(--blue)')}</div>
+      <div class="card span6 c-violet"><div class="head"><h3>متوسط الدرجة حسب المعلم</h3></div>${bars(tBars.map(x => [x[0], x[2]]), 'var(--violet)', v => fmtNum(v, 2))}</div>
+      <div class="card span12 c-amber"><div class="head"><h3>الجلسات اليومية</h3></div><div class="cols-chart">${perDay.map(([d, n]) => `<div class="col" title="${A.greg(d)}: ${n}"><span class="v">${n || ''}</span><span class="bw"><span class="b" style="height:${(n / maxDay * 100).toFixed(1)}%"></span></span><span class="l">${d.slice(8)}</span></div>`).join('')}</div></div>
+      <div class="card span12 c-teal"><div class="head"><h3>الجلسات حسب الفترة</h3></div>${bars(rBars, 'var(--teal)')}</div>
+    </div>
+    <div class="sec-h" style="--c:var(--green)"><b>إنجاز الطلاب</b><span>اضغط على العنوان للترتيب، وعلى الطالب لفتح ملفه</span></div>
+    <div class="card c-green" id="achCard"><div class="head"><h3>جدول الإنجاز</h3></div><div id="achTbl"></div></div></div>`;
+  dataTable($('#achTbl'), { rows: per.map(x => ({ s: x.s, name: x.s.name, teacher: x.s.teacher, room: x.s.room, expected: x.st.expected, ach: x.st.achDays, present: x.st.present, makeup: x.st.makeup, review: x.st.review_only, excused: x.st.excused, absent: x.st.absences, pct: x.st.pct, avg: x.st.avg, mem: x.st.memorized, last: x.st.last })), sortKey: 'pct', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+    { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'expected', label: 'أيام الخطة', num: true }, { key: 'ach', label: 'أيام الإنجاز', num: true },
+    { key: 'present', label: 'حضور', num: true }, { key: 'makeup', label: 'تعويض', num: true }, { key: 'review', label: 'ربط ومراجعة', num: true }, { key: 'excused', label: 'استئذان', num: true }, { key: 'absent', label: 'غياب', num: true, html: r => r.absent ? `<b style="color:var(--red)">${r.absent}</b>` : '0' },
+    { key: 'pct', label: 'الإنجاز', num: true, html: r => r.pct == null ? '—' : `<b style="color:${r.pct >= 90 ? 'var(--green)' : r.pct >= 70 ? 'var(--teal)' : r.pct >= 50 ? '#9A6A08' : 'var(--red)'}">${r.pct}٪</b>` },
+    { key: 'avg', label: 'متوسط الدرجة', num: true, html: r => r.avg == null ? '—' : fmtNum(r.avg, 2) }, { key: 'mem', label: 'المحفوظ', num: true, html: r => fmtNum(r.mem, 1) }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' }] });
+  $$('#repRoot .card').forEach(cardFull);
+  const root = $('#repRoot');
+  $('#repFull').onclick = () => { const on = !root.classList.contains('is-full'); root.classList.toggle('is-full', on); root.style.background = on ? 'var(--bg)' : ''; root.style.padding = on ? '12px 16px' : ''; $('#repFull').textContent = on ? 'إغلاق ملء الشاشة' : 'ملء الشاشة'; document.body.style.overflow = on ? 'hidden' : ''; };
+  $$('#pre [data-p]').forEach(b => b.onclick = () => { setPreset(b.dataset.p); route(); });
+  $('#rF').onchange = e => { st.preset = 'custom'; st.from = e.target.value; route(); };
+  $('#rT').onchange = e => { st.preset = 'custom'; st.to = e.target.value; route(); };
+  $('#fTe').onchange = e => { st.teacher = e.target.value; route(); };
+  $('#fRo').onchange = e => { st.room = e.target.value; route(); };
+  $('#fPl').onchange = e => { st.plan = e.target.value; route(); };
+};
+
+// ============ الملف الشخصي ============
+SECTIONS.profile = async el => {
+  el.innerHTML = `${secHead('ملفي الشخصي', me.email, 'gold')}<div class="grid"><div class="card span6"><div class="head"><h3>بياناتي</h3></div>
+    <label class="f" for="pN">الاسم<input id="pN" type="text" value="${esc(me.name)}"></label><button class="btn" id="pSave" style="margin-top:10px">حفظ</button></div>
+    <div class="card span6 c-red"><div class="head"><h3>تغيير كلمة المرور</h3></div><label class="f" for="pP">كلمة المرور الجديدة <span class="hint">8 أحرف على الأقل</span><input id="pP" type="password" dir="ltr" autocomplete="new-password"></label><button class="btn" id="pPw" style="margin-top:10px">تغيير</button></div></div>`;
+  $('#pSave').onclick = async () => { const { error } = await db.from('users').update({ name: $('#pN').value.trim() }).eq('id', me.id); if (error) return toast(error.message, true); me.name = $('#pN').value.trim(); $('#who').textContent = me.name; toast('حُفظ'); };
+  $('#pPw').onclick = async () => { const p = $('#pP').value; if (p.length < 8) return toast('8 أحرف على الأقل', true); const { error } = await db.auth.updateUser({ password: p }); if (error) return toast(error.message, true); $('#pP').value = ''; toast('تغيّرت كلمة المرور'); };
+};
+
+route();
+})();
+</script>
+</body>
+</html>
