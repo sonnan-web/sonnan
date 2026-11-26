@@ -203,7 +203,13 @@
     bell: 'M6 16V11a6 6 0 1 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0',
     report: 'M3 3v18h18M7 15l4-4 3 3 5-6',
     user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0',
-    book: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5'
+    book: 'M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 21V5',
+    edit: 'M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4',
+    calendar: 'M4 6a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v14H4zM4 10h16M8 3v4M16 3v4M8 14h2M14 14h2M8 17h2',
+    file: 'M6 3h9l4 4v14H6zM14 3v5h5M9 12h7M9 16h7',
+    key: 'M15 3a6 6 0 1 1-5.3 8.8L3 18.5V21h3v-2h2v-2h2l1.2-1.2A6 6 0 0 1 15 3zM16.5 7.5h.01',
+    archive: 'M3 4h18v4H3zM5 8v12h14V8M10 12h4',
+    restore: 'M4 12a8 8 0 1 0 2.5-5.8M4 4v5h5'
   }[name] || '');
   const svg = name => `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${icon(name)}"/></svg>`;
 

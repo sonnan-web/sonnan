@@ -284,9 +284,9 @@ async function followSection(el, kind) {
     const n = k => rows.filter(r => r.k === k).length;
     kpi([['طلاب الخطة', rows.length, 'slate'], ['سمّع', n('done'), 'green'], ['عوّض', n('makeup'), 'amber'], ['ربط ومراجعة', n('review'), 'blue'], ['مستأذن', n('excused'), 'violet'], ['لم يُرصد', n('none'), 'red']]);
     $('#fTitle').textContent = 'حالة التسميع لكل طالب';
-    $('#fHint').textContent = !work ? 'هذا اليوم ليس من أيام الخطة.' : !recD ? 'هذا اليوم ليس من أيام التسميع في الخطة.' : 'اضغط «رصد» لرصد طالب لم يُرصد.';
+    $('#fHint').textContent = !work ? 'هذا اليوم ليس من أيام الخطة.' : !recD ? 'هذا اليوم ليس من أيام التسميع في الخطة.' : 'اضغط على الطالب لملفه وتقاريره، و«رصد» لرصد طالب لم يُرصد.';
     const pill = { done: 'ok', makeup: 'gold', review: 'info', excused: 'violet', absent: 'bad', none: 'bad', off: 'plain' };
-    tbl = dataTable($('#fTbl'), { rows, sortKey: 'state', pageSize: 300, cols: [
+    tbl = dataTable($('#fTbl'), { rows, sortKey: 'state', pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
       { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'pday', label: 'يوم الخطة', num: true },
       { key: 'state', label: 'الحالة', filter: true, html: x => `<span class="pill ${pill[x.k]}">${x.state}</span>` },
       ...tasks.map(t => ({ key: 't_' + t.key, label: t.name, html: x => x['t_' + t.key] ? esc(x['t_' + t.key]) : '<span class="muted">—</span>' })),
@@ -584,6 +584,8 @@ function evalOf(s, st, ex) {
   return rec;
 }
 
+// أزرار جدول الطلاب: [المفتاح، الرمز، الوصف، اللون]
+const STU_ACTS = [['edit', 'edit', 'تعديل بيانات الطالب'], ['cal', 'calendar', 'التقويم الشهري: التسميع والتنفيذ لكل يوم'], ['file', 'file', 'الملف الرسمي القابل للطباعة'], ['pw', 'key', 'تغيير كلمة المرور'], ['arch', 'archive', 'أرشفة الطالب', 'danger'], ['restore', 'restore', 'استعادة الطالب من الأرشيف', 'ok']];
 SECTIONS.students = async el => {
   await Promise.all([loadRecs(), loadPlanData()]);
   const showArch = SECTIONS.students.arch || false;
@@ -591,20 +593,20 @@ SECTIONS.students = async el => {
   const rows = list.map(s => { const st = statsOf(s); return { s, name: s.name, email: s.email, phone: s.phone || '', program: D.programById[s.program_id]?.name || '—', teacher: s.teacher, room: s.room, status: s.is_archived ? 'مؤرشف' : s.statusLabel, pct: st.pct, avg: st.avg, count: st.count }; });
   el.innerHTML = `${secHead('الطلاب وملفاتهم', fmtNum(rows.length) + (showArch ? ' طالب مؤرشف' : ' طالب'), 'teal',
       `<button class="btn gold sm" id="addStu">+ إضافة طالب</button><button class="btn ghost sm" id="impStu">استيراد طلاب</button><button class="btn ghost sm" id="expStu">تصدير</button><button class="btn ghost sm" id="archToggle">${showArch ? 'عرض الطلاب الحاليين' : 'عرض المؤرشفين'}</button>`)}
-    <div class="card c-teal" id="sCard"><div class="head"><h3>${showArch ? 'الطلاب المؤرشفون' : 'بيانات الطلاب'}</h3><span class="hint">«متوسط الدرجة» متوسط درجات التسميع التي رصدها المعلمون، من ${'10'}. نسبة التنفيذ والتقييم المركب في «عرض الملف».</span></div><div id="sTbl"></div></div>`;
+    <div class="card c-teal" id="sCard"><div class="head"><h3>${showArch ? 'الطلاب المؤرشفون' : 'بيانات الطلاب'}</h3><span class="hint">«متوسط الدرجة» متوسط درجات التسميع التي رصدها المعلمون، من ${'10'}. نسبة التنفيذ والتقييم المركب في «عرض الملف».</span></div><div id="sTbl"></div></div>
+    <div class="card" style="margin-top:10px"><h3 style="margin-bottom:8px">دليل الرموز</h3><div class="ilegend">${STU_ACTS.map(([k, ic, l, cls]) => `<span><i class="ibtn ${cls || ''}">${svg(ic)}</i>${l}</span>`).join('')}</div></div>`;
   const tbl = dataTable($('#sTbl'), { rows, sortKey: 'name', pageSize: 200, cols: [
-    { key: 'name', label: 'الاسم' }, { key: 'email', label: 'البريد' }, { key: 'phone', label: 'الجوال', html: r => `<span dir="ltr">${esc(r.phone)}</span>` },
+    { key: 'name', label: 'الاسم' },
+    { key: 'act', label: 'خيارات', html: r => `<span class="ibtns">
+        ${STU_ACTS.filter(x => x[0] !== (r.s.is_archived ? 'arch' : 'restore')).map(([k, ic, l, cls]) => k === 'file' ? `<a class="ibtn" href="student-file.html?id=${r.s.id}" target="_blank" rel="noopener" title="${l}" aria-label="${l}">${svg(ic)}</a>`
+          : `<button type="button" class="ibtn ${cls || ''}" data-a="${k === 'restore' ? 'arch' : k}" data-id="${r.s.id}" title="${l}" aria-label="${l}: ${esc(r.s.name)}">${svg(ic)}</button>`).join('')}</span>` },
+    { key: 'email', label: 'البريد' }, { key: 'phone', label: 'الجوال', html: r => `<span dir="ltr">${esc(r.phone)}</span>` },
     { key: 'program', label: 'البرنامج', filter: true }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
     { key: 'status', label: 'الحالة', filter: true, html: r => `<span class="pill ${r.s.is_archived ? 'plain' : (STU_STATUS[r.s.status] || [, 'plain'])[1]}">${esc(r.status)}</span>` },
     { key: 'pct', label: 'مستوى الإنجاز', num: true, html: r => r.pct == null ? '—' : `<b style="color:${r.pct >= 90 ? 'var(--green)' : r.pct >= 70 ? 'var(--teal)' : r.pct >= 50 ? '#9A6A08' : 'var(--red)'}">${r.pct}٪</b>` },
     { key: 'avg', label: 'متوسط الدرجة', num: true, html: r => r.avg == null ? '—' : fmtNum(r.avg, 2) },
-    { key: 'count', label: 'السجلات', num: true },
-    { key: 'act', label: 'خيارات', html: r => `<span class="opts">
-        <button class="btn sm" data-a="edit" data-id="${r.s.id}">تعديل</button>
-        <button class="btn ghost sm" data-a="cal" data-id="${r.s.id}">التقويم</button>
-        <a class="btn ghost sm" href="student-file.html?id=${r.s.id}" target="_blank" rel="noopener">عرض الملف</a>
-        <button class="btn ghost sm" data-a="pw" data-id="${r.s.id}">كلمة المرور</button>
-        <button class="btn ${r.s.is_archived ? 'ok' : 'danger'} sm" data-a="arch" data-id="${r.s.id}">${r.s.is_archived ? 'استعادة' : 'أرشفة'}</button></span>` }],
+    { key: 'count', label: 'السجلات', num: true }],
+
     after: root => $$('[data-a]', root).forEach(b => b.onclick = () => {
       const s = D.studentById[b.dataset.id];
       if (b.dataset.a === 'edit') studentForm(s);
@@ -1514,7 +1516,7 @@ function teacherSessions(r, from, to) {
 }
 
 // ============ تقويم الإنجاز: صف لكل طالب وعمود لكل يوم (التسميع والتنفيذ) ============
-const REC_K = { done: ['تم', 'ت', '#1E8E5A', '#fff'], makeup: ['عوّض', 'ع', '#C9A227', '#2a2200'], review: ['ربط ومراجعة', 'ر', '#2F6FB0', '#fff'], excused: ['مستأذن', 'س', '#7A5BB5', '#fff'], behind: ['متخلّف', '×', '#C8423B', '#fff'], open: ['اليوم، لم يُرصد بعد', '…', '#E9EEF0', '#555'], off: ['لا تسميع', '', 'transparent', ''], future: ['قادم', '', 'transparent', ''] };
+const REC_K = { done: ['تم التسميع', 'ت', '#1E8E5A', '#fff'], makeup: ['عوّض', 'ع', '#C9A227', '#2a2200'], review: ['ربط ومراجعة', 'ر', '#2F6FB0', '#fff'], excused: ['مستأذن', 'س', '#7A5BB5', '#fff'], behind: ['متخلّف', '×', '#C8423B', '#fff'], open: ['اليوم، لم يُرصد بعد', '…', '#E9EEF0', '#555'], off: ['لا تسميع', '', 'transparent', ''], future: ['قادم', '', 'transparent', ''] };
 const EXE_K = { full: ['أنجز الواجب', '✓', '#1E8E5A', '#fff'], part: ['أنجز جزءًا', '◐', '#E0A526', '#2a2200'], none: ['لم ينفّذ', '✗', '#C8423B', '#fff'], excused: ['مستأذن', 'س', '#7A5BB5', '#fff'], open: ['اليوم', '…', '#E9EEF0', '#555'], off: ['لا واجب', '', 'transparent', ''], future: ['قادم', '', 'transparent', ''] };
 // حالة طالب في يوم: للتسميع وللتنفيذ
 function dayState(s, P, d, ctx) {
