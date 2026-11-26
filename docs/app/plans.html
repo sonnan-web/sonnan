@@ -167,7 +167,7 @@ function taskName(c) { return c.task === 'custom' ? (c.task_label || 'مهمة �
 // ============ الدخول ============
 const QS = new URLSearchParams(location.search);
 const EMBED = QS.get('embed') === '1';
-if (EMBED) { document.getElementById('topbar').hidden = true; document.body.style.background = 'transparent'; }
+if (EMBED) { document.getElementById('topbar').style.display = 'none'; document.body.style.background = 'transparent'; }
 function tellParent(type, extra) { if (EMBED && window.parent !== window) window.parent.postMessage(Object.assign({ source: 'plans', type }, extra || {}), location.origin); }
 async function boot() {
   const { data: { session } } = await db.auth.getSession();

@@ -76,8 +76,9 @@ p{margin:0}a{color:var(--secondary)}
 .br{min-height:27px;display:grid;grid-template-columns:minmax(95px,1.5fr) 1.4fr 52px;gap:8px;align-items:center;font-size:12px;padding:2px 0;border-bottom:1px dashed var(--soft-line)}
 .bars>.br:last-child{border-bottom:0}
 .br .lb{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.br .t{height:8px;background:var(--track);border-radius:8px;overflow:hidden}
-.br .f{height:100%;border-radius:8px}
+.br .t{display:block;height:8px;background:var(--track);border-radius:8px;overflow:hidden}
+.br .f{display:block;height:100%;border-radius:8px}
+.ic{width:20px;height:20px;flex:none}
 .br .n{text-align:left;font-weight:800;font-variant-numeric:tabular-nums}
 
 /* الدائرة */

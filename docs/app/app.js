@@ -81,7 +81,7 @@
       let rows = opts.rows.slice();
       if (st.q) { const q = norm(st.q); rows = rows.filter(r => opts.cols.some(c => norm(valOf(c, r)).includes(q))); }
       Object.entries(st.filters).forEach(([k, v]) => { if (v !== '') { const c = opts.cols.find(c => c.key === k); rows = rows.filter(r => String(valOf(c, r) ?? '') === v); } });
-      if (st.sortKey) { const c = opts.cols.find(c => c.key === st.sortKey); rows.sort((a, b) => { let x = valOf(c, a), y = valOf(c, b); if (x == null || x === '') return 1; if (y == null || y === '') return -1; return (c.num ? (x - y) : String(x).localeCompare(String(y), 'ar')) * st.dir; }); }
+      if (st.sortKey) { const c = opts.cols.find(c => c.key === st.sortKey) || { key: st.sortKey, num: true }; rows.sort((a, b) => { let x = valOf(c, a), y = valOf(c, b); if (x == null || x === '') return 1; if (y == null || y === '') return -1; return (c.num ? (x - y) : String(x).localeCompare(String(y), 'ar')) * st.dir; }); }
       const filterCols = opts.cols.filter(c => c.filter);
       el.innerHTML = `<div class="tbl-tools">
           <input type="search" placeholder="بحث…" value="${esc(st.q)}" data-q aria-label="بحث">
