@@ -141,3 +141,7 @@ update public.user_profiles set nationality = nationality where nationality is n
 
 -- ما يظهر للمعلم في «رصد جلسة التسميع»: كل الطلاب، أو طلاب فتراته المسندة إليه فقط
 alter table public.teachers add column if not exists record_scope text not null default 'all' check (record_scope in ('all', 'assigned'));
+
+-- روابط إضافية للخطة، وعمود نعم/لا يعرض مقدار نطاق (مثل مقدار الحفظ)
+alter table public.program_plans add column if not exists extra_links jsonb not null default '[]'::jsonb;
+alter table public.plan_columns add column if not exists shows_column_id uuid references public.plan_columns(id) on delete set null;

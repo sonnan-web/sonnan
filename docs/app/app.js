@@ -180,8 +180,14 @@
     });
     return out;
   }
+  // مقدار النطاق الذي يعرضه عمود نعم/لا (مثل «من 10 إلى 11» لمقدار الحفظ)، يحتاج أعمدة الخطة
+  function taskAmount(t, vals, cols) {
+    const sc = t.single?.shows_column_id && cols?.find(c => c.id === t.single.shows_column_id); if (!sc) return null;
+    const ec = cols.find(c => c.id === sc.pair_column_id); const a = vals?.[sc.id], b = ec ? vals?.[ec.id] : null;
+    return a == null && b == null ? null : `من ${a ?? '؟'} إلى ${b ?? '؟'}`;
+  }
   function fmtTaskVal(t, vals) {
-    if (t.single) { const v = vals?.[t.single.id]; if (v == null || v === '') return null; if (t.single.value_type === 'bool') return v ? 'نعم' : 'لا'; if (t.single.value_type === 'url') return 'رابط'; return String(v); }
+    if (t.single) { const v = vals?.[t.single.id]; if (v == null || v === '') return null; if (t.single.value_type === 'bool') return v ? 'نعم' : null; if (t.single.value_type === 'url') return 'رابط'; return String(v); }
     const a = vals?.[t.from.id], b = vals?.[t.to.id];
     if (a == null && b == null) return null;
     return `من ${a ?? '؟'} إلى ${b ?? '؟'}`;
@@ -568,5 +574,5 @@
 
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, svg };
+    unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, svg };
 })();

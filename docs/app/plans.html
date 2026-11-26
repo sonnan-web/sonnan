@@ -156,14 +156,14 @@ const S = { user: null, plans: [], plan: null, cols: [], removedCols: [], days: 
 
 function blankPlan() {
   return {
-    id: null, name: '', description: '', book_name: '', audio_url: '', book_url: '', whatsapp_url: '', status: 'draft',
+    id: null, name: '', description: '', book_name: '', audio_url: '', book_url: '', whatsapp_url: '', extra_links: [], status: 'draft',
     workdays: [0, 1, 2, 3, 4], recitation_mode: 'days', recitation_days: [0, 2],
     student_execution: 'counts', execution_weight: null, recitation_weight: null,
     score_rules: { max: 10, deductions: [{ key: 'full', label: 'خطأ كامل', value: 1 }, { key: 'half', label: 'نصف خطأ', value: 0.5 }, { key: 'quarter', label: 'ربع خطأ', value: 0.25 }] },
     discipline_rules: { absence_is: 'no_recitation', window_days: null, alert_after: null, warning_after: null, escalate_after: null, leave_max_month: null, makeup_within_days: null }
   };
 }
-function newCol(over) { return Object.assign({ id: uid(), header: '', task: 'memo', task_label: '', value_type: 'number', range_role: 'single', pair_column_id: null, executor: 'both', counts: true, weight: null, required: false, _new: true }, over || {}); }
+function newCol(over) { return Object.assign({ id: uid(), header: '', task: 'memo', task_label: '', value_type: 'number', range_role: 'single', pair_column_id: null, shows_column_id: null, executor: 'both', counts: true, weight: null, required: false, _new: true }, over || {}); }
 function taskName(c) { return c.task === 'custom' ? (c.task_label || 'مهمة أخرى') : TASKS[c.task]; }
 
 // ============ الدخول ============
@@ -292,6 +292,9 @@ function tabRules() {
         <label class="f" for="pBookUrl">رابط الكتاب<input id="pBookUrl" type="url" dir="ltr" value="${esc(P.book_url)}"></label>
         <label class="f" for="pWa">رابط مجموعة واتساب<input id="pWa" type="url" dir="ltr" value="${esc(P.whatsapp_url)}"></label>
       </div>
+      <div><b class="small">روابط إضافية</b> <span class="hint">تظهر للطالب في صفحته بالاسم الذي تكتبه. إذا لم تضف شيئًا لا يظهر شيء.</span>
+        <div id="xLinks" class="stack" style="gap:6px;margin-top:6px"></div>
+        <button class="btn sm ghost" type="button" id="addLink" style="margin-top:6px">+ إضافة رابط</button></div>
       <label class="f" for="pStatus">الحالة <span class="hint">«مسودة» لا تظهر للطلاب حتى لو أُسندت لهم. «مؤرشفة» تبقى سجلاتها ولا تُسند لطلاب جدد</span><select id="pStatus">${[['draft', 'مسودة'], ['active', 'مفعّلة'], ['archived', 'مؤرشفة']].map(o => `<option value="${o[0]}"${P.status === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>
     </fieldset>
 
@@ -344,6 +347,14 @@ function tabRules() {
 
   const bindTxt = (id, key) => $('#' + id).addEventListener('input', e => { P[key] = e.target.value; markDirty(); });
   bindTxt('pName', 'name'); bindTxt('pBook', 'book_name'); bindTxt('pDesc', 'description'); bindTxt('pAudio', 'audio_url'); bindTxt('pBookUrl', 'book_url'); bindTxt('pWa', 'whatsapp_url');
+  P.extra_links ||= [];
+  const drawLinks = () => {
+    $('#xLinks').innerHTML = P.extra_links.map((l, i) => `<div class="g2" style="grid-template-columns:1fr 2fr auto;align-items:end"><label class="f">اسم الرابط<input type="text" data-li="${i}" data-lk="label" value="${esc(l.label || '')}" placeholder="مثال: شرح الشيخ"></label><label class="f">الرابط<input type="url" dir="ltr" data-li="${i}" data-lk="url" value="${esc(l.url || '')}" placeholder="https://"></label><button class="btn sm danger" type="button" data-ldel="${i}">حذف</button></div>`).join('') || '<div class="hint">لا توجد روابط إضافية.</div>';
+    $$('[data-li]').forEach(el => el.addEventListener('input', () => { P.extra_links[+el.dataset.li][el.dataset.lk] = el.value; markDirty(); }));
+    $$('[data-ldel]').forEach(b => b.onclick = () => { P.extra_links.splice(+b.dataset.ldel, 1); markDirty(); drawLinks(); });
+  };
+  $('#addLink').onclick = () => { P.extra_links.push({ label: '', url: '' }); markDirty(); drawLinks(); $$('[data-lk="label"]').pop()?.focus(); };
+  drawLinks();
   $('#pStatus').onchange = e => { P.status = e.target.value; markDirty(); };
   $$('[data-wd]').forEach(c => c.onchange = () => { P.workdays = $$('[data-wd]').filter(x => x.checked).map(x => +x.dataset.wd); markDirty(); });
   $$('[data-rd]').forEach(c => c.onchange = () => { P.recitation_days = $$('[data-rd]').filter(x => x.checked).map(x => +x.dataset.rd); markDirty(); });
@@ -377,6 +388,7 @@ const COL_HELP = `
     <li><b>نوع القيمة:</b> رقم (مثل رقم الحديث أو عدد مرات التكرار)، نص (مثل اسم باب)، رابط (مثل رابط شرح يفتحه الطالب)، أو نعم/لا.</li>
     <li><b>نعم/لا:</b> مهمة يُعلَّم عليها دون قيمة، مثل «استمع للدرس». في الإكسل تكتب «نعم» في الأيام التي فيها هذه المهمة وتتركه فارغًا في غيرها. الطالب يرى زر إنجاز، والمعلم يرى خانة اختيار في الرصد.</li>
     <li><b>دوره:</b> «قيمة مفردة» عمود مستقل. «بداية نطاق» و«نهاية نطاق» عمودان يُربطان معًا مثل «من حديث» و«إلى حديث»؛ البداية هي القيمة الدنيا والنهاية هي القيمة القصوى، وتتأكد المنصة أن البداية لا تزيد على النهاية.</li>
+    <li><b>يعرض مقدار (لأعمدة نعم/لا):</b> يربط المهمة بنطاق من الخطة، فيرى الطالب مثلًا «هل قرأت مقدار الشرح: من 10 إلى 11» مع علامة صح. علامة الصح = نعم، وبدونها = لا.</li>
     <li><b>مرتبط بعمود:</b> العمود الآخر من النطاق. عند الربط يصبح العمودان مهمة واحدة تظهر «من … إلى …».</li>
     <li><b>من ينفّذ:</b> «الطالب» تظهر له مهمة يعلّم عليها في صفحته ولا تظهر للمعلم. «المعلم» تظهر في نموذج الرصد عند المعلم فقط. «الطالب والمعلم» تظهر للطالب مهمةً وللمعلم حقلًا في الرصد. «للعرض فقط» معلومة بلا تنفيذ، تظهر للطالب في يومه (مثل رابط الشرح) وتظهر للمعلم مرجعًا في الرصد دون أن يدخلها.</li>
     <li><b>في التقييم والوزن:</b> هل يدخل إنجاز هذه المهمة في نسبة الطالب، وبأي وزن مقارنة بالمهام الأخرى.</li>
@@ -400,7 +412,8 @@ function tabColumns() {
           ${c.task === 'custom' ? `<input type="text" data-k="task_label" value="${esc(c.task_label)}" placeholder="اسم المهمة" style="margin-top:4px">` : ''}</td>
         <td><select data-k="value_type"${rep ? ' disabled title="التكرار رقم دائمًا"' : ''}>${Object.entries(VTYPES).filter(([k]) => !rep || k === 'number').map(([k, v]) => `<option value="${k}"${c.value_type === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
         <td><select data-k="range_role"${rep ? ' disabled title="التكرار قيمة مفردة دائمًا"' : ''}>${Object.entries(ROLES).filter(([k]) => !rep || k === 'single').map(([k, v]) => `<option value="${k}"${c.range_role === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td><select data-k="pair_column_id"${rep ? ' disabled' : ''}><option value="">لا</option>${rep ? '' : cols.filter(o => o.id !== c.id && o.task !== 'repeat').map(o => `<option value="${o.id}"${c.pair_column_id === o.id ? ' selected' : ''}>${esc(o.header || 'عمود ' + (cols.indexOf(o) + 1))}</option>`).join('')}</select></td>
+        <td>${c.value_type === 'bool' && c.range_role === 'single' ? `<select data-k="shows_column_id" title="يظهر للطالب مقدار هذا النطاق بجانب المهمة"><option value="">يعرض مقدار: لا</option>${cols.filter(o => o.range_role === 'start' && o.pair_column_id).map(o => { const e = cols.find(x => x.id === o.pair_column_id); return `<option value="${o.id}"${c.shows_column_id === o.id ? ' selected' : ''}>يعرض مقدار: ${esc((o.header || '').trim())} – ${esc((e?.header || '').trim())}</option>`; }).join('')}</select>`
+          : `<select data-k="pair_column_id"${rep ? ' disabled' : ''}><option value="">لا</option>${rep ? '' : cols.filter(o => o.id !== c.id && o.task !== 'repeat').map(o => `<option value="${o.id}"${c.pair_column_id === o.id ? ' selected' : ''}>${esc(o.header || 'عمود ' + (cols.indexOf(o) + 1))}</option>`).join('')}</select>`}</td>
         <td><select data-k="executor">${Object.entries(EXEC).map(([k, v]) => `<option value="${k}"${c.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
         <td style="text-align:center"><input type="checkbox" data-k="counts"${c.counts ? ' checked' : ''}${c.executor === 'info' ? ' disabled' : ''}></td>
         <td><input type="number" data-k="weight" min="0" step="1" value="${c.weight ?? ''}" style="width:70px"${c.counts && c.executor !== 'info' ? '' : ' disabled'}></td>
@@ -418,6 +431,8 @@ function tabColumns() {
         let v = el.type === 'checkbox' ? el.checked : el.value;
         if (k === 'weight') v = numOrNull(v);
         if (k === 'pair_column_id') { setPair(c, v || null); markDirty(); return tabColumns(); }
+        if (k === 'shows_column_id') { c.shows_column_id = v || null; markDirty(); return refreshIssues(); }
+        if (k === 'value_type' && v !== 'bool') c.shows_column_id = null;
         c[k] = v; markDirty();
         if (k === 'task' && v === 'repeat') { if (c.pair_column_id) setPair(c, null); c.value_type = 'number'; c.range_role = 'single'; }
         if (k === 'range_role' && c.pair_column_id) { const o = cols.find(x => x.id === c.pair_column_id); if (o && v !== 'single') o.range_role = v === 'start' ? 'end' : 'start'; }
@@ -489,7 +504,7 @@ function tabDays() {
       <div class="row" style="justify-content:flex-start"><button class="btn" type="button" id="acceptImp" ${errCount ? 'disabled' : ''}>اعتماد الأيام (${imp.rows.length})</button><button class="btn ghost" type="button" id="cancelImp">إلغاء</button></div>` : ''}
     ${cols.length ? `<p class="muted small">الجدول يعرض أعمدة الخطة الحالية كما في تبويب «أعمدة الخطة»${S.dirty ? '، بما فيها التعديلات غير المحفوظة' : ''}.</p><div class="table-wrap" style="max-height:480px;overflow:auto"><table>
       <thead><tr><th>اليوم</th>${cols.map(c => `<th>${esc(c.header)}<br><span class="hint">${esc(taskName(c))}</span></th>`).join('')}</tr></thead>
-      <tbody>${rows.length ? '' : `<tr><td colspan="${cols.length + 1}" class="muted" style="text-align:center;padding:16px">لا توجد أيام بعد. نزّل النموذج، املأه، ثم ارفعه.</td></tr>`}${rows.slice(0, 400).map(r => `<tr><td class="colnum${r.errors._day ? ' err' : ''}" title="${esc(r.errors._day || '')}">${esc(r.day_number)}</td>${cols.map(c => { const e = r.errors[c.id]; const em = r.empty?.[c.id]; const v = r.vals[c.id]; return `<td class="${e ? 'err' : em ? 'emptyc' : ''}" title="${esc(e || (em ? (em === 1 ? 'خلية فارغة: لا واجب في هذا اليوم' : em) : ''))}">${v == null || v === '' ? '<span class="muted">—</span>' : c.value_type === 'url' ? `<a href="${esc(v)}" target="_blank" rel="noopener">رابط</a>` : c.value_type === 'bool' ? (v ? 'نعم' : 'لا') : esc(v)}${e ? `<div class="small">${esc(e)}</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
+      <tbody>${rows.length ? '' : `<tr><td colspan="${cols.length + 1}" class="muted" style="text-align:center;padding:16px">لا توجد أيام بعد. نزّل النموذج، املأه، ثم ارفعه.</td></tr>`}${rows.slice(0, 400).map(r => `<tr><td class="colnum${r.errors._day ? ' err' : ''}" title="${esc(r.errors._day || '')}">${esc(r.day_number)}</td>${cols.map(c => { const e = r.errors[c.id]; const em = r.empty?.[c.id]; const v = r.vals[c.id]; return `<td class="${e ? 'err' : em ? 'emptyc' : ''}" title="${esc(e || (em ? (em === 1 ? 'خلية فارغة: لا واجب في هذا اليوم' : em) : ''))}">${v == null || v === '' ? '<span class="muted">—</span>' : c.value_type === 'url' ? `<a href="${esc(v)}" target="_blank" rel="noopener">رابط</a>` : c.value_type === 'bool' ? (v ? '<b style="color:var(--green)">✓</b>' : '<span class="muted">—</span>') : esc(v)}${e ? `<div class="small">${esc(e)}</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
       ${rows.length > 400 ? `<p class="muted small">يُعرض أول ٤٠٠ يوم من ${rows.length}.</p>` : ''}` : '<div class="empty">أضف أعمدة الخطة أولًا من تبويب «أعمدة الخطة».</div>'}
   </div>`;
   const fi = $('#xfile');
@@ -598,7 +613,9 @@ function groupTasks(filterFn) {
   return out;
 }
 function fmtTask(t, vals) {
-  if (t.single) { const v = vals[t.single.id]; if (v == null || v === '') return null; return t.single.value_type === 'bool' ? (v ? 'نعم' : 'لا') : t.single.value_type === 'url' ? 'رابط' : `${t.single.header}: ${v}`; }
+  if (t.single) { const v = vals[t.single.id]; if (v == null || v === '') return null;
+    if (t.single.value_type === 'bool') { if (!v) return null; const sc = S.cols.find(c => c.id === t.single.shows_column_id), ec = sc && S.cols.find(c => c.id === sc.pair_column_id); const a = sc && vals[sc.id], b = ec && vals[ec.id]; return t.single.header + (a != null || b != null ? `: من ${a ?? '؟'} إلى ${b ?? '؟'}` : ''); }
+    return t.single.value_type === 'url' ? 'رابط' : `${t.single.header}: ${v}`; }
   const a = vals[t.from.id], b = vals[t.to.id];
   if (a == null && b == null) return null;
   return `من ${a ?? '؟'} إلى ${b ?? '؟'}`;
@@ -718,7 +735,7 @@ async function savePlan() {
   if (P.recitation_mode !== 'none' && P.student_execution === 'counts' && P.execution_weight != null && P.recitation_weight != null && P.execution_weight + P.recitation_weight !== 100) { S.tab = 'rules'; render(); return toast('مجموع وزن التنفيذ ووزن التسميع يجب أن يكون 100', true); }
   const btn = $('#savePlan'); btn.disabled = true; btn.textContent = 'جارٍ الحفظ…';
   try {
-    const row = { name: P.name.trim(), description: P.description || null, book_name: P.book_name || null, audio_url: P.audio_url || null, book_url: P.book_url || null, whatsapp_url: P.whatsapp_url || null, status: P.status,
+    const row = { name: P.name.trim(), description: P.description || null, book_name: P.book_name || null, audio_url: P.audio_url || null, book_url: P.book_url || null, whatsapp_url: P.whatsapp_url || null, extra_links: (P.extra_links || []).filter(l => (l.url || '').trim()).map(l => ({ label: (l.label || '').trim() || 'رابط', url: l.url.trim() })), status: P.status,
       workdays: P.workdays, recitation_mode: P.recitation_mode, recitation_days: P.recitation_days, student_execution: P.student_execution,
       execution_weight: P.execution_weight, recitation_weight: P.recitation_weight, score_rules: P.score_rules, discipline_rules: P.discipline_rules };
     let planId = P.id;
@@ -726,7 +743,7 @@ async function savePlan() {
     else { row.created_by = S.user.id; const r = await db.from('program_plans').insert(row).select('id').single(); if (r.error) throw r.error; planId = r.data.id; }
     if (S.removedCols.length) { const r = await db.from('plan_columns').delete().in('id', S.removedCols); if (r.error) throw r.error; }
     // الأعمدة بطلب واحد: الترتيب والاسم والارتباط معًا (قيود التفرد مؤجلة لنهاية الطلب)
-    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, executor: c.executor, counts: c.executor === 'info' ? false : !!c.counts, weight: c.weight, required: !!c.required }));
+    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, shows_column_id: c.value_type === 'bool' && c.range_role === 'single' ? (c.shows_column_id || null) : null, executor: c.executor, counts: c.executor === 'info' ? false : !!c.counts, weight: c.weight, required: !!c.required }));
     let r = await db.from('plan_columns').upsert(colRows); if (r.error) throw r.error;
     // الأيام: تُستبدل بالكامل عند تغييرها
     const ids = new Set(S.cols.map(c => c.id));
