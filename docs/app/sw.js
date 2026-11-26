@@ -1,5 +1,5 @@
 /* عامل الخدمة لمنصة سنن: يجعل المنصة قابلة للتثبيت، ويستقبل إشعارات الجوال */
-const VERSION = 'sonnan-v1';
+const VERSION = 'sonnan-v2';
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
@@ -7,7 +7,7 @@ self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 // الصفحات تُطلب من الشبكة دائمًا (البيانات حيّة)، ولا تُخزَّن بيانات الطلاب في الجهاز
 self.addEventListener('fetch', e => {
   if (e.request.mode === 'navigate') {
-    e.respondWith(fetch(e.request).catch(() => new Response(
+    e.respondWith(fetch(e.request, { cache: 'no-cache' }).catch(() => new Response(
       '<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><body style="font-family:Tahoma;background:#0F2F33;color:#fff;display:grid;place-items:center;min-height:100vh;margin:0;text-align:center"><div><h2 style="color:#CBB994">لا يوجد اتصال بالإنترنت</h2><p>تحقق من الاتصال ثم أعد المحاولة.</p></div></body></html>',
       { headers: { 'Content-Type': 'text/html; charset=utf-8' } })));
   }
