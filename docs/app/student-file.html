@@ -6,9 +6,9 @@
 <title>ملف الطالب — منصة سنن</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127s">
+<link rel="stylesheet" href="app.css?v=20261127t">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127s"></script>
+<script src="app.js?v=20261127t"></script>
 <style>
 body{background:#DDE5E5}
 .toolbar{position:sticky;top:0;z-index:5;background:linear-gradient(110deg,var(--primary),var(--secondary));border-bottom:2px solid var(--gold);padding:8px max(16px,env(safe-area-inset-left,0px));display:flex;justify-content:space-between;align-items:center;gap:10px;color:#fff}
@@ -88,7 +88,10 @@ const expected = A.workdaysBetween(startD, A.addDays(TODAY, -1), wd);
 const achDays = new Set(recs.filter(r => ['present', 'makeup', 'review_only'].includes(r.status) && r.rec_date < TODAY).map(r => r.rec_date)).size;
 const excDays = new Set(recs.filter(r => r.status === 'excused').map(r => r.rec_date)).size;
 const base = Math.max(0, expected - excDays);
-const pct = base ? Math.min(100, Math.round(achDays / base * 100)) : null;
+// المقاييس الموحّدة (نفس لوحة التحكم وصفحة الطالب): الالتزام، الضبط، الإنجاز، الختم المتوقع، أيام التعثر
+const M = cur ? ((await db.rpc('plan_metrics', { p_plan: cur.plan_id, p_from: null, p_to: null, p_student: s.id })).data || [])[0] || null : null;
+const pctOf = v => v == null ? '—' : Math.round(+v) + '٪';
+const fin = M && P ? A.finishDate(M, P) : null, sbi = M && P ? A.stumbleInfo(M, P) : null;
 const sc = recs.filter(r => r.score != null).map(r => +r.score);
 const avg = sc.length ? sc.reduce((a, b) => a + b, 0) / sc.length : null;
 const mem = A.unionCount(recs.filter(r => ['present', 'makeup'].includes(r.status)).map(r => [r.memo_from == null ? null : +r.memo_from, r.memo_to == null ? null : +r.memo_to]));
@@ -130,14 +133,14 @@ $('#sheet').innerHTML = `
   </div>${s.notes ? `<p class="note">ملاحظات: ${esc(s.notes)}</p>` : ''}</section>
 
   <section class="block"><h3>ملخص الإنجاز</h3><div class="kpis">
-    <div class="kpi" style="--c:var(--teal)"><small>مستوى الإنجاز</small><b>${pct == null ? '—' : pct + '٪'}</b></div>
-    <div class="kpi" style="--c:var(--green)"><small>الأحاديث المحفوظة</small><b>${fmtNum(mem, 1)}</b></div>
-    <div class="kpi" style="--c:var(--blue)"><small>متوسط درجة التسميع</small><b>${avg == null ? '—' : fmtNum(avg, 2)}</b></div>
-    <div class="kpi" style="--c:var(--violet)"><small>نسبة التنفيذ</small><b>${execPct == null ? '—' : execPct + '٪'}</b></div>
-    <div class="kpi" style="--c:var(--orange)"><small>التقييم المركب</small><b>${evalScore == null ? '—' : fmtNum(evalScore, 1) + '٪'}</b></div>
+    <div class="kpi" style="--c:var(--teal)"><small>مستوى الإنجاز</small><b>${pctOf(M?.ach)}</b></div>
+    <div class="kpi" style="--c:var(--green)"><small>الالتزام</small><b>${pctOf(M?.iltizam)}</b></div>
+    <div class="kpi" style="--c:var(--blue)"><small>الضبط</small><b>${pctOf(M?.dabt)}</b></div>
+    <div class="kpi" style="--c:var(--gold)"><small>الختم المتوقع</small><b style="font-size:14px">${A.finishText(fin)}</b></div>
+    <div class="kpi" style="--c:var(--red)"><small>أيام التعثر</small><b>${M?.stumbles ?? '—'}</b></div>
+    <div class="kpi" style="--c:var(--violet)"><small>الأحاديث المحفوظة</small><b>${fmtNum(mem, 1)}</b></div>
   </div>
-  <p class="note">أيام الخطة حتى أمس: ${expected} · أيام الإنجاز: ${achDays} · حضور ${c.present} · تعويض ${c.makeup} · ربط ومراجعة ${c.review_only} · استئذان ${c.excused} · غياب تقديري ${Math.max(0, base - achDays)}.
-  ${P ? `التقييم المركب = ${P.recitation_mode !== 'none' ? 'درجة التسميع' : ''}${P.student_execution === 'counts' && P.recitation_mode !== 'none' ? ` (${P.recitation_weight ?? '؟'}٪) + التنفيذ (${P.execution_weight ?? '؟'}٪)` : P.student_execution === 'counts' ? 'نسبة التنفيذ' : ''} حسب أوزان الخطة.` : ''}</p></section>
+  <p class="note">${M?.ach_due != null ? `المنفّذ من المهمة الأساسية ${M.ach_days} من ${M.ach_due} مستحق حتى أمس، والباقي حتى الختم ${M.ach_left}. ` : ''}${sbi?.sev >= 2 ? 'الانضباط: ' + sbi.label + '. ' : ''}متوسط درجة التسميع ${avg == null ? '—' : fmtNum(avg, 2)} · حضور ${c.present} · تعويض ${c.makeup} · ربط ومراجعة ${c.review_only} · استئذان ${c.excused}.</p></section>
 
   <section class="block"><h3>سجل رصد المعلمين (${recs.length})</h3><div class="tbl-wrap"><table><thead><tr><th>التاريخ</th><th>الحالة</th><th>الحفظ</th><th>الأخطاء</th><th>الدرجة</th><th>المعلم</th><th>ملاحظات</th></tr></thead><tbody>
     ${recs.map(r => `<tr><td>${A.dayName(r.rec_date)} ${A.greg(r.rec_date)}</td><td>${statusPill(r.status)}${r.makes_up_date ? '<br><span class="hint">عن ' + A.greg(r.makes_up_date) + '</span>' : ''}</td><td>${r.memo_from ? +r.memo_from + '–' + +r.memo_to : '—'}</td><td class="num">${r.errors_total ?? '—'}</td><td class="num">${r.score != null ? fmtNum(r.score, 2) : '—'}</td><td>${esc(tName[r.teacher_id] || '—')}</td><td style="white-space:normal">${esc(r.notes || '')}</td></tr>`).join('') || '<tr><td colspan="7" class="muted">لا يوجد</td></tr>'}</tbody></table></div></section>

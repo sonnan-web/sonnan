@@ -373,6 +373,7 @@ function tabRules() {
         <label class="f" for="dLeave">أقصى استئذان في الشهر <span class="hint">أيام؛ ما زاد يُعرض على المشرف</span><input id="dLeave" type="number" min="0" value="${D.leave_max_month ?? ''}"></label>
         <label class="f" for="dMk">مهلة التعويض <span class="hint">أيام بعد الغياب</span><input id="dMk" type="number" min="0" value="${D.makeup_within_days ?? ''}"></label>
       </div>
+      <div id="discWarn"></div>
     </fieldset>
   </div>`;
 
@@ -399,6 +400,8 @@ function tabRules() {
   $$('[data-dd]').forEach(b => b.onclick = () => { R.deductions.splice(+b.dataset.dd, 1); markDirty(); tabRules(); });
   $('#addDed') && ($('#addDed').onclick = () => { R.deductions.push({ key: 'd' + Date.now(), label: '', value: 0 }); markDirty(); tabRules(); });
   $$('[name=absIs]').forEach(r => r.onchange = () => { D.absence_is = r.value; markDirty(); tabRules(); });
+  const discWarn = () => { const w = ruleWarnings().filter(x => /تنبيه|إنذار|المهمة الأساسية/.test(x)); $('#discWarn') && ($('#discWarn').innerHTML = w.length ? `<div class="warnbox" style="margin-top:8px">${w.map(esc).join('<br>')}</div>` : ''); };
+  discWarn(); $$('#dWin, #dAlert, #dWarn').forEach(i => i.addEventListener('input', () => setTimeout(discWarn)));
   [['dWin', 'window_days'], ['dAlert', 'alert_after'], ['dWarn', 'warning_after'], ['dEsc', 'escalate_after'], ['dLeave', 'leave_max_month'], ['dMk', 'makeup_within_days']]
     .forEach(([id, k]) => $('#' + id).oninput = e => { D[k] = numOrNull(e.target.value); markDirty(); });
   weightMsg();
@@ -550,6 +553,12 @@ function ruleWarnings() {
     if (pr.t > 0 && !sees(T, 'teacher')) out.push(`«${taskTitle(T)}» عليها درجة لكنها لا تظهر للمعلم، فلن يأخذ الطالب نصيب المعلم منها (${Math.round(pr.t * 100)}٪) أبدًا. اجعلها «${pr.s > 0 ? 'للمعلم والطالب' : 'للمعلم'}».`);
     if (pr.s > 0 && !sees(T, 'student')) out.push(`«${taskTitle(T)}» عليها درجة لكنها لا تظهر للطالب، فلن يأخذ نصيب الطالب منها (${Math.round(pr.s * 100)}٪) أبدًا. اجعلها «${pr.t > 0 ? 'للمعلم والطالب' : 'للطالب'}».`);
   });
+  // قواعد الانضباط المتعارضة
+  const DR = P.discipline_rules || {}, W = DR.window_days;
+  if (!(S.tasks || (tasksFromCols(), S.tasks) || []).some(T => T.is_progress)) out.push('لم تُحدَّد «المهمة الأساسية»، فلن يُحسب مستوى الإنجاز ولا الختم المتوقع ولا أيام التعثر، ولن تتقدّم خطة الطالب بتنفيذه.');
+  if (W && DR.alert_after && DR.alert_after > W) out.push(`التنبيه بعد ${DR.alert_after} أيام تعثر، لكن نافذة الاحتساب ${W} ${W > 2 && W < 11 ? 'أيام' : 'يوم'} فقط، فلن يُستحق تنبيه أبدًا. وسّع النافذة أو قلّل العدد.`);
+  if (W && DR.warning_after && DR.warning_after > W) out.push(`الإنذار بعد ${DR.warning_after} أيام تعثر، لكن نافذة الاحتساب ${W} ${W > 2 && W < 11 ? 'أيام' : 'يوم'} فقط، فلن يُستحق إنذار أبدًا. وسّع النافذة أو قلّل العدد.`);
+  if (DR.alert_after && DR.warning_after && DR.warning_after < DR.alert_after) out.push('عدد أيام الإنذار أقل من عدد أيام التنبيه، فيُستحق الإنذار قبل التنبيه.');
   (S.tasks || []).filter(T => T.graded && !sees(T, 'teacher')).forEach(T => out.push(`«${taskTitle(T)}» عليها تقييم الضبط لكنها لا تظهر للمعلم، فلن يرصد أخطاءها.`));
   if (P.recitation_mode !== 'none' && !(S.tasks || []).some(T => T.graded)) out.push('لا توجد مهمة عليها «تقييم الضبط»، فيرصد المعلم الأخطاء على الجلسة كلها.');
   return out;

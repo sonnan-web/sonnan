@@ -178,3 +178,7 @@ update public.plan_columns set graded = counts where graded = false and counts;
 -- يتقدّم يوم الخطة بكل جلسة رُصدت فيها المهمة الأساسية (أو تعليم الطالب حسب «لمن تظهر» وتنفيذ الطالب)، ولا يتقدّم في الغياب،
 -- وإذا سبق رصدُه أيامًا قادمة تُعدّ منجزة. plan_metrics و sync_stage_holds صارتا مبنيّتين عليه — انظر migrations:
 -- plan_timeline_execution, plan_timeline_access, plan_timeline_content_jump, plan_metrics_on_timeline, sync_stage_holds_on_timeline
+
+-- plan_timeline_core: الحساب الداخلي بلا قيود (لا يُستدعى من المتصفح)، و plan_timeline للعرض مع قيد الطالب على نفسه.
+-- plan_metrics و sync_stage_holds تستخدمان النسخة الداخلية حتى تظهر لوحة الشرف كاملة للطالب.
+-- نسخة أسرع تحمّل سجلات كل طالب مرة واحدة — انظر migrations: plan_timeline_core_split, plan_timeline_core_fast

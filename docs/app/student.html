@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127s">
+<link rel="stylesheet" href="app.css?v=20261127t">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127s"></script>
+<script src="app.js?v=20261127t"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -248,7 +248,7 @@ SECTIONS.home = async el => {
     ${M.ach != null ? `<div class="stats3">
       <div class="st" style="--c:var(--teal)" title="ما سمّعته من المهمة الأساسية مقارنة بالمستحق حسب خطتك حتى أمس"><b>${M.ach}٪</b><span>مستوى الإنجاز</span></div>
       <div class="st" style="--c:var(--gold)" title="بسرعتك الحالية"><b style="font-size:14px">${A.finishText(M.fin)}</b><span>الختم المتوقع</span></div>
-      <div class="st" style="--c:var(--red)" title="أيام لم تُنفَّذ فيها مهمة الإنجاز${M.sb?.window ? ' في آخر ' + M.sb.window + ' يوم' : ''}"><b>${M.sb?.inWin ?? 0}</b><span>أيام التعثر</span></div>
+      <div class="st" style="--c:var(--red)" title="أيام لم تُسمِّع فيها شيئًا من واجبك الأساسي${M.sb?.window ? ' في آخر ' + M.sb.window + ' يوم' : ''}"><b>${M.sb?.inWin ?? 0}</b><span>أيام التعثر</span></div>
     </div>` : ''}
     ${A.isMobile && (ps === 'default' || ps === 'needs-install') ? `<div class="notice blue"><span>${ps === 'needs-install' ? 'ثبّت التطبيق على جوالك لتصلك الإشعارات.' : 'فعّل الإشعارات لتصلك رسائل المعلم والإدارة.'}</span><button class="btn sm" id="enableBtn">${ps === 'needs-install' ? 'تثبيت' : 'تفعيل'}</button></div>` : ''}
     ${hold ? '' : stageMeter()}
@@ -262,11 +262,8 @@ SECTIONS.home = async el => {
             <div><b>${esc(t.single?.value_type === 'bool' ? (t.single.header || t.name).trim() : t.name)}${degToday[t.key] != null ? ` <span class="pill gold" style="font-size:10px">${degToday[t.key]} درجة</span>` : ''}</b><span class="v">${isUrl ? `<a href="${esc(today.vals[t.single.id])}" target="_blank" rel="noopener">فتح الرابط</a>` : t.single?.value_type === 'bool' ? esc(A.taskAmount(t, today?.vals, cols) || 'مطلوب اليوم') : t.task === 'repeat' ? esc(v) + ' مرة' : esc(v)}</span>${A.taskDetails(t, today?.vals).map(([n, x]) => `<span class="v" style="display:block;font-size:12px">${esc(n)}: ${esc(x)}</span>`).join('')}</div></div>`; }).join('') || '<div class="empty">لا مهام في هذا اليوم.</div>'}
       ${canExec && execN ? `<p class="hint" style="margin:2px 4px 0">${P.student_execution === 'counts' ? 'علّم على المهمة بعد إنجازها، ويدخل تنفيذك في تقييمك.' : 'علّم على المهمة بعد إنجازها لمتابعة نفسك.'}</p>` : ''}
       ${A.isRecitationDay(P, TODAY) ? `<div class="notice gold">اليوم يوم تسميع${room ? ' في ' + esc(room.name) + ' الساعة ' + (room.start_time || '').slice(0, 5) + ' بتوقيت مكة' : ''}.</div>` : ''}`}
-    <div class="h3row"><h3>روابط</h3></div>
-    <div class="links">
-      ${room?.meet_url && room.outside_behavior !== 'hidden' || live ? `<a href="${esc(room.meet_url || '#')}" target="_blank" rel="noopener" ${live || room.outside_behavior === 'always_visible' ? '' : 'aria-disabled="true"'}>${ico('room')}${live || room.outside_behavior === 'always_visible' ? 'غرفة التسميع' : 'تُفتح ' + (room.start_time || '').slice(0, 5)}</a>` : ''}
-      ${P?.audio_url ? `<a href="${esc(P.audio_url)}" target="_blank" rel="noopener">${ico('mic')}السماع</a>` : ''}${P?.book_url ? `<a href="${esc(P.book_url)}" target="_blank" rel="noopener">${ico('book')}الكتاب</a>` : ''}${P?.whatsapp_url ? `<a href="${esc(P.whatsapp_url)}" target="_blank" rel="noopener">${ico('users')}مجموعة البرنامج</a>` : ''}${(P?.extra_links || []).filter(l => /^https?:\/\//i.test(l.url || '')).map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${ico('book')}${esc(l.label || 'رابط')}</a>`).join('')}
-    </div>`;
+    ${(() => { const L = `      ${room?.meet_url && room.outside_behavior !== 'hidden' || live ? `<a href="${esc(room.meet_url || '#')}" target="_blank" rel="noopener" ${live || room.outside_behavior === 'always_visible' ? '' : 'aria-disabled="true"'}>${ico('room')}${live || room.outside_behavior === 'always_visible' ? 'غرفة التسميع' : 'تُفتح ' + (room.start_time || '').slice(0, 5)}</a>` : ''}
+      ${P?.audio_url ? `<a href="${esc(P.audio_url)}" target="_blank" rel="noopener">${ico('mic')}السماع</a>` : ''}${P?.book_url ? `<a href="${esc(P.book_url)}" target="_blank" rel="noopener">${ico('book')}الكتاب</a>` : ''}${P?.whatsapp_url ? `<a href="${esc(P.whatsapp_url)}" target="_blank" rel="noopener">${ico('users')}مجموعة البرنامج</a>` : ''}${(P?.extra_links || []).filter(l => /^https?:\/\//i.test(l.url || '')).map(l => `<a href="${esc(l.url)}" target="_blank" rel="noopener">${ico('book')}${esc(l.label || 'رابط')}</a>`).join('')}`; return L.trim() ? `<div class="h3row"><h3>روابط</h3></div><div class="links">${L}</div>` : ''; })()}`;
   $('#enableBtn', el) && ($('#enableBtn', el).onclick = () => A.pushState() === 'needs-install' ? A.installSheet() : A.pushSheet());
   $$('[data-tick]', el).forEach(b => b.onclick = async () => {
     const t = tasks.find(x => x.key === b.dataset.tick); const on = b.getAttribute('aria-pressed') === 'true';
@@ -284,7 +281,7 @@ SECTIONS.log = el => {
   const list = recs.filter(r => logFilter === 'all' || r.status === logFilter);
   const cnt = k => recs.filter(r => r.status === k).length;
   el.innerHTML = `<div class="stats3">
-      <div class="st" style="--c:var(--green)"><b>${achDays}</b><span>أيام الإنجاز</span></div>
+      <div class="st" style="--c:var(--green)"><b>${achDays}</b><span>أيام الحضور</span></div>
       <div class="st" style="--c:var(--violet)"><b>${excDays}</b><span>أيام الاستئذان</span></div>
       <div class="st" style="--c:var(--red)"><b>${M.stumbles ?? Math.max(0, base - achDays)}</b><span>أيام التعثر</span></div>
     </div>

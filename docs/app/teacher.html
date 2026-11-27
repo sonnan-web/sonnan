@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127s">
+<link rel="stylesheet" href="app.css?v=20261127t">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127s"></script>
+<script src="app.js?v=20261127t"></script>
 <style>
 .wrap{max-width:1200px;margin:0 auto;padding:12px max(14px,env(safe-area-inset-left,0px)) 90px}
 .room-card{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
@@ -131,6 +131,7 @@ SECTIONS.reports = async el => {
       ${mini('الأحاديث التي سمعتها', fmtNum(hadiths), 'green', 'هذا الشهر: ' + fmtNum(monthHeard.reduce((a, r) => a + (r.memo_from != null && r.memo_to != null && +r.memo_from > 0 ? Math.abs(+r.memo_to - +r.memo_from) + 1 : 0), 0)))}
       ${mini('متوسط درجات طلابي', sc.length ? fmtNum(sc.reduce((a, b) => a + b, 0) / sc.length, 2) : '—', 'violet')}
     </div></div>
+    <div class="card c-red" style="margin-bottom:10px"><div class="head"><h3>متابعة طلابي</h3><span class="hint">مرتّبون بالأحوج للمتابعة. الحساب نفسه في لوحة المشرف وصفحة الطالب.</span></div><div id="myTbl" class="tbl-wrap" style="max-height:420px"><div class="loading">جارٍ الحساب…</div></div></div>
     <div class="grid">
       <div class="card span6 c-teal"><div class="head"><h3>طلابي حسب الخطة</h3></div>${A.donut(planCount, 'طالب')}</div>
       <div class="card span6 c-blue"><div class="head"><h3>الجنسيات</h3></div>${A.donut(nat, 'طالب')}</div>
@@ -140,6 +141,18 @@ SECTIONS.reports = async el => {
       <div class="card span6" id="hbCard"><div class="head"><h3>لوحة الشرف</h3></div><div id="hb"></div></div>
     </div>`;
   honor($('#hb', el));
+  // متابعة طلابي: يوم الخطة والإنجاز والالتزام والضبط والتعثر والختم المتوقع
+  const mx = act.length <= 15 ? (await Promise.all(act.map(x => db.rpc('plan_metrics', { p_plan: null, p_from: null, p_to: null, p_student: x.id })))).flatMap(r => r.data || [])
+    : (await db.rpc('plan_metrics', { p_plan: null, p_from: null, p_to: null, p_student: null })).data;
+  const MX = Object.fromEntries((mx || []).map(x => [x.student_id, x])), box = $('#myTbl', el); if (!box) return;
+  const lastOf = {}; recs.forEach(r => { if (!lastOf[r.student_id] || r.rec_date > lastOf[r.student_id]) lastOf[r.student_id] = r.rec_date; });
+  const pc = v => v == null ? '—' : Math.round(+v) + '٪';
+  const rows = act.map(s => { const a = assignOf[s.id], P = a ? PLANS[a.plan_id] : null, m = MX[s.id];
+    return { s, P, m, day: P ? A.planDayFor(a, P, Object.keys(P.days || {}).length, TODAY, true) : null, sb: P && m ? A.stumbleInfo(m, P) : null, fin: P && m ? A.finishDate(m, P) : null }; })
+    .sort((x, y) => (y.sb?.sev || 0) - (x.sb?.sev || 0) || (y.sb?.inWin || 0) - (x.sb?.inWin || 0));
+  box.innerHTML = rows.length ? `<table><thead><tr><th>الطالب</th><th>يوم الخطة</th><th>الإنجاز</th><th>الالتزام</th><th>الضبط</th><th>أيام التعثر</th><th>الختم المتوقع</th><th>آخر رصد</th></tr></thead><tbody>
+    ${rows.map(x => `<tr><td>${esc(x.s.name)}</td><td class="num">${x.day ?? '—'}</td><td class="num">${pc(x.m?.ach)}</td><td class="num">${pc(x.m?.iltizam)}</td><td class="num">${pc(x.m?.dabt)}</td>
+      <td>${x.sb?.inWin ? `<span class="pill ${x.sb.sev >= 3 ? 'bad' : 'warn'}">${x.sb.inWin} · ${x.sb.label}</span>` : '<span class="pill ok">منتظم</span>'}</td><td>${A.finishText(x.fin)}</td><td>${lastOf[x.s.id] ? A.greg(lastOf[x.s.id]) : '—'}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">لا يوجد طلاب منتظمون</div>';
 };
 const HB = { scope: 'mine', period: 'month', plan: '', more: false };
 async function honor(box) {

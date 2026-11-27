@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127s">
+<link rel="stylesheet" href="app.css?v=20261127t">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127s"></script>
+<script src="app.js?v=20261127t"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -183,8 +183,10 @@ SECTIONS.home = async el => {
   const todayRecs = D.recs.filter(r => r.rec_date === TODAY);
   const todayStu = new Set(todayRecs.map(r => r.student_id));
   const { data: warns } = await db.from('discipline_events').select('id, kind').eq('status', 'active').gte('event_date', A.addDays(TODAY, -30));
-  const cut = A.addDays(TODAY, -5);
-  const stale = act.filter(s => { const l = lastRecOf(s); return !l || l < cut; }).map(s => ({ s, l: lastRecOf(s) })).sort((a, b) => (a.l || '') < (b.l || '') ? -1 : 1);
+  // المتعثرون بنفس تعريف «الانضباط» و«إجراءات المشرف»: أيام تعثر في نافذة الاحتساب حسب قواعد الخطة
+  const MX = await loadMetrics();
+  const stale = act.filter(s => s.assign).map(s => ({ s, l: lastRecOf(s), sb: A.stumbleInfo(MX[s.id], s.planObj) })).filter(x => x.sb.inWin).sort((a, b) => b.sb.sev - a.sb.sev || b.sb.inWin - a.sb.inWin);
+  const recToday = act.filter(s => s.planObj && s.planObj.recitation_mode !== 'none' && A.isRecitationDay(s.planObj, TODAY) && !A.holdOn(s.assign, TODAY));
   const stats = act.map(s => ({ s, st: statsOf(s) }));
   const top = stats.slice().sort((a, b) => b.st.memorized - a.st.memorized).slice(0, 5);
   const tAct = D.teachers.map(t => ({ t, n: todayRecs.filter(r => r.teacher_id === t.id).length, stu: D.students.filter(s => s.teacher_id === t.id && s.status === 'active').length })).sort((a, b) => b.n - a.n);
@@ -193,15 +195,15 @@ SECTIONS.home = async el => {
       ${mini('الطلاب المنتظمون', fmtNum(act.length), 'teal', 'من ' + fmtNum(D.students.length) + ' مسجلًا')}
       ${mini('المعلمون', fmtNum(D.teachers.filter(t => !t.is_archived).length), 'blue')}
       ${mini('رُصد اليوم', fmtNum(todayStu.size) + '<em>طالبًا</em>', 'green', act.length ? Math.round(todayStu.size / act.length * 100) + '٪ من المنتظمين' : '')}
-      ${mini('لم يُرصدوا اليوم', fmtNum(act.length - todayStu.size), 'amber')}
+      ${mini('لم يُرصدوا اليوم', recToday.length ? fmtNum(recToday.filter(s => !todayStu.has(s.id)).length) : '—', 'amber', recToday.length ? 'من ' + fmtNum(recToday.length) + ' عليهم تسميع اليوم' : 'اليوم ليس يوم تسميع')}
       ${mini('استئذانات بانتظار القرار', fmtNum(D.pendingLeaves), 'violet')}
       ${mini('تنبيهات وإنذارات (30 يومًا)', fmtNum((warns || []).length), 'red')}
     </div></div>
     <div class="grid">
-      <div class="card c-red span6"><div class="head"><h3>منقطعون عن التسميع أكثر من 5 أيام</h3><span class="pill bad">${stale.length}</span></div>
-        <div class="tbl-wrap" style="max-height:340px"><table><thead><tr><th>الطالب</th><th>المعلم</th><th>آخر رصد</th><th>منذ</th></tr></thead><tbody>
-        ${stale.slice(0, 50).map(x => `<tr class="click" data-stu="${x.s.id}"><td>${esc(x.s.name)}</td><td>${esc(x.s.teacher)}</td><td>${x.l ? A.greg(x.l) : 'لا يوجد'}</td><td class="num">${x.l ? A.daysBetween(x.l, TODAY) + ' يوم' : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">لا يوجد</td></tr>'}</tbody></table></div></div>
-      <div class="card c-green span6"><div class="head"><h3>الأعلى حفظًا</h3><a href="#honor" class="small">لوحة الشرف كاملة</a></div>
+      <div class="card c-red span6"><div class="head"><h3>المتعثرون حسب قواعد الخطة</h3><a href="#actions" class="small">إجراءات المشرف</a> <span class="pill bad">${stale.length}</span></div>
+        <div class="tbl-wrap" style="max-height:340px"><table><thead><tr><th>الطالب</th><th>المعلم</th><th>أيام التعثر</th><th>الحالة</th><th>آخر رصد</th></tr></thead><tbody>
+        ${stale.slice(0, 50).map(x => `<tr class="click" data-stu="${x.s.id}"><td>${esc(x.s.name)}</td><td>${esc(x.s.teacher)}</td><td class="num">${x.sb.inWin}</td><td><span class="pill ${x.sb.sev >= 3 ? 'bad' : 'warn'}">${x.sb.label}</span></td><td>${x.l ? A.greg(x.l) : 'لا يوجد'}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا يوجد</td></tr>'}</tbody></table></div></div>
+      <div class="card c-green span6"><div class="head"><h3>الأعلى حفظًا</h3><a href="#honor" class="small">لوحة الشرف (حسب الالتزام)</a></div>
         ${bars(top.map(x => [x.s.name, x.st.memorized]), 'var(--green)', v => fmtNum(v, 1) + ' حديث')}</div>
       <div class="card c-blue span12"><div class="head"><h3>نشاط المعلمين اليوم</h3></div>
         ${bars(tAct.map(x => [x.t.name + ' (' + x.stu + ' طالب)', x.n]), 'var(--blue)', v => fmtNum(v) + ' رصد')}</div>
@@ -622,7 +624,7 @@ SECTIONS.students = async el => {
       pct: m?.ach == null ? st.pct : Math.round(+m.ach), il: m?.iltizam == null ? null : Math.round(+m.iltizam), fin: fin?.date || null, finT: A.finishText(fin), stb: m?.stumbles ?? null, avg: st.avg, count: st.count }; });
   el.innerHTML = `${secHead('الطلاب وملفاتهم', fmtNum(rows.length) + (showArch ? ' طالب مؤرشف' : ' طالب'), 'teal',
       `<button class="btn gold sm" id="addStu">+ إضافة طالب</button><button class="btn ghost sm" id="impStu">استيراد طلاب</button><button class="btn ghost sm" id="expStu">تصدير</button><button class="btn ghost sm" id="archToggle">${showArch ? 'عرض الطلاب الحاليين' : 'عرض المؤرشفين'}</button>`)}
-    <div class="card c-teal" id="sCard"><div class="head"><h3>${showArch ? 'الطلاب المؤرشفون' : 'بيانات الطلاب'}</h3><span class="hint">«متوسط الدرجة» متوسط درجات التسميع التي رصدها المعلمون، من ${'10'}. نسبة التنفيذ والتقييم المركب في «عرض الملف».</span></div><div id="sTbl"></div></div>
+    <div class="card c-teal" id="sCard"><div class="head"><h3>${showArch ? 'الطلاب المؤرشفون' : 'بيانات الطلاب'}</h3><span class="hint">«متوسط الدرجة» متوسط درجات التسميع من 10، و«الالتزام» و«مستوى الإنجاز» و«أيام التعثر» محسوبة من قواعد الخطة والتنفيذ الفعلي.</span></div><div id="sTbl"></div></div>
     <div class="card" style="margin-top:10px"><h3 style="margin-bottom:8px">دليل الرموز</h3><div class="ilegend">${STU_ACTS.map(([k, ic, l, cls]) => `<span><i class="ibtn ${cls || ''}">${svg(ic)}</i>${l}</span>`).join('')}</div></div>`;
   const tbl = dataTable($('#sTbl'), { rows, sortKey: 'name', pageSize: 200, cols: [
     { key: 'name', label: 'الاسم' },
@@ -920,7 +922,7 @@ SECTIONS.discipline = async el => {
   await loadRecs();
   const [{ data: ev }, MX] = await Promise.all([
     db.from('discipline_events').select('*').order('event_date', { ascending: false }), loadMetrics()]);
-  // يوم التعثر: يوم خطة لم ينفّذ فيه صاحب الإنجاز مهمة الإنجاز (بلا استئذان ولا توقف ولا تعويض)
+  // يوم التعثر: يوم خطة لم يُنفَّذ فيه شيء من المهمة الأساسية (بلا استئذان ولا توقف ولا تعويض)
   const rows = actives().filter(s => s.assign).map(s => {
     const P = s.planObj, R = P?.discipline_rules || {}, m = MX[s.id];
     const mine = (ev || []).filter(e => e.student_id === s.id && e.status === 'active');
@@ -952,7 +954,7 @@ function issueEvent(studentId, kind, row) {
   const days = (row?.absentDays || []).slice(0, 10).map(A.greg).join('، ');
   drawer(`إصدار ${KIND[kind]}: ${s.name}`, `<p class="small">أيام التعثر في النافذة: ${days || 'لا يوجد'}</p>
     <label class="f" for="eR">السبب (يصل للطالب)<textarea id="eR">${kind === 'alert' ? 'لم يُنجز المطلوب في الخطة' : 'تكرر عدم إنجاز المطلوب في الخطة'}${days ? ' في: ' + days : ''}</textarea></label>
-    <div class="chips"><label><input type="checkbox" id="eMail" checked>إرسال بالبريد أيضًا</label><label><input type="checkbox" id="ePush" checked>إشعار على الجوال</label></div>
+    <div class="chips"><label title="لم تُربط خدمة إرسال البريد بعد"><input type="checkbox" id="eMail" disabled>البريد (غير مفعّل بعد)</label><label><input type="checkbox" id="ePush" checked>إشعار على الجوال</label></div>
     <button class="btn ${kind === 'alert' ? '' : 'danger'}" id="eGo">إصدار ${KIND[kind]}</button>`, root => {
     $('#eGo', root).onclick = async () => {
       const reason = $('#eR', root).value.trim();
@@ -1018,7 +1020,7 @@ function examStages(box, P, stages, X) {
   const mainCols = P.cols.filter(c => !c.detail_of && c.range_role !== 'end' && c.value_type !== 'url');
   const colName = c => { const t = A.groupTasks(P.cols, () => true).find(t => t.cols.some(x => x.id === c.id)); return (t ? t.name + ' · ' : '') + String(c.header).trim(); };
   const studs = actives().filter(s => s.assign?.plan_id === P.id);
-  box.innerHTML = `<div class="hintbox" style="margin-bottom:10px">المراحل تُضاف وتُعدَّل من «خطط البرامج» ← تعديل الخطة ← «٤. الاختبارات». هنا إعدادات اختبار كل مرحلة وبنك أسئلتها. تنتهي المرحلة عند أول يوم في الخطة يبلغ فيه «عمود النهاية» القيمة المحددة، ويستمر الطالب بعدها (مثل أيام المراجعة) حتى أول يوم فيه واجب جديد في «عمود التوقف»، فتتوقف خطته هناك حتى يجتاز اختبار المرحلة. أيام التوقف لا تُحسب غيابًا ولا تقدّمًا في الخطة.</div>
+  box.innerHTML = `<div class="hintbox" style="margin-bottom:10px">المراحل تُضاف وتُعدَّل من «خطط البرامج» ← تعديل الخطة ← «٤. الاختبارات». هنا إعدادات اختبار كل مرحلة وبنك أسئلتها. تنتهي المرحلة عندما يبلغ الطالب بتنفيذه الفعلي (ما رُصد له في المهمة الأساسية) القيمة المحددة في «عمود النهاية»، لا بالتقويم. ويستمر بعدها (مثل أيام المراجعة) حتى يصل إلى يوم التوقف، فتتوقف خطته حتى يجتاز اختبار المرحلة. أيام التوقف لا تُحسب تعثرًا ولا تقدّمًا في الخطة.</div>
     ${stages.map((st, i) => { const b = A.stageBounds(P, st), e = X.examByStage[st.id];
       const onHold = (D.holds || []).filter(h => h.stage_id === st.id && !h.hold_to && D.studentById[h.student_id]).length, passed = (D.holds || []).filter(h => h.stage_id === st.id && h.hold_to).length;
       return `<div class="tcard" style="margin-bottom:10px" data-st="${st.id}">
@@ -1254,7 +1256,7 @@ SECTIONS.actions = async el => {
   X_openCache = X.fa;
   if (!el.isConnected) return;
   const openOf = sid => X.fa.find(f => f.student_id === sid && !f.closed_at);
-  // المتعثرون: من له أيام تعثر في نافذة الاحتساب حسب قواعد خطته (يوم لم يُنفّذ فيه صاحب الإنجاز مهمة الإنجاز)
+  // المتعثرون: من له أيام تعثر في نافذة الاحتساب حسب قواعد خطته
   const struggling = actives().filter(s => s.assign).map(s => {
     const P = s.planObj, m = X.pc[s.id], sb = A.stumbleInfo(m, P);
     const il = m?.iltizam == null ? null : Math.round(+m.iltizam), last = lastRecOf(s);
@@ -1278,7 +1280,7 @@ SECTIONS.actions = async el => {
   $('#newCase').onclick = () => openCase(null);
   cardFull($('#acCard'));
   if (AC.tab === 'struggling') {
-    $('#acT').textContent = 'الطلاب المتعثرون'; $('#acTools').innerHTML = '<span class="hint">يوم التعثر: يوم خطة لم يُنفّذ فيه صاحب الإنجاز (الطالب أو المعلم حسب الخطة) مهمة الإنجاز، بلا استئذان ولا تعويض. يُحسب في نافذة الاحتساب من قواعد الخطة.</span>';
+    $('#acT').textContent = 'الطلاب المتعثرون'; $('#acTools').innerHTML = '<span class="hint">يوم التعثر: يوم خطة لم يُنفَّذ فيه شيء من «المهمة الأساسية» (برصد المعلم أو تعليم الطالب حسب الخطة)، بلا استئذان ولا تعويض. اليوم الناقص ليس تعثرًا. يُحسب في نافذة الاحتساب من قواعد الخطة.</span>';
     dataTable($('#acTbl'), { rows: struggling, sortKey: 'sev', dir: -1, pageSize: 200, onRow: r => studentFile(r.s.id), cols: [
       { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
       { key: 'reasons', label: 'سبب التعثر', val: r => r.reasons.join('، '), html: r => r.reasons.map(x => `<span class="pill warn" style="margin:1px">${esc(x)}</span>`).join(' ') },
@@ -1386,7 +1388,7 @@ SECTIONS.honor = async el => {
   el.innerHTML = `${secHead('لوحة الشرف', 'الترتيب حسب الالتزام، وبجانبه مستوى الضبط', 'gold', `<select id="hP" style="width:auto">${opt('month', 'هذا الشهر', st.period === 'month')}${opt('30', 'آخر 30 يومًا', st.period === '30')}${opt('all', 'منذ البداية', st.period === 'all')}</select><select id="hPl" style="width:auto"><option value="">كل الخطط</option>${D.plans.map(p => opt(p.id, p.name, p.id === st.plan)).join('')}</select>`)}
     <div class="card" id="hCard"><div class="head"><h3>${st.period === 'month' ? 'متميزو الشهر' : st.period === '30' ? 'متميزو آخر 30 يومًا' : 'المتميزون منذ البداية'}</h3></div>
       ${shown.map((x, i) => `<div class="rank-row"><span class="r">${i + 1}</span><b>${esc(x.name)}</b><span class="small muted">الضبط ${x.dabt != null ? Math.round(+x.dabt) + '٪' : '—'} · ${fmtNum(x.memorized, 1)} حديث · ${x.sessions} جلسة${x.teacher_name ? ' · ' + esc(x.teacher_name) : ''}</span><b class="num" style="color:var(--teal)">${Math.round(+x.iltizam)}٪ التزام</b></div>`).join('') || '<div class="empty">لا توجد بيانات في هذه الفترة</div>'}
-      ${list.length > 10 ? `<button class="btn ghost block" id="hMore" style="margin-top:8px">${st.more ? 'عرض أول 10 فقط' : 'عرض المزيد (' + list.length + ')'}</button>` : ''}</div>`;
+      ${list.length > 10 ? `<button class="btn ghost block" id="hMore" style="margin-top:8px">${st.more ? 'عرض أول 10 فقط' : 'عرض الكل (' + list.length + ' طالبًا)'}</button>` : ''}</div>`;
   cardFull($('#hCard'));
   $('#hP').onchange = e => { st.period = e.target.value; st.more = false; route(); };
   $('#hPl').onchange = e => { st.plan = e.target.value; route(); };
@@ -1398,7 +1400,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127s&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127t&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
@@ -1600,10 +1602,10 @@ SECTIONS.notify = async el => {
       <div id="nSub" style="margin-top:8px"></div>
       <label class="f" for="nT" style="margin-top:8px">العنوان<input id="nT" type="text"></label>
       <label class="f" for="nB" style="margin-top:8px">النص<textarea id="nB"></textarea></label>
-      <div class="chips" style="margin-top:8px"><label><input type="checkbox" checked disabled>داخل المنصة</label><label><input type="checkbox" id="nMail">بريد إلكتروني</label><label><input type="checkbox" id="nPush" checked>إشعار الجوال</label></div>
+      <div class="chips" style="margin-top:8px"><label><input type="checkbox" checked disabled>داخل المنصة</label><label title="لم تُربط خدمة إرسال البريد بعد"><input type="checkbox" id="nMail" disabled>بريد إلكتروني (غير مفعّل بعد)</label><label><input type="checkbox" id="nPush" checked>إشعار الجوال</label></div>
       <p class="hint" style="margin-top:6px" id="nCount"></p>
       <button class="btn" id="nGo" style="margin-top:8px">إرسال</button>
-      <div class="hintbox" style="margin-top:10px">الرسالة تظهر فورًا في صندوق إشعارات الطالب داخل المنصة. البريد وإشعار الجوال يُسجَّلان الآن «بانتظار خدمة الإرسال»، وعند تفعيل خدمة البريد ومفاتيح الإشعارات تُرسَل تلقائيًا دون تكرار.</div></div>
+      <div class="hintbox" style="margin-top:10px">الرسالة تظهر فورًا في صندوق الإشعارات داخل المنصة (رمز الجرس). «إشعار الجوال» يصل خلال دقيقة لمن فعّل الإشعارات على جواله من صفحته، ولمن لم يفعّلها يُسجَّل «لا يوجد جهاز مفعّل». البريد غير مفعّل حتى تُربط خدمة إرسال بريد.</div></div>
       <div class="card span7" id="nCard"><div class="head"><h3>سجل الإشعارات</h3></div><div id="nTbl"></div></div></div>`;
   const sub = () => {
     const a = $('#nAud').value;
@@ -1679,7 +1681,7 @@ SECTIONS.reports = async el => {
     <div class="sec-h" style="--c:var(--green)"><b>إنجاز الطلاب</b><span>اضغط على العنوان للترتيب، وعلى الطالب لفتح ملفه</span></div>
     <div class="card c-green" id="achCard"><div class="head"><h3>جدول الإنجاز</h3></div><div id="achTbl"></div></div></div>`;
   dataTable($('#achTbl'), { rows: per.map(x => ({ s: x.s, name: x.s.name, teacher: x.s.teacher, room: x.s.room, expected: x.st.expected, ach: x.st.achDays, present: x.st.present, makeup: x.st.makeup, review: x.st.review_only, excused: x.st.excused, absent: x.st.stumbles, pct: x.st.pct, avg: x.st.avg, mem: x.st.memorized, last: x.st.last })), sortKey: 'pct', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
-    { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'expected', label: 'أيام الخطة', num: true }, { key: 'ach', label: 'أيام الإنجاز', num: true },
+    { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'expected', label: 'أيام الخطة', num: true }, { key: 'ach', label: 'أيام الحضور', num: true },
     { key: 'present', label: 'حضور', num: true }, { key: 'makeup', label: 'تعويض', num: true }, { key: 'review', label: 'ربط ومراجعة', num: true }, { key: 'excused', label: 'استئذان', num: true }, { key: 'absent', label: 'أيام التعثر', num: true, html: r => r.absent ? `<b style="color:var(--red)">${r.absent}</b>` : '0' },
     { key: 'pct', label: 'مستوى الإنجاز', num: true, html: r => r.pct == null ? '—' : `<b style="color:${pctColor(r.pct)}">${r.pct}٪</b>` },
     { key: 'avg', label: 'متوسط الدرجة', num: true, html: r => r.avg == null ? '—' : fmtNum(r.avg, 2) }, { key: 'mem', label: 'المحفوظ', num: true, html: r => fmtNum(r.mem, 1) }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' }] });
