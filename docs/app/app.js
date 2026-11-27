@@ -163,12 +163,45 @@
 
   // يوم الخطة الحالي للطالب
   // أيام التوقف للاختبار (assign.holds) لا تُقدّم الخطة
-  function planDayFor(assign, plan, daysCount, onDate) {
+  // مسار الطالب حسب التنفيذ الفعلي (plan_timeline): صف لكل يوم عمل فيه يوم الخطة الذي كان عليه، وكم تقدّم، وما بلغه في المهمة الأساسية
+  async function loadTimeline(assigns, studentId) {
+    const list = (assigns || []).filter(Boolean); if (!list.length) return;
+    const rows = await fetchAll(() => db.rpc('plan_timeline', { p_student: studentId || null, p_plan: null }).order('student_id').order('dt'));
+    const by = {}; (rows || []).forEach(r => (by[r.student_id] ||= []).push(r));
+    list.forEach(a => { a.tl = by[a.student_id] || []; a.tlMap = Object.fromEntries(a.tl.map(r => [r.dt, r])); });
+  }
+  // صف المسار لليوم d، أو آخر صف قبله
+  function tlAt(assign, d) {
+    if (!assign?.tl?.length) return null;
+    if (assign.tlMap?.[d]) return assign.tlMap[d];
+    let lo = 0, hi = assign.tl.length - 1, best = null;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (assign.tl[m].dt <= d) { best = assign.tl[m]; lo = m + 1; } else hi = m - 1; }
+    return best;
+  }
+  // after: بعد رصد ذلك اليوم (لنموذج المعلم)، وإلا فيوم الخطة في بدايته
+  function planDayFor(assign, plan, daysCount, onDate, after) {
     if (!assign || !plan) return null;
     const d = onDate || todayMakkah(), wd = plan.workdays || [0, 1, 2, 3, 4];
+    if (assign.tl) {
+      const r = tlAt(assign, d), cap = daysCount || 1;
+      if (!r) return Math.min(Math.max(1, assign.start_day || 1), cap);
+      return Math.min(Math.max(1, r.dt === d && !after ? r.day_n : r.day_n + r.adv), cap);
+    }
     let n = workdaysBetween(assign.start_date, d, wd);
     (assign.holds || []).forEach(h => { const a = h.hold_from > assign.start_date ? h.hold_from : assign.start_date; const e = h.hold_to ? addDays(h.hold_to, -1) : d; const b = e < d ? e : d; if (a <= b) n -= workdaysBetween(a, b, wd); });
     return Math.min(Math.max(1, (assign.start_day || 1) + n - 1), daysCount || 1);
+  }
+  // مقدار المهمة الأساسية المطلوب في يوم: يبدأ بعد آخر ما رُصد له، فيُضاف الباقي من الأيام السابقة لواجب اليوم
+  function dueRange(assign, P, dayN, d, after) {
+    const mc = (P?.cols || []).find(c => c.is_progress && !c.detail_of && ['start', 'single'].includes(c.range_role));
+    if (!mc || mc.range_role !== 'start' || !assign?.tl) return null;
+    const mp = (P.cols || []).find(c => c.id === mc.pair_column_id), v = P.days?.[dayN]?.vals || {};
+    const num = x => x != null && x !== '' && !isNaN(+x) ? +x : null, f = num(v[mc.id]), t = mp ? num(v[mp.id]) : f;
+    if (f == null || t == null) return null;
+    const r = tlAt(assign, d || todayMakkah()); if (!r) return { mc, mp, from: f, to: t, carry: 0, planFrom: f };
+    const cov = +(r.dt === (d || todayMakkah()) && !after ? r.cov0 : r.cov1);
+    const from = cov + 1 <= t ? cov + 1 : f;
+    return { mc, mp, from, to: t, planFrom: f, carry: Math.max(0, f - from), ahead: Math.max(0, from - f), unit: (String(mc.header).match(/(?:من|إلى)\s+([^\s\d]+)/) || [])[1] || '' };
   }
   // هل الطالب متوقف للاختبار في هذا اليوم؟
   const holdOn = (assign, d) => (assign?.holds || []).find(h => d >= h.hold_from && (!h.hold_to || d < h.hold_to)) || null;
@@ -188,7 +221,7 @@
   // X = { P (cols, days), stages, exams (بالمرحلة), attempts, assign (holds), recs, progress: Set(plan_day_id|column_id) }
   function stageStatus(X) {
     const { P, assign } = X; if (!P || !assign || !(X.stages || []).length) return [];
-    const nDays = Object.keys(P.days || {}).length, dayN = planDayFor(assign, P, nDays, todayMakkah());
+    const nDays = Object.keys(P.days || {}).length, dayN = planDayFor(assign, P, nDays, todayMakkah(), true);
     const days = Object.values(P.days || {}).sort((a, b) => a.day_number - b.day_number);
     const num = v => v != null && v !== '' && !isNaN(+v) ? +v : null;
     const out = []; let from = 0;
@@ -199,7 +232,8 @@
       let cur = null;
       if (st.basis === 'recitation') (X.recs || []).forEach(r => { if (!['present', 'makeup', 'review_only'].includes(r.status)) return; [col.id, pair].forEach(k => { const v = num(r.vals?.[k]); if (v != null && (cur == null || v > cur)) cur = v; }); });
       else if (st.basis === 'execution') days.forEach(d => { if (d.day_number > dayN) return; if ([col.id, pair].some(k => X.progress?.has(d.id + '|' + k))) { const v = num(d.vals?.[col.id]); if (v != null && (cur == null || v > cur)) cur = v; } });
-      else for (let k = dayN; k >= 1 && cur == null; k--) cur = num(P.days[k]?.vals?.[col.id]);
+      else if (assign.tl?.length && col.is_progress) cur = +assign.tl[assign.tl.length - 1].cov1 || null;  // ما بلغه فعلًا في المهمة الأساسية
+      else for (let k = dayN - 1; k >= 1 && cur == null; k--) cur = num(P.days[k]?.vals?.[col.id]);
       const to = +st.end_value, c = cur ?? from;
       const e = X.exams?.[st.id], mine = e ? (X.attempts || []).filter(a => a.exam_id === e.id) : [], best = mine.filter(a => a.status === 'graded').sort((a, b) => (+b.score || 0) - (+a.score || 0))[0];
       const hold = (assign.holds || []).find(h => h.stage_id === st.id);
@@ -211,7 +245,7 @@
     });
     return out;
   }
-  const BASIS = { plan: 'حسب أيام الخطة', recitation: 'حسب ما سمّعه للمعلم', execution: 'حسب ما نفّذه الطالب' };
+  const BASIS = { plan: 'حسب التنفيذ الفعلي', recitation: 'حسب ما سمّعه للمعلم', execution: 'حسب ما نفّذه الطالب' };
   // الختم المتوقع بسرعة الطالب الفعلية: أيام الإنجاز الباقية ÷ (أيام منجزة لكل يوم خطة مضى)
   function finishDate(m, P) {
     if (!m || !m.ach_total) return null;
@@ -261,7 +295,7 @@
     const fin = P && commit?.ach_total ? finishDate(commit, P) : null, sb = P && commit ? stumbleInfo(commit, P) : null;
     const S = { progress: ['', ''], done: ['أنهى المرحلة', 'info'], hold: ['بانتظار الاختبار', 'warn'], grading: ['بانتظار التصحيح', 'violet'], passed: ['اجتاز', 'ok'] };
     return `<div class="card" style="--a:var(--gold);padding:10px 12px;margin-bottom:10px">
-      ${commit ? `<div class="row small" style="margin-bottom:${list.length ? 6 : 0}px;flex-wrap:wrap;gap:4px 12px"><span>الالتزام التراكمي <b style="font-size:15px">${commit.iltizam == null ? '—' : Math.round(+commit.iltizam) + '٪'}</b></span><span>الضبط <b style="font-size:15px">${commit.dabt == null ? '—' : Math.round(+commit.dabt) + '٪'}</b></span>${commit.ach != null ? `<span>الإنجاز <b style="font-size:15px">${Math.round(+commit.ach)}٪</b></span>` : ''}${fin ? `<span>الختم المتوقع <b>${finishText(fin)}</b></span>` : ''}${sb && sb.inWin ? `<span class="pill ${sb.sev >= 3 ? 'bad' : 'warn'}">${sb.label} · ${sb.inWin} يوم تعثر${sb.window ? ' في آخر ' + sb.window : ''}</span>` : ''}</div>` : ''}
+      ${commit ? `<div class="row small" style="margin-bottom:${list.length ? 6 : 0}px;flex-wrap:wrap;gap:4px 12px"><span>الالتزام التراكمي <b style="font-size:15px">${commit.iltizam == null ? '—' : Math.round(+commit.iltizam) + '٪'}</b></span><span>الضبط <b style="font-size:15px">${commit.dabt == null ? '—' : Math.round(+commit.dabt) + '٪'}</b></span>${commit.ach != null ? `<span title="${commit.ach_days} من ${commit.ach_due} مستحق حتى أمس">الإنجاز <b style="font-size:15px">${Math.round(+commit.ach)}٪</b></span>` : ''}${fin ? `<span>الختم المتوقع <b>${finishText(fin)}</b></span>` : ''}${sb && sb.inWin ? `<span class="pill ${sb.sev >= 3 ? 'bad' : 'warn'}">${sb.label} · ${sb.inWin} يوم تعثر${sb.window ? ' في آخر ' + sb.window : ''}</span>` : ''}</div>` : ''}
       ${list.map(x => `<div style="padding:5px 0;border-top:1px dashed var(--line,#e5e5e5)"><div class="row small"><b>${esc(x.st.name)}</b><span>${x.state === 'progress' ? `باقي <b>${fmtNum(x.remaining)}</b> ${esc(x.unit)}` : `<span class="pill ${S[x.state][1]}">${S[x.state][0]}</span>`}${x.best ? ` · الاختبار <b>${fmtNum(x.best.score, 1)}٪</b>${x.state !== 'passed' ? ` (${x.tries} من ${x.e.max_attempts})` : ''}` : ''}</span></div>
         ${x.state === 'progress' ? `<div style="height:6px;border-radius:5px;background:#eef2f2;margin-top:4px;overflow:hidden"><div style="height:100%;width:${x.pct}%;background:linear-gradient(90deg,#CBB994,#0F2F33)"></div></div>` : ''}</div>`).join('')}</div>`;
   }
@@ -521,7 +555,7 @@
       if (!a || !P) { fa.innerHTML = '<div class="card c-red"><div class="error" style="margin:0">لم تُسند للطالب خطة بعد، فلا يظهر نموذج الرصد. اطلب من المشرف إسناد خطة له.</div></div>'; return; }
       if (P.recitation_mode === 'none') { fa.innerHTML = `<div class="card"><div class="hintbox">خطة الطالب «${esc(P.name)}» بلا تسميع، فلا يُرصد له تسميع.</div></div>`; return; }
       const nDays = Object.keys(P.days).length;
-      const dayN = planDayFor(a, P, nDays);
+      const dayN = planDayFor(a, P, nDays, TODAY, true);
       const recDay = isRecitationDay(P, TODAY);
       const recDays = P.recitation_mode === 'daily' ? P.workdays : P.recitation_days;
       const mkWin = P.discipline_rules?.makeup_within_days ?? 14;
@@ -530,9 +564,10 @@
       const missed = [];
       for (let i = 1, d = addDays(TODAY, -1); i <= Math.max(mkWin, 1) && d >= a.start_date; i++, d = addDays(d, -1)) if (isRecitationDay(P, d) && !done.has(d)) missed.push(d);
       const ed = S.editing, st = S.status;
-      const targetDayN = st === 'makeup' && S.makeup ? planDayFor(a, P, nDays, S.makeup) : dayN;
+      const targetDayN = a.tl ? dayN : st === 'makeup' && S.makeup ? planDayFor(a, P, nDays, S.makeup) : dayN;
       const day = P.days[targetDayN];
-      const vals = Object.assign({}, ed ? (ed.vals || {}) : (day?.vals || {}), S.draft || {});
+      const due = !ed ? dueRange(a, P, targetDayN, TODAY, true) : null;
+      const vals = Object.assign({}, ed ? (ed.vals || {}) : (day?.vals || {}), due ? { [due.mc.id]: due.from, ...(due.mp ? { [due.mp.id]: due.to } : {}) } : {}, S.draft || {});
       const tTasks = groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both');
       const refTasks = groupTasks(P.cols, c => c.executor === 'info');
       const showFields = ['present', 'makeup', 'review_only'].includes(st);
@@ -563,8 +598,9 @@
         ${showFields ? `<div class="stack" style="margin-top:12px">
           ${tTasks.filter(t => !reviewOnly || t.task !== 'memo').map(t => { const gi = graded.findIndex(g => g.key === t.key), det = taskDetails(t, day?.vals), dDeg = dayDegrees(P, day?.vals);
             const tParty = commitParties(P).t, deg = dDeg[t.key] == null ? null : Math.round(dDeg[t.key] * tParty);
-            return `<div class="task-f"><div class="row"><b>${esc(t.name)}${perTask ? (gi >= 0 ? ` <span class="pill violet">تقييم الضبط${graded.length > 1 ? ' ' + Math.round(gW[gi] * 100) + '٪' : ''}</span>` : '') : ''}${deg != null && tParty ? ` <span class="pill gold" title="رصدك لهذه المهمة يحسب للطالب في الالتزام">${deg} درجة</span>` : ''}${gi < 0 && deg == null ? ' <span class="pill plain">رصد فقط</span>' : ''}</b><span class="hint">المقرر${st === 'makeup' ? ' ليوم التعويض' : ''}: ${esc(fmtTaskVal(t, day?.vals) ?? '—')}</span></div>
+            return `<div class="task-f"><div class="row"><b>${esc(t.name)}${perTask ? (gi >= 0 ? ` <span class="pill violet">تقييم الضبط${graded.length > 1 ? ' ' + Math.round(gW[gi] * 100) + '٪' : ''}</span>` : '') : ''}${deg != null && tParty ? ` <span class="pill gold" title="رصدك لهذه المهمة يحسب للطالب في الالتزام">${deg} درجة</span>` : ''}${gi < 0 && deg == null ? ' <span class="pill plain">رصد فقط</span>' : ''}</b><span class="hint">المقرر: ${esc(fmtTaskVal(t, due ? { ...(day?.vals || {}), [due.mc.id]: due.from, ...(due.mp ? { [due.mp.id]: due.to } : {}) } : day?.vals) ?? '—')}</span></div>
               ${det.length ? `<div class="hint" style="margin:2px 0 4px">${det.map(([n, v]) => esc(n) + ': ' + esc(v)).join(' · ')}</div>` : ''}
+              ${due && t.cols.some(c => c.id === due.mc.id) ? `${due.carry ? `<div class="notice" style="margin:4px 0;font-size:12px">أُضيف لواجب اليوم ${fmtNum(due.carry)} ${esc(due.unit || '')} لم تُسمَّع سابقًا: من ${fmtNum(due.from)} بدل ${fmtNum(due.planFrom)}</div>` : ''}<div id="rwShort" class="small" style="color:var(--red);margin:2px 0;display:none"></div>` : ''}
               <div class="g2">${t.cols.map(field).join('')}</div>${perTask && gi >= 0 && !reviewOnly && (R.deductions || []).length ? dedBox(t.key, 'أخطاء ' + esc(t.name)) : ''}</div>`; }).join('') || '<div class="hint">لا توجد أعمدة يرصدها المعلم في هذه الخطة.</div>'}
           ${refTasks.map(t => { const v = fmtTaskVal(t, day?.vals); return v == null ? '' : `<div class="task-f ref"><b>${esc(t.name)} <span class="hint">للعرض</span></b><span class="small">${t.cols[0].value_type === 'url' ? `<a href="${esc(day.vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(v)}</span></div>`; }).join('')}
         </div>
@@ -577,6 +613,12 @@
         <button class="btn block" id="rwSave" type="button" style="margin-top:12px">${ed ? 'حفظ التعديل' : 'رصد الجلسة'}</button>
       </div>`;
       const keep = () => { S.draft = {}; $$('[data-c]', fa).forEach(i => { S.draft[i.dataset.c] = i.type === 'checkbox' ? i.checked : (i.value === '' ? null : (i.type === 'number' ? Number(i.value) : i.value)); }); S.notes = $('#rwNotes', fa).value; if ($('#rwT', fa)) S.teacherId = $('#rwT', fa).value; };
+      // تنبيه أحمر إذا رُصد أقل من الواجب
+      const shortCheck = () => { const box = $('#rwShort', fa); if (!box || !due) return; const fi = $(`[data-c="${due.mc.id}"]`, fa), ti = due.mp ? $(`[data-c="${due.mp.id}"]`, fa) : fi;
+        const f = fi && fi.value !== '' ? +fi.value : null, t = ti && ti.value !== '' ? +ti.value : null;
+        const got = f != null && t != null && t >= f ? t - Math.max(f, due.from) + 1 : 0, need = due.to - due.from + 1, miss = Math.max(0, need - Math.max(0, got));
+        box.style.display = f != null && miss > 0 ? '' : 'none'; box.textContent = `أقل من الواجب بـ ${fmtNum(miss)} ${due.unit || ''} (الواجب ${fmtNum(due.from)}–${fmtNum(due.to)}). يُضاف الباقي لواجبه القادم.`; };
+      if (due) { $$(`[data-c="${due.mc.id}"]${due.mp ? `, [data-c="${due.mp.id}"]` : ''}`, fa).forEach(i => i.addEventListener('input', shortCheck)); shortCheck(); }
       $$('[data-st]', fa).forEach(b => b.onclick = () => { keep(); S.status = b.dataset.st; if (S.status === 'makeup' && !S.makeup) { S.makeup = missed[0] || null; S.draft = null; } drawForm(); });
       $('#rwMk', fa) && ($('#rwMk', fa).onchange = e => { S.makeup = e.target.value; S.draft = null; drawForm(); });
       $$('[data-d]', fa).forEach(b => b.onclick = () => { keep(); const k = b.dataset.d, t = b.dataset.t; const box = t ? (S.ded.tasks[t] ||= {}) : S.ded; box[k] = Math.max(0, (box[k] || 0) + +b.dataset.v); drawForm(); });
@@ -740,5 +782,5 @@
 
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, finishDate, finishText, stumbleInfo, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
+    unionCount, planDayFor, loadTimeline, tlAt, dueRange, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, finishDate, finishText, stumbleInfo, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
 })();

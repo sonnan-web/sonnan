@@ -359,7 +359,7 @@ function tabRules() {
     <fieldset class="c-green"><legend>المهمة الأساسية والتقدّم في الخطة</legend>
       ${(() => { const T = (S.tasks || (tasksFromCols(), S.tasks)).find(x => x.is_progress); if (!T) return '<div class="errbox">لم تُحدَّد «المهمة الأساسية» بعد. علّمها في «المهام والأعمدة» ليُحسب مستوى الإنجاز والختم المتوقع وأيام التعثر.</div>';
         return `<div class="okbox">المهمة الأساسية: <b>${esc(taskTitle(T))}</b> · يُعدّ اليوم منجزًا إذا ${PB_TXT[progressBy(T)]}</div>`; })()}
-      <p class="hint" style="margin-top:6px">من يُعتبر منفّذها يُؤخذ تلقائيًا من «لمن تظهر» في المهمة ومن «تنفيذ الطالب» أعلاه. مستوى الإنجاز = الأيام التي نُفّذت فيها ÷ أيامها المستحقة منذ بداية الطالب. الختم المتوقع = أيامها الباقية بسرعة الطالب الفعلية، على «أيام تقدّم الخطة». ويوم التعثر = يوم مستحق لم تُنفَّذ فيه.</p>
+      <p class="hint" style="margin-top:6px">من يُعتبر منفّذها يُؤخذ تلقائيًا من «لمن تظهر» في المهمة ومن «تنفيذ الطالب» أعلاه. خطة الطالب تتقدّم بما نُفّذ منها فعلًا: إذا غاب يبقى على واجبه، وإذا نقص يُضاف الباقي لواجبه التالي، والمراحل والاختبارات تُحسب بما بلغه فعلًا. مستوى الإنجاز = ما رُصد منها ÷ المستحق حسب الخطة. الختم المتوقع = الباقي بسرعة الطالب الفعلية على «أيام تقدّم الخطة». يوم التعثر = يوم لم يُنفَّذ فيه شيء منها.</p>
     </fieldset>
 
     <fieldset class="c-red"><legend>الانضباط</legend>
@@ -768,7 +768,7 @@ async function tabExams() {
     ${stages.map((x, i) => { const b = stageBoundsP(x), e = exBy[x.id]; return `<div class="tcard" data-sid="${x.id}">
       <div class="thead"><span class="tnum">${i + 1}</span>
         <label class="f small">اسم المرحلة<input type="text" data-s="name" value="${esc(x.name)}"></label>
-        <label class="f small">تُحسب<select data-s="basis">${Object.entries(BASIS_L).map(([k, l]) => `<option value="${k}"${x.basis === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <span class="hint" style="align-self:center">تُحسب بالتنفيذ الفعلي: بما رُصد للطالب في المهمة الأساسية، لا بالتقويم.</span>
         <span class="tact"><button class="btn sm danger" type="button" data-sdel="${x.id}">حذف المرحلة</button></span></div>
       <div class="thead">
         <label class="f small">تنتهي المرحلة عند العمود<select data-s="end_column_id">${cOpt(x.end_column_id, '— اختر —')}</select></label>

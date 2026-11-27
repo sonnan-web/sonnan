@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127r">
+<link rel="stylesheet" href="app.css?v=20261127s">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127r"></script>
+<script src="app.js?v=20261127s"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -116,13 +116,16 @@ if (asg) {
     db.from('plan_stages').select('*').eq('plan_id', asg.plan_id).order('seq').then(r => r.data || []),
     db.from('exam_attempts').select('id, exam_id, attempt_no, status, score, passed, started_at, submitted_at, deadline_at').eq('student_id', stu.id).order('started_at', { ascending: false }).then(r => r.data || [])]);
   asg.holds = h; STG = sg; ATT = at;
+  await A.loadTimeline([asg], stu.id);
   if (sg.some(x => x.basis === 'execution')) { const { data: pr } = await db.from('plan_progress').select('plan_day_id, column_id').eq('student_id', stu.id); (pr || []).forEach(x => PROG.add(x.plan_day_id + '|' + x.column_id)); }
   if (sg.length) { const { data: ex } = await db.from('exams').select('*').in('stage_id', sg.map(x => x.id)); (ex || []).forEach(e => EXM[e.stage_id] = e); }
 }
 const planLive = P && P.status === 'active';
 const nDays = Object.keys(days).length;
 const dayN = planLive ? A.planDayFor(asg, P, nDays) : null;
-const today = dayN ? days[dayN] : null;
+// الواجب يبدأ بعد آخر ما سمّعه: الباقي من الأيام السابقة يُضاف لواجب اليوم
+const DUE = dayN ? A.dueRange(asg, { ...P, cols, days }, dayN, TODAY) : null;
+const today = dayN ? (DUE ? { ...days[dayN], vals: { ...days[dayN].vals, [DUE.mc.id]: DUE.from, ...(DUE.mp ? { [DUE.mp.id]: DUE.to } : {}) } } : days[dayN]) : null;
 let unreadCount = unread.count || 0;
 
 // الإحصاءات
@@ -243,7 +246,7 @@ SECTIONS.home = async el => {
       <div class="st" style="--c:var(--violet)"><b>${fmtNum(recs.filter(r => ['present', 'makeup'].includes(r.status)).length)}</b><span>جلسة تسميع</span></div>
     </div>
     ${M.ach != null ? `<div class="stats3">
-      <div class="st" style="--c:var(--teal)" title="أيام الإنجاز المنفّذة من أيام الإنجاز المستحقة حتى أمس"><b>${M.ach}٪</b><span>مستوى الإنجاز</span></div>
+      <div class="st" style="--c:var(--teal)" title="ما سمّعته من المهمة الأساسية مقارنة بالمستحق حسب خطتك حتى أمس"><b>${M.ach}٪</b><span>مستوى الإنجاز</span></div>
       <div class="st" style="--c:var(--gold)" title="بسرعتك الحالية"><b style="font-size:14px">${A.finishText(M.fin)}</b><span>الختم المتوقع</span></div>
       <div class="st" style="--c:var(--red)" title="أيام لم تُنفَّذ فيها مهمة الإنجاز${M.sb?.window ? ' في آخر ' + M.sb.window + ' يوم' : ''}"><b>${M.sb?.inWin ?? 0}</b><span>أيام التعثر</span></div>
     </div>` : ''}
@@ -254,7 +257,7 @@ SECTIONS.home = async el => {
       : !P ? '<div class="empty">لم تُسند لك خطة بعد. تواصل مع إدارة البرنامج.</div>'
       : !planLive ? '<div class="empty">خطتك لم تُفعَّل بعد.</div>'
       : !workToday ? '<div class="empty">اليوم ليس من أيام الخطة. استرح وراجع ما حفظت.</div>'
-      : `${visTasks.map(t => { const v = A.fmtTaskVal(t, today?.vals); const info = viewOnly(t); const can = canExec && !info; const on = t.cols.some(c => progress.has(c.id)); const isUrl = t.single?.value_type === 'url';
+      : `${DUE?.carry ? `<div class="notice gold" style="margin-bottom:6px">أُضيف لواجبك اليوم ${fmtNum(DUE.carry)} ${esc(DUE.unit || '')} لم تُسمِّعها بعد، فيبدأ واجبك من ${fmtNum(DUE.from)}.</div>` : ''}${visTasks.map(t => { const v = A.fmtTaskVal(t, today?.vals); const info = viewOnly(t); const can = canExec && !info; const on = t.cols.some(c => progress.has(c.id)); const isUrl = t.single?.value_type === 'url';
           return `<div class="task${on ? ' done' : ''}"><button type="button" class="tick ${can ? (on ? 'on' : '') : 'none'}" ${can ? `data-tick="${t.key}" aria-pressed="${on}" aria-label="${on ? 'إلغاء الإنجاز' : 'تم الإنجاز'}: ${esc(t.name)}"` : 'disabled aria-hidden="true"'}>${on ? '✓' : ''}</button>
             <div><b>${esc(t.single?.value_type === 'bool' ? (t.single.header || t.name).trim() : t.name)}${degToday[t.key] != null ? ` <span class="pill gold" style="font-size:10px">${degToday[t.key]} درجة</span>` : ''}</b><span class="v">${isUrl ? `<a href="${esc(today.vals[t.single.id])}" target="_blank" rel="noopener">فتح الرابط</a>` : t.single?.value_type === 'bool' ? esc(A.taskAmount(t, today?.vals, cols) || 'مطلوب اليوم') : t.task === 'repeat' ? esc(v) + ' مرة' : esc(v)}</span>${A.taskDetails(t, today?.vals).map(([n, x]) => `<span class="v" style="display:block;font-size:12px">${esc(n)}: ${esc(x)}</span>`).join('')}</div></div>`; }).join('') || '<div class="empty">لا مهام في هذا اليوم.</div>'}
       ${canExec && execN ? `<p class="hint" style="margin:2px 4px 0">${P.student_execution === 'counts' ? 'علّم على المهمة بعد إنجازها، ويدخل تنفيذك في تقييمك.' : 'علّم على المهمة بعد إنجازها لمتابعة نفسك.'}</p>` : ''}

@@ -173,3 +173,8 @@ update public.plan_columns set graded = counts where graded = false and counts;
 -- الإنجاز والتعثر الموحّدان: plan_columns.is_progress (مهمة الإنجاز) و program_plans.progress_by (من ينفّذ الإنجاز: teacher/student/either/both)
 -- والدالة plan_metrics(p_plan, p_from, p_to, p_student) ← iltizam, dabt, ach, ach_days, ach_due, ach_total, ach_left, elapsed, stumbles, stumble_dates
 -- و plan_commitment صارت غلافًا لها — انظر migration «plan_metrics» في Supabase للنص الكامل
+
+-- التقدّم بالتنفيذ الفعلي: plan_timeline(p_student, p_plan) يبني مسار كل طالب يومًا بيوم (يوم الخطة، التقدّم، ما بلغه في المهمة الأساسية، التعثر)
+-- يتقدّم يوم الخطة بكل جلسة رُصدت فيها المهمة الأساسية (أو تعليم الطالب حسب «لمن تظهر» وتنفيذ الطالب)، ولا يتقدّم في الغياب،
+-- وإذا سبق رصدُه أيامًا قادمة تُعدّ منجزة. plan_metrics و sync_stage_holds صارتا مبنيّتين عليه — انظر migrations:
+-- plan_timeline_execution, plan_timeline_access, plan_timeline_content_jump, plan_metrics_on_timeline, sync_stage_holds_on_timeline

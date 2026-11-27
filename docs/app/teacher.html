@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127r">
+<link rel="stylesheet" href="app.css?v=20261127s">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127r"></script>
+<script src="app.js?v=20261127s"></script>
 <style>
 .wrap{max-width:1200px;margin:0 auto;padding:12px max(14px,env(safe-area-inset-left,0px)) 90px}
 .room-card{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
@@ -91,6 +91,7 @@ const teacherName = Object.fromEntries(tchs.map(t => [t.id, uById[t.user_id]?.na
 // توقفات الاختبار مع كل إسناد (لتوقف تقدّم الخطة أثناء انتظار الاختبار)
 const holdsAll = await A.fetchAll(() => db.from('stage_holds').select('*'));
 assigns.forEach(a => a.holds = holdsAll.filter(h => h.student_id === a.student_id));
+await A.loadTimeline(assigns);
 const assignOf = Object.fromEntries(assigns.map(a => [a.student_id, a]));
 const roomOf = Object.fromEntries(ra.filter(a => a.assignee_type === 'student').map(a => [a.assignee_id, a.room_id]));
 const roomById = Object.fromEntries(rooms.map(r => [r.id, r]));

@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127r">
+<link rel="stylesheet" href="app.css?v=20261127s">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127r"></script>
+<script src="app.js?v=20261127s"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -94,6 +94,7 @@ async function loadCore() {
   D.plans = plans; D.planById = Object.fromEntries(plans.map(p => [p.id, p]));
   D.holds = holds;
   pa.forEach(a => a.holds = holds.filter(h => h.student_id === a.student_id));
+  await A.loadTimeline(pa);
   D.assignByStudent = Object.fromEntries(pa.map(a => [a.student_id, a]));
   D.roomOfStudent = {}; D.roomsOfTeacher = {};
   ra.forEach(a => { if (a.assignee_type === 'student') D.roomOfStudent[a.assignee_id] = a.room_id; else (D.roomsOfTeacher[a.assignee_id] ||= []).push(a.room_id); });
@@ -847,7 +848,7 @@ async function studentFile(id) {
   drawer('الطالب: ' + s.name, `
     <div class="row" style="justify-content:flex-start"><button class="btn" id="qEdit">تعديل البيانات</button><a class="btn ghost" href="student-file.html?id=${id}" target="_blank" rel="noopener">عرض الملف الكامل</a>${['withdrawn', 'dismissed'].includes(s.status) ? '<button class="btn gold" id="qBack">إعادة للانتظام</button>' : ''}</div>
     ${['withdrawn', 'dismissed'].includes(s.status) ? `<div class="hintbox">${s.status === 'withdrawn' ? 'انسحب الطالب' : 'فُصل الطالب'}، وتوقف دخوله للمنصة. سجلاته محفوظة.</div>` : ''}
-    <div class="card c-teal"><div class="minis">${mini('المحفوظ', fmtNum(st.memorized, 1), 'green')}${mini('مستوى الإنجاز', mm?.ach == null ? (st.pct == null ? '—' : st.pct + '٪') : Math.round(+mm.ach) + '٪', 'teal', mm?.ach_total ? `${mm.ach_days} من ${mm.ach_due} يومًا مستحقًا` : '')}${mini('الختم المتوقع', A.finishText(fin), 'gold', mm?.ach_left ? `باقي ${mm.ach_left} يوم إنجاز` : '')}${mini('الالتزام', mm?.iltizam == null ? '—' : Math.round(+mm.iltizam) + '٪', 'green')}${mini('الضبط', mm?.dabt == null ? '—' : Math.round(+mm.dabt) + '٪', 'blue')}${mini('أيام التعثر', fmtNum(mm?.stumbles ?? st.absences), 'red', sbi && sbi.sev >= 2 ? sbi.label : sbi?.window ? `${sbi.inWin} في آخر ${sbi.window} يوم` : '')}</div></div>
+    <div class="card c-teal"><div class="minis">${mini('المحفوظ', fmtNum(st.memorized, 1), 'green')}${mini('مستوى الإنجاز', mm?.ach == null ? (st.pct == null ? '—' : st.pct + '٪') : Math.round(+mm.ach) + '٪', 'teal', mm?.ach_total ? `${mm.ach_days} من ${mm.ach_due} مستحق حتى أمس` : '')}${mini('الختم المتوقع', A.finishText(fin), 'gold', mm?.ach_left ? `باقي ${mm.ach_left} حتى الختم` : '')}${mini('الالتزام', mm?.iltizam == null ? '—' : Math.round(+mm.iltizam) + '٪', 'green')}${mini('الضبط', mm?.dabt == null ? '—' : Math.round(+mm.dabt) + '٪', 'blue')}${mini('أيام التعثر', fmtNum(mm?.stumbles ?? st.absences), 'red', sbi && sbi.sev >= 2 ? sbi.label : sbi?.window ? `${sbi.inWin} في آخر ${sbi.window} يوم` : '')}</div></div>
     ${P ? `<div class="card c-teal"><div class="head"><h3>تقويم الشهر</h3><div class="row" style="gap:4px"><button class="btn ghost sm" id="smPrev" type="button">‹ السابق</button><b id="smLbl" class="small"></b><button class="btn ghost sm" id="smNext" type="button">التالي ›</button></div></div>
       <div class="hint" style="margin-bottom:6px">لكل يوم: حالة التسميع ثم حالة تنفيذ الواجب. اضغط على اليوم للتفاصيل.</div><div id="smCal"></div></div>` : '<div class="card c-teal"><h3>تقويم الشهر</h3><div class="empty">الطالب غير مسند إلى خطة، فلا يوجد له تقويم. أسنده من «خطط البرامج» ← «إضافة طلاب».</div></div>'}
     <div class="card"><dl class="dl"><dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(s.email || '')}</dd><dt>الجوال</dt><dd dir="ltr" style="text-align:right">${esc(s.phone || '—')}</dd><dt>المعلم</dt><dd>${esc(s.teacher)}</dd><dt>الفترة</dt><dd>${esc(s.room)}</dd><dt>الخطة</dt><dd>${esc(s.plan)}</dd></dl></div>
@@ -1397,7 +1398,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127r&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127s&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
@@ -1669,7 +1670,7 @@ SECTIONS.reports = async el => {
     </div></div>
     <div class="grid">
       <div class="card span5 c-teal"><div class="head"><h3>توزيع حالات الرصد</h3></div>${donut(['present', 'makeup', 'review_only', 'excused'].map(k => [STATUS[k].label, by(k), STATUS[k].color]), 'جلسة')}</div>
-      <div class="card span7 c-green"><div class="head"><h3>نسبة الإنجاز للطلاب</h3></div>${donut(pctBands, 'طالب')}<p class="note">مستوى الإنجاز = الأيام التي نُفّذت فيها «مهمة الإنجاز» المحددة في الخطة (ممن حددته الخطة: الطالب أو المعلم) ÷ أيام الإنجاز المستحقة في الفترة، بعد طرح الاستئذان وأيام التوقف.</p></div>
+      <div class="card span7 c-green"><div class="head"><h3>نسبة الإنجاز للطلاب</h3></div>${donut(pctBands, 'طالب')}<p class="note">مستوى الإنجاز = ما رُصد من «المهمة الأساسية» ÷ المستحق حسب الخطة في الفترة، بعد طرح الاستئذان وأيام التوقف.</p></div>
       <div class="card span6 c-blue"><div class="head"><h3>الجلسات حسب المعلم</h3></div>${bars(tBars.map(x => [x[0], x[1]]), 'var(--blue)')}</div>
       <div class="card span6 c-violet"><div class="head"><h3>متوسط الدرجة حسب المعلم</h3></div>${bars(tBars.map(x => [x[0], x[2]]), 'var(--violet)', v => fmtNum(v, 2))}</div>
       <div class="card span12 c-amber"><div class="head"><h3>الجلسات اليومية</h3></div><div class="cols-chart">${perDay.map(([d, n]) => `<div class="col" title="${A.greg(d)}: ${n}"><span class="v">${n || ''}</span><span class="bw"><span class="b" style="height:${(n / maxDay * 100).toFixed(1)}%"></span></span><span class="l">${d.slice(8)}</span></div>`).join('')}</div></div>
@@ -1727,9 +1728,9 @@ SECTIONS.summary = async el => {
       • <b>التسميع</b>: عدد الأحاديث التي سمّعها للمعلم (حفظ وربط ومراجعة)، و<b>المحفوظ المسمَّع</b> بلا تكرار للأحاديث المعادة.<br>
       • <b>الالتزام</b>: من المهام التي عليها درجة في الخطة: نصيب الطالب إذا علّم عليها، ونصيب المعلم إذا رصد فيها قيمة، حسب «القواعد ← الالتزام». الأيام التي ليس فيها مهام عليها درجة لا تُحسب.<br>
       • <b>الضبط</b>: متوسط درجة التسميع ÷ الدرجة الكاملة، من المهام المعلّمة «تقييم الضبط».<br>
-      • <b>مستوى الإنجاز</b>: الأيام التي نُفّذت فيها «مهمة الإنجاز» المحددة في الخطة (كالحفظ في خطة الحفظ)، ممن حددته الخطة في «القواعد ← الإنجاز» (الطالب أو المعلم أو أحدهما أو كلاهما) ÷ أيام الإنجاز المستحقة منذ بداية خطته، بعد طرح الاستئذان وأيام التوقف. والتعويض يُحسب لليوم الفائت.<br>
-      • <b>الختم المتوقع</b>: أيام الإنجاز الباقية في الخطة ÷ سرعة الطالب الفعلية (أيام منجزة لكل يوم خطة مضى)، تُعدّ من اليوم على أيام تقدّم الخطة.<br>
-      • <b>أيام التعثر</b>: كل يوم إنجاز مستحق لم يُنفّذ فيه صاحب الإنجاز مهمة الإنجاز. <b>الانضباط</b>: التنبيه والإنذار المستحقان حسب «القواعد ← الانضباط» في نافذة الاحتساب.<br>
+      • <b>مستوى الإنجاز</b>: ما رُصد للطالب في «المهمة الأساسية» (مثل عدد أحاديث الحفظ) ÷ ما كان مستحقًا عليه حسب الخطة منذ بدايته، بعد طرح الاستئذان وأيام التوقف. يتقدّم الطالب في خطته بما ينفّذه فعلًا، والباقي من يوم ناقص يُضاف لواجبه التالي.<br>
+      • <b>الختم المتوقع</b>: الباقي حتى نهاية الخطة ÷ سرعة الطالب الفعلية (ما ينجزه في يوم الخطة)، تُعدّ من اليوم على «أيام تقدّم الخطة».<br>
+      • <b>أيام التعثر</b>: كل يوم من أيام الخطة لم يُرصد فيه شيء من المهمة الأساسية (بلا استئذان ولا تعويض). اليوم الناقص ليس تعثرًا، وباقيه يُضاف لواجبه. <b>الانضباط</b>: التنبيه والإنذار المستحقان حسب «القواعد ← الانضباط» في نافذة الاحتساب.<br>
     </div></details>`;
   $$('[data-sp]', el).forEach(b => b.onclick = () => { st.preset = b.dataset.sp; route(); });
   $('#sF').onchange = e => { st.preset = 'custom'; st.from = e.target.value; route(); };
@@ -1809,7 +1810,7 @@ SECTIONS.summary = async el => {
     { ...n0('recited'), label: 'التسميع' }, { key: 'memorized', label: 'المحفوظ المسمَّع', num: true, html: x => fmtNum(x.memorized, 1) },
     { key: 'avg', label: 'متوسط الدرجة', num: true, html: x => x.avg == null ? '—' : fmtNum(x.avg, 2) },
     { key: 'commit', label: 'الالتزام', num: true, html: x => pctHtml(x.commit) }, { key: 'dabt', label: 'الضبط', num: true, html: x => pctHtml(x.dabt) }, { key: 'ach', label: 'مستوى الإنجاز', num: true, html: x => pctHtml(x.ach) + (x.achDue ? ` <span class="hint">${x.achDays}/${x.achDue}</span>` : '') },
-    { key: 'fin', label: 'الختم المتوقع', html: x => x.finT }, { ...n0('left'), label: 'أيام إنجاز باقية' }, { key: 'exams', label: 'الاختبارات', num: true, html: x => x.exams ? `${x.examsPassed}/${x.exams} <span class="hint">مجتاز</span>` : '—' },
+    { key: 'fin', label: 'الختم المتوقع', html: x => x.finT }, { ...n0('left'), label: 'الباقي حتى الختم' }, { key: 'exams', label: 'الاختبارات', num: true, html: x => x.exams ? `${x.examsPassed}/${x.exams} <span class="hint">مجتاز</span>` : '—' },
     { ...n0('recDays'), label: 'أيام التسميع' }, { ...n0('execDays'), label: 'أيام التنفيذ' }, { ...n0('excused'), label: 'الاستئذان' },
     { key: 'absent', label: 'أيام التعثر', num: true, html: x => x.absent ? `<b style="color:var(--red)">${x.absent}</b>` : '0' },
     { key: 'disc', label: 'الانضباط', filter: true, html: x => `<span class="pill ${x.discSev >= 3 ? 'bad' : x.discSev >= 2 ? 'bad' : x.discSev ? 'warn' : 'ok'}">${esc(x.disc)}</span>` },
@@ -1817,7 +1818,7 @@ SECTIONS.summary = async el => {
   $('#sExport').onclick = () => A.exportXlsx(`التقرير الإجمالي - ${from} إلى ${to}`, 'التقرير الإجمالي', [
     ['الطالب', x => x.name], ['البريد', x => x.email], ['الخطة', x => x.program], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['الجنس', x => x.gender], ['الجنسية', x => x.nat],
     ['الحفظ', x => x.memo], ['الربط', x => x.link], ['المراجعة', x => x.review], ['التكرار', x => x.repeat], ['التسميع', x => x.recited], ['المحفوظ المسمَّع', x => x.memorized],
-    ['متوسط الدرجة', x => x.avg == null ? null : +x.avg.toFixed(2)], ['نسبة التسميع ٪', x => x.recPct], ['نسبة التنفيذ ٪', x => x.exPct], ['الالتزام ٪', x => x.commit], ['الضبط ٪', x => x.dabt], ['مستوى الإنجاز ٪', x => x.ach], ['أيام الإنجاز المنفّذة', x => x.achDays], ['أيام الإنجاز المستحقة', x => x.achDue], ['الختم المتوقع', x => x.fin || x.finT], ['أيام إنجاز باقية', x => x.left], ['اختبارات', x => x.exams], ['اختبارات مجتازة', x => x.examsPassed],
+    ['متوسط الدرجة', x => x.avg == null ? null : +x.avg.toFixed(2)], ['نسبة التسميع ٪', x => x.recPct], ['نسبة التنفيذ ٪', x => x.exPct], ['الالتزام ٪', x => x.commit], ['الضبط ٪', x => x.dabt], ['مستوى الإنجاز ٪', x => x.ach], ['المنفّذ من المهمة الأساسية', x => x.achDays], ['المستحق من المهمة الأساسية', x => x.achDue], ['الختم المتوقع', x => x.fin || x.finT], ['الباقي حتى الختم', x => x.left], ['اختبارات', x => x.exams], ['اختبارات مجتازة', x => x.examsPassed],
     ['أيام التسميع', x => x.recDays], ['أيام التنفيذ', x => x.execDays], ['الاستئذان', x => x.excused], ['أيام التعثر', x => x.absent], ['الانضباط', x => x.disc], ['آخر رصد', x => x.last]], tbl.getRows());
 };
 
