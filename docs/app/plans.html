@@ -332,7 +332,7 @@ function tabRules() {
         <label class="f" for="wRec">نصيب المعلم من الالتزام <span class="hint">٪ عندما يرصد المهمة، والمجموع 100</span><input id="wRec" type="number" min="0" max="100" step="1" value="${P.recitation_weight ?? ''}" placeholder="مثال: 80"></label>
       </div><div id="wMsg"></div>` : ''}
       ${(P.student_execution === 'counts' && !rec) ? '<div class="note">الالتزام كله من تعليم الطالب (100٪) لأن الخطة بلا تسميع.</div>' : ''}
-      ${(P.student_execution !== 'counts' && rec) ? '<div class="note">الالتزام كله من رصد المعلم (100٪): المهمة التي يرصد فيها المعلم قيمة تُحسب للطالب. تعليم الطالب ${P.student_execution === \'none\' ? \'غير موجود\' : \'للمتابعة فقط\'}.</div>' : ''}
+      ${(P.student_execution !== 'counts' && rec) ? `<div class="note">الالتزام كله من رصد المعلم (100٪): المهمة التي يرصد فيها المعلم قيمة تُحسب للطالب. تعليم الطالب ${P.student_execution === 'none' ? 'غير موجود' : 'للمتابعة فقط'}.</div>` : ''}
       ${(!ex && !rec) ? '<div class="errbox">الخطة بلا تسميع وبلا تنفيذ عند الطالب، فلا يوجد ما يُحسب به الالتزام. اختر أحدهما على الأقل.</div>' : ''}
     </fieldset>
 
