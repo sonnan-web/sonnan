@@ -85,6 +85,15 @@ th{background:#EEF3F3;color:var(--primary);font-weight:800;font-size:11.5px;whit
 td input,td select{padding:4px 7px;font-size:12px}
 td select{min-width:118px}
 td.err{background:#FFF4F4;color:#8F2530}
+.tcard{border:1px solid var(--line,#dde3e5);border-inline-start:4px solid #CBB994;border-radius:12px;padding:10px 12px;background:#fff;display:grid;gap:8px}
+.tcard .thead{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:end}
+.tcard .thead .f{margin:0;min-width:130px}
+.tcard .tnum{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#0F2F33;color:#CBB994;font-weight:700;align-self:center}
+.tcard .tchk{display:inline-flex;gap:6px;align-items:center;font-size:13px;padding-bottom:8px;white-space:nowrap}
+.tcard .tact{margin-inline-start:auto;display:inline-flex;gap:4px;padding-bottom:2px}
+.tcard table.tcols td,.tcard table.tcols th{padding:5px 6px}
+.tcard tr.det td:first-child{padding-inline-start:22px}
+.tcard tr.det .hint{display:block;font-size:11px}
 td.emptyc{background:#FDE8E7;box-shadow:inset 0 0 0 1px #F1B9B5}
 .warnbox{border:1px solid #F1B9B5;background:#FFF7F6;color:#8F4A2B;border-radius:10px;padding:8px 12px;font-size:12px}
 
@@ -220,6 +229,7 @@ async function openPlan(id) {
   S.plan.score_rules = S.plan.score_rules || blankPlan().score_rules;
   S.plan.discipline_rules = Object.assign(blankPlan().discipline_rules, S.plan.discipline_rules || {});
   S.cols = c.data || [];
+  S.tasks = null;
   S.removedCols = [];
   S.days = d.data || [];
   S.imported = null; S.dirty = false; S.previewDay = 1; S.previewTicks = {}; S.previewDed = {};
@@ -232,6 +242,7 @@ function startNew() {
     newCol({ header: 'الحفظ إلى حديث', task: 'memo', range_role: 'end' })
   ];
   S.cols[0].pair_column_id = S.cols[1].id; S.cols[1].pair_column_id = S.cols[0].id;
+  S.tasks = null;
   S.removedCols = []; S.days = []; S.imported = null; S.tab = 'rules'; S.dirty = true;
   render();
 }
@@ -251,7 +262,7 @@ function render() {
         <div class="row" style="gap:6px">${S.dirty ? '<span class="pill warn">تغييرات غير محفوظة</span>' : P.id ? '<span class="pill ok">محفوظة</span>' : ''}<button class="btn" type="button" id="savePlan">حفظ الخطة</button></div>
       </div>
       <div class="tabs" role="tablist">
-        ${[['rules', '١. القواعد'], ['columns', '٢. أعمدة الخطة'], ['days', '٣. أيام الخطة والإكسل'], ['preview', '٤. المعاينة'], ['assign', '٥. الإسناد للطلاب']].map(t => `<button type="button" role="tab" data-tab="${t[0]}" aria-selected="${S.tab === t[0]}">${t[1]}</button>`).join('')}
+        ${[['rules', '١. القواعد'], ['columns', '٢. المهام والأعمدة'], ['days', '٣. أيام الخطة والإكسل'], ['preview', '٤. المعاينة'], ['assign', '٥. الإسناد للطلاب']].map(t => `<button type="button" role="tab" data-tab="${t[0]}" aria-selected="${S.tab === t[0]}">${t[1]}</button>`).join('')}
       </div>
       <div id="tab"></div>
     </section></div>`;
@@ -382,107 +393,151 @@ function weightMsg() {
   box.innerHTML = sum === 100 ? '<div class="okbox">مجموع الأوزان 100٪.</div>' : `<div class="errbox">مجموع الأوزان ${sum}٪، ويجب أن يكون 100٪.</div>`;
 }
 
-// ---------- ٢. الأعمدة ----------
+// ---------- ٢. المهام وأعمدتها ----------
+// المهمة وحدة واحدة: إعداداتها (لمن تظهر، التقييم، الوزن، الإلزام) لها كلها، وداخلها أعمدتها.
+// أول عمود (أو أول نطاق) هو قيمة المهمة، وباقي الأعمدة تفاصيل تظهر داخل بطاقتها.
+// «بداية نطاق» تُربط تلقائيًا بأول «نهاية نطاق» بعدها داخل المهمة نفسها.
 const COL_HELP = `
-  <details class="note"><summary><b>شرح كل خانة في الأعمدة</b> <span class="hint">(اضغط للفتح)</span></summary>
+  <details class="note"><summary><b>شرح المهام والأعمدة</b> <span class="hint">(اضغط للفتح)</span></summary>
   <ul style="margin:6px 0 0;padding-inline-start:18px;line-height:1.9">
-    <li><b>اسم العمود في الإكسل:</b> يجب أن يطابق رأس العمود في ملف الإكسل حرفيًا، وبه تتعرف المنصة على العمود عند الرفع. ويظهر أيضًا للمعلم والطالب.</li>
-    <li><b>المهمة:</b> نوع العمل: حفظ، ربط، مراجعة، تكرار، شرح، سماع، أو «مهمة أخرى» تكتب اسمها. أعمدة مهمة «حفظ» منها يُحسب عدد الأحاديث المحفوظة للطالب.</li>
-    <li><b>نوع القيمة:</b> رقم (مثل رقم الحديث أو عدد مرات التكرار)، نص (مثل اسم باب)، رابط (مثل رابط شرح يفتحه الطالب)، أو نعم/لا.</li>
-    <li><b>نعم/لا:</b> مهمة بلا قيمة، مثل «هل قرأت مقدار الشرح». في الإكسل تكتب «نعم» في الأيام التي فيها هذه المهمة وتتركها فارغة في غيرها. الطالب يرى علامة صح: إذا علّم عليها فهي نعم، وإذا لم يعلّم فهي لا.</li>
-    <li><b>دوره:</b> «قيمة مفردة» عمود مستقل. «بداية نطاق» و«نهاية نطاق» عمودان يُربطان معًا مثل «من حديث» و«إلى حديث»؛ البداية هي القيمة الدنيا والنهاية هي القيمة القصوى، وتتأكد المنصة أن البداية لا تزيد على النهاية.</li>
-    <li><b>يعرض مقدار (لأعمدة نعم/لا):</b> يربط المهمة بنطاق من الخطة، فيرى الطالب مثلًا «هل قرأت مقدار الشرح: من 10 إلى 11» مع علامة صح. علامة الصح = نعم، وبدونها = لا.</li>
-    <li><b>مرتبط بعمود:</b> العمود الآخر من النطاق. عند الربط يصبح العمودان مهمة واحدة تظهر «من … إلى …».</li>
-    <li><b>تفاصيل لـ (تحت «مرتبط بعمود»):</b> يجعل العمود معلومة داخل بطاقة مهمة أخرى بدل أن يكون مهمة مستقلة، مثل «حفظ من صفحة» و«نص الحديث» داخل مهمة «حفظ من حديث». يرى الطالب المهمة في بطاقة واحدة بعلامة إنجاز واحدة.</li>
-    <li><b>لمن تظهر:</b> «للطالب» تظهر في صفحته فقط. «للمعلم» تظهر في نموذج الرصد عند المعلم فقط. «للمعلم والطالب» تظهر للاثنين. «لا أحد» عمود للحساب فقط، لا يظهر لأحد، وتستخدمه المنصة في الحساب (مثل أرقام الصفحات). هل يعلّم الطالب على ما يظهر له؟ هذا تحدده «القواعد» ← تنفيذ الطالب.</li>
-    <li><b>في التقييم والوزن:</b> للمعلم: المهام المعلّمة «في التقييم» يرصد عليها الأخطاء وتُحسب منها درجة الجلسة (الضبط)، والباقي رصد فقط. للطالب: المهام المعلّمة يُحسب بها التزامه، وإن لم تُعلَّم مهمة فكل مهامه. الوزن الفارغ يأخذ الباقي من 100 بالتساوي.</li>
-    <li><b>إلزامي:</b> عند رفع الإكسل تظهر خاناته الفارغة بالأحمر الفاتح مع تنبيه، ويُقبل الرفع. الخانة الفارغة تعني أنه لا واجب في هذا العمود في ذلك اليوم.</li>
-    <li><b>التكرار:</b> قيمته رقم مفرد دائمًا (عدد مرات التكرار المطلوبة)، لذلك يُقفل نوع القيمة ودوره.</li>
+    <li><b>المهمة:</b> نوع العمل: حفظ، ربط، مراجعة، تكرار، شرح، سماع، أو «مهمة أخرى» تكتب اسمها. مهمة «حفظ» منها يُحسب عدد الأحاديث المحفوظة.</li>
+    <li><b>لمن تظهر:</b> «للطالب» في صفحته فقط، «للمعلم» في نموذج الرصد فقط، «للمعلم والطالب» للاثنين، «لا أحد» للحساب فقط. هل يعلّم الطالب على ما يظهر له؟ تحدده «القواعد» ← تنفيذ الطالب.</li>
+    <li><b>في التقييم والوزن:</b> للمعلم: المهمة المعلّمة يرصد عليها الأخطاء وتُحسب منها درجة الجلسة (الضبط)، وغيرها رصد فقط. للطالب: المهام المعلّمة يُحسب بها التزامه، وإن لم تُعلَّم مهمة فكل مهامه. الوزن الفارغ يأخذ الباقي من 100 بالتساوي.</li>
+    <li><b>إلزامي:</b> عند رفع الإكسل تظهر خانات المهمة الفارغة بالأحمر الفاتح مع تنبيه، ويُقبل الرفع. الخانة الفارغة تعني أنه لا واجب في ذلك اليوم.</li>
+    <li><b>أعمدة المهمة:</b> «اسم العمود في الإكسل» يجب أن يطابق رأس العمود في الملف حرفيًا. أول عمود أو أول نطاق هو قيمة المهمة، وباقي الأعمدة تفاصيل تظهر داخل بطاقتها (مثل صفحة الحفظ ونص الحديث).</li>
+    <li><b>نوع القيمة:</b> رقم، نص، رابط، أو نعم/لا (علامة صح: إذا علّم الطالب فهي نعم). في الإكسل تكتب «نعم» في الأيام التي فيها المهمة وتتركها فارغة في غيرها.</li>
+    <li><b>دوره:</b> «قيمة مفردة» عمود مستقل. «بداية نطاق» تُربط تلقائيًا بأول «نهاية نطاق» بعدها في المهمة نفسها، مثل «من حديث» و«إلى حديث». البداية لا تزيد على النهاية.</li>
+    <li><b>يعرض مقدار (لعمود نعم/لا):</b> يربطه بنطاق مهمة أخرى، فيرى الطالب مثلًا «هل قرأت مقدار الشرح: من حديث 10 إلى حديث 11».</li>
+    <li><b>التكرار:</b> عمود رقم مفرد دائمًا (عدد مرات التكرار المطلوبة).</li>
   </ul></details>`;
+function newTask(over) { return Object.assign({ _id: uid(), task: 'custom', task_label: '', executor: 'both', counts: false, weight: null, required: false, cols: [] }, over || {}); }
+// بناء المهام من الأعمدة المحفوظة
+function tasksFromCols() {
+  const cols = S.cols, byId = Object.fromEntries(cols.map(c => [c.id, c]));
+  const mainOf = (c, d = 0) => { if (d > 5) return c; if (c.detail_of && byId[c.detail_of]) return mainOf(byId[c.detail_of], d + 1); if (c.range_role === 'end' && c.pair_column_id && byId[c.pair_column_id]) return mainOf(byId[c.pair_column_id], d + 1); return c; };
+  const groups = new Map();
+  cols.forEach(c => { const m = mainOf(c); if (!groups.has(m.id)) groups.set(m.id, []); groups.get(m.id).push(c); });
+  S.tasks = [...groups.entries()].sort((a, b) => cols.indexOf(byId[a[0]]) - cols.indexOf(byId[b[0]])).map(([mid, cs]) => {
+    const m = byId[mid], ordered = [], seen = new Set();
+    const put = c => { if (!c || seen.has(c.id)) return; seen.add(c.id); ordered.push(c); if (c.range_role === 'start' && c.pair_column_id && byId[c.pair_column_id]) { seen.add(c.pair_column_id); ordered.push(byId[c.pair_column_id]); } };
+    put(m); cs.forEach(c => { if (c.range_role !== 'end' || !c.pair_column_id) put(c); }); cs.forEach(put);
+    return newTask({ task: m.task, task_label: m.task_label || '', executor: m.executor, counts: !!m.counts, weight: m.weight ?? null, required: !!m.required, cols: ordered });
+  });
+}
+// كتابة المهام إلى الأعمدة: خصائص المهمة، والترتيب، وربط النطاقات، والتفاصيل
+function syncCols() {
+  const out = [];
+  S.tasks.forEach(T => {
+    let open = null;
+    T.cols.forEach(c => {
+      Object.assign(c, { task: T.task, task_label: T.task === 'custom' ? T.task_label : '', executor: T.executor, counts: !!T.counts, weight: T.weight, required: !!T.required, pair_column_id: null, detail_of: null });
+      if (T.task === 'repeat') { c.value_type = 'number'; c.range_role = 'single'; }
+      if (c.value_type !== 'bool') c.shows_column_id = null;
+    });
+    T.cols.forEach(c => { if (c.range_role === 'start') open = c; else if (c.range_role === 'end' && open) { open.pair_column_id = c.id; c.pair_column_id = open.id; open = null; } });
+    const main = T.cols.find(c => c.range_role !== 'end') || T.cols[0];
+    T.cols.forEach(c => { if (!main || c === main || c.id === main.pair_column_id) return; if (c.range_role === 'end' && c.pair_column_id) return; c.detail_of = main.id; });
+    out.push(...T.cols);
+  });
+  S.cols = out;
+}
+const taskTitle = T => T.task === 'custom' ? (T.task_label || 'مهمة أخرى') : TASKS[T.task];
 function tabColumns() {
-  const cols = S.cols;
+  if (!S.tasks) tasksFromCols();
+  const P = S.plan, tasks = S.tasks;
   const issues = columnIssues();
-  const P = S.plan;
+  const rangeMains = tasks.flatMap(T => { const m = T.cols.find(c => c.range_role === 'start'); return m && m.header.trim() ? [[T, m]] : []; });
   $('#tab').innerHTML = `<div class="grid">
-    ${P.recitation_mode === 'none' && cols.some(c => c.executor === 'teacher' || c.executor === 'both') ? '<div class="errbox">الخطة بلا تسميع، فالأعمدة التي تظهر «للمعلم» لن يراها أحد. غيّر «لمن تظهر» أو فعّل التسميع.</div>' : ''}
-    ${P.student_execution === 'none' && cols.some(c => c.executor === 'student') ? '<div class="errbox">الخطة بلا تنفيذ عند الطالب، فالأعمدة التي تظهر «للطالب» يراها للاطلاع فقط دون تعليم.</div>' : ''}
-    <div class="table-wrap"><table>
-      <thead><tr><th>#</th><th>اسم العمود في الإكسل</th><th>المهمة</th><th>نوع القيمة</th><th>دوره</th><th>مرتبط بعمود</th><th>لمن تظهر</th><th>في التقييم</th><th>الوزن</th><th>إلزامي</th><th></th></tr></thead>
-      <tbody>${cols.map((c, i) => { const rep = c.task === 'repeat'; return `<tr data-i="${i}">
-        <td class="colnum">${i + 1}</td>
-        <td><input type="text" data-k="header" value="${esc(c.header)}" placeholder="مثال: الحفظ من حديث" style="min-width:150px"></td>
-        <td><select data-k="task">${Object.entries(TASKS).map(([k, v]) => `<option value="${k}"${c.task === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
-          ${c.task === 'custom' ? `<input type="text" data-k="task_label" value="${esc(c.task_label)}" placeholder="اسم المهمة" style="margin-top:4px">` : ''}</td>
-        <td><select data-k="value_type"${rep ? ' disabled title="التكرار رقم دائمًا"' : ''}>${Object.entries(VTYPES).filter(([k]) => !rep || k === 'number').map(([k, v]) => `<option value="${k}"${c.value_type === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td><select data-k="range_role"${rep ? ' disabled title="التكرار قيمة مفردة دائمًا"' : ''}>${Object.entries(ROLES).filter(([k]) => !rep || k === 'single').map(([k, v]) => `<option value="${k}"${c.range_role === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td>${c.value_type === 'bool' && c.range_role === 'single' ? `<select data-k="shows_column_id" title="يظهر للطالب مقدار هذا النطاق بجانب المهمة"><option value="">يعرض مقدار: لا</option>${cols.filter(o => o.range_role === 'start' && o.pair_column_id).map(o => { const e = cols.find(x => x.id === o.pair_column_id); return `<option value="${o.id}"${c.shows_column_id === o.id ? ' selected' : ''}>يعرض مقدار: ${esc((o.header || '').trim())} – ${esc((e?.header || '').trim())}</option>`; }).join('')}</select>`
-          : `<select data-k="pair_column_id"${rep ? ' disabled' : ''}><option value="">لا</option>${rep ? '' : cols.filter(o => o.id !== c.id && o.task !== 'repeat').map(o => `<option value="${o.id}"${c.pair_column_id === o.id ? ' selected' : ''}>${esc(o.header || 'عمود ' + (cols.indexOf(o) + 1))}</option>`).join('')}</select>`}${c.range_role !== 'end' && c.task !== 'repeat' && c.value_type !== 'bool' ? `<select data-k="detail_of" style="margin-top:4px" title="يظهر داخل بطاقة مهمة أخرى بلا علامة إنجاز مستقلة"><option value="">مهمة مستقلة</option>${cols.filter(o => o.id !== c.id && o.id !== c.pair_column_id && o.range_role !== 'end' && !o.detail_of && o.value_type !== 'bool').map(o => `<option value="${o.id}"${c.detail_of === o.id ? ' selected' : ''}>تفاصيل لـ: ${esc((o.header || '').trim())}</option>`).join('')}</select>` : ''}</td>
-        <td><select data-k="executor">${Object.entries({ ...EXEC, ...(EXEC_OLD[c.executor] ? { [c.executor]: EXEC_OLD[c.executor] } : {}) }).map(([k, v]) => `<option value="${k}"${c.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td style="text-align:center"><input type="checkbox" data-k="counts"${c.counts ? ' checked' : ''}${['info', 'none'].includes(c.executor) ? ' disabled' : ''}></td>
-        <td><input type="number" data-k="weight" min="0" step="1" value="${c.weight ?? ''}" style="width:70px"${c.counts && !['info', 'none'].includes(c.executor) ? '' : ' disabled'}></td>
-        <td style="text-align:center"><input type="checkbox" data-k="required"${c.required ? ' checked' : ''}></td>
-        <td style="white-space:nowrap"><button class="btn sm ghost" type="button" data-up="${i}" ${i ? '' : 'disabled'} aria-label="نقل لأعلى">↑</button> <button class="btn sm ghost" type="button" data-down="${i}" ${i < cols.length - 1 ? '' : 'disabled'} aria-label="نقل لأسفل">↓</button> <button class="btn sm danger" type="button" data-del="${i}">حذف</button></td>
-      </tr>`; }).join('')}</tbody></table></div>
-    <div class="row" style="justify-content:flex-start"><button class="btn sm gold" type="button" id="addCol">+ عمود</button><button class="btn sm ghost" type="button" id="addRange">+ نطاق (من / إلى)</button></div>
-    ${issues.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${issues.map(esc).join('<br>')}</div>` : '<div class="okbox">الأعمدة سليمة. أي تعديل هنا يظهر فورًا في تبويب «أيام الخطة والإكسل» وفي نموذج الإكسل الذي تنزّله.</div>'}
+    ${P.recitation_mode === 'none' && tasks.some(T => T.executor === 'teacher' || T.executor === 'both') ? '<div class="errbox">الخطة بلا تسميع، فالمهام التي تظهر «للمعلم» لن يراها أحد. غيّر «لمن تظهر» أو فعّل التسميع.</div>' : ''}
+    ${P.student_execution === 'none' && tasks.some(T => T.executor === 'student') ? '<div class="errbox">الخطة بلا تنفيذ عند الطالب، فالمهام التي تظهر «للطالب» يراها للاطلاع فقط دون تعليم.</div>' : ''}
+    ${tasks.map((T, ti) => { const rep = T.task === 'repeat', off = ['info', 'none'].includes(T.executor); return `<div class="tcard" data-ti="${ti}">
+      <div class="thead">
+        <span class="tnum">${ti + 1}</span>
+        <label class="f small">المهمة<select data-tk="task">${Object.entries(TASKS).map(([k, v]) => `<option value="${k}"${T.task === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+        ${T.task === 'custom' ? `<label class="f small">اسم المهمة<input type="text" data-tk="task_label" value="${esc(T.task_label)}" placeholder="مثال: قراءة التلخيص"></label>` : ''}
+        <label class="f small">لمن تظهر<select data-tk="executor">${Object.entries({ ...EXEC, ...(EXEC_OLD[T.executor] ? { [T.executor]: EXEC_OLD[T.executor] } : {}) }).map(([k, v]) => `<option value="${k}"${T.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+        <label class="tchk"><input type="checkbox" data-tk="counts"${T.counts ? ' checked' : ''}${off ? ' disabled' : ''}> في التقييم</label>
+        <label class="f small" style="width:90px">الوزن<input type="number" data-tk="weight" min="0" step="1" value="${T.weight ?? ''}" placeholder="بالتساوي"${T.counts && !off ? '' : ' disabled'}></label>
+        <label class="tchk"><input type="checkbox" data-tk="required"${T.required ? ' checked' : ''}> إلزامي</label>
+        <span class="tact"><button class="btn sm ghost" type="button" data-tup="${ti}" ${ti ? '' : 'disabled'} aria-label="نقل المهمة لأعلى">↑</button><button class="btn sm ghost" type="button" data-tdown="${ti}" ${ti < tasks.length - 1 ? '' : 'disabled'} aria-label="نقل المهمة لأسفل">↓</button><button class="btn sm danger" type="button" data-tdel="${ti}">حذف المهمة</button></span>
+      </div>
+      <div class="table-wrap"><table class="tcols"><thead><tr><th>اسم العمود في الإكسل</th><th>نوع القيمة</th><th>دوره</th><th></th></tr></thead><tbody>
+        ${T.cols.map((c, ci) => { const isMain = !c.detail_of && !(c.range_role === 'end' && c.pair_column_id && T.cols.find(x => x.id === c.pair_column_id)?.detail_of); return `<tr data-ci="${ci}"${isMain ? '' : ' class="det"'}>
+          <td><input type="text" data-k="header" value="${esc(c.header)}" placeholder="مثال: ${esc(taskTitle(T))} من حديث">${isMain ? '' : '<span class="hint">تفاصيل داخل المهمة</span>'}</td>
+          <td><select data-k="value_type"${rep ? ' disabled' : ''}>${Object.entries(VTYPES).filter(([k]) => !rep || k === 'number').map(([k, v]) => `<option value="${k}"${c.value_type === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
+            ${c.value_type === 'bool' ? `<select data-k="shows_column_id" style="margin-top:4px"><option value="">يعرض مقدار: لا</option>${rangeMains.filter(([O]) => O !== T).map(([O, m]) => `<option value="${m.id}"${c.shows_column_id === m.id ? ' selected' : ''}>يعرض مقدار: ${esc(taskTitle(O))}</option>`).join('')}</select>` : ''}</td>
+          <td><select data-k="range_role"${rep || c.value_type === 'bool' || c.value_type === 'url' ? ' disabled' : ''}>${Object.entries(ROLES).filter(([k]) => (!rep && !['bool', 'url'].includes(c.value_type)) || k === 'single').map(([k, v]) => `<option value="${k}"${c.range_role === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+          <td style="white-space:nowrap"><button class="btn sm ghost" type="button" data-cup="${ci}" ${ci ? '' : 'disabled'} aria-label="نقل العمود لأعلى">↑</button><button class="btn sm ghost" type="button" data-cdown="${ci}" ${ci < T.cols.length - 1 ? '' : 'disabled'} aria-label="نقل العمود لأسفل">↓</button><button class="btn sm danger" type="button" data-cdel="${ci}">حذف</button></td>
+        </tr>`; }).join('') || '<tr><td colspan="4" class="muted" style="text-align:center">أضف عمودًا لهذه المهمة.</td></tr>'}
+      </tbody></table></div>
+      <div class="row" style="justify-content:flex-start;gap:6px">${rep && T.cols.length ? '' : `<button class="btn sm gold" type="button" data-addcol="${ti}">+ عمود</button>${rep ? '' : `<button class="btn sm ghost" type="button" data-addrange="${ti}">+ نطاق (من / إلى)</button>`}`}</div>
+    </div>`; }).join('')}
+    <div class="row" style="justify-content:flex-start"><button class="btn gold" type="button" id="addTask">+ مهمة جديدة</button></div>
+    ${issues.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${issues.map(esc).join('<br>')}</div>` : '<div class="okbox">المهام والأعمدة سليمة. أي تعديل هنا يظهر فورًا في تبويب «أيام الخطة والإكسل» وفي نموذج الإكسل الذي تنزّله.</div>'}
     ${COL_HELP}
   </div>`;
-  $$('#tab tbody tr').forEach(tr => {
-    const c = cols[+tr.dataset.i];
-    $$('[data-k]', tr).forEach(el => {
-      const k = el.dataset.k;
-      el.addEventListener(el.type === 'checkbox' || el.tagName === 'SELECT' ? 'change' : 'input', () => {
+  const redraw = () => { syncCols(); markDirty(); tabColumns(); };
+  $$('#tab .tcard').forEach(card => {
+    const T = tasks[+card.dataset.ti];
+    $$('[data-tk]', card).forEach(el => {
+      const k = el.dataset.tk, typing = el.type === 'text' || el.type === 'number';
+      el.addEventListener(typing ? 'input' : 'change', () => {
         let v = el.type === 'checkbox' ? el.checked : el.value;
         if (k === 'weight') v = numOrNull(v);
-        if (k === 'pair_column_id') { setPair(c, v || null); markDirty(); return tabColumns(); }
-        if (k === 'shows_column_id') { c.shows_column_id = v || null; markDirty(); return refreshIssues(); }
-        if (k === 'detail_of') { c.detail_of = v || null; const o = cols.find(x => x.id === c.pair_column_id); if (o) o.detail_of = null; cols.filter(x => x.detail_of === c.id).forEach(x => x.detail_of = null); markDirty(); return tabColumns(); }
-        if (k === 'value_type' && v !== 'bool') c.shows_column_id = null;
-        c[k] = v; markDirty();
-        if (k === 'task' && v === 'repeat') { if (c.pair_column_id) setPair(c, null); c.value_type = 'number'; c.range_role = 'single'; }
-        if (k === 'range_role' && c.pair_column_id) { const o = cols.find(x => x.id === c.pair_column_id); if (o && v !== 'single') o.range_role = v === 'start' ? 'end' : 'start'; }
-        if (k === 'range_role' && v === 'single' && c.pair_column_id) setPair(c, null);
-        if (['task', 'executor', 'counts', 'range_role', 'value_type'].includes(k)) {
-          if (c.pair_column_id && ['task', 'executor', 'counts'].includes(k)) { const o = cols.find(x => x.id === c.pair_column_id); if (o) o[k] = v; }
-          tabColumns();
-        } else refreshIssues();
+        T[k] = v;
+        if (k === 'task' && v === 'repeat') T.cols = T.cols.slice(0, 1);
+        if (k === 'executor' && ['info', 'none'].includes(v)) T.counts = false;
+        if (typing) { syncCols(); markDirty(); refreshIssues(); } else redraw();
       });
     });
+    $$('tr[data-ci]', card).forEach(tr => {
+      const c = T.cols[+tr.dataset.ci];
+      $$('[data-k]', tr).forEach(el => {
+        const k = el.dataset.k;
+        el.addEventListener(el.tagName === 'SELECT' ? 'change' : 'input', () => {
+          const v = el.value;
+          if (k === 'shows_column_id') { c.shows_column_id = v || null; markDirty(); return refreshIssues(); }
+          c[k] = v;
+          if (k === 'value_type' && ['bool', 'url'].includes(v)) c.range_role = 'single';
+          if (k === 'header') { syncCols(); markDirty(); return refreshIssues(); }
+          redraw();
+        });
+      });
+    });
+    $$('[data-cdel]', card).forEach(b => b.onclick = () => { const c = T.cols[+b.dataset.cdel]; S.removedCols.push(c.id); T.cols.splice(+b.dataset.cdel, 1); redraw(); });
+    $$('[data-cup]', card).forEach(b => b.onclick = () => { const i = +b.dataset.cup; [T.cols[i - 1], T.cols[i]] = [T.cols[i], T.cols[i - 1]]; redraw(); });
+    $$('[data-cdown]', card).forEach(b => b.onclick = () => { const i = +b.dataset.cdown; [T.cols[i + 1], T.cols[i]] = [T.cols[i], T.cols[i + 1]]; redraw(); });
+    $$('[data-addcol]', card).forEach(b => b.onclick = () => { T.cols.push(newCol({ value_type: T.task === 'repeat' ? 'number' : (['explain', 'listen'].includes(T.task) && !T.cols.length ? 'bool' : 'number'), range_role: 'single' })); redraw(); $$(`.tcard[data-ti="${tasks.indexOf(T)}"] [data-k="header"]`).pop()?.focus(); });
+    $$('[data-addrange]', card).forEach(b => b.onclick = () => { const t = taskTitle(T); T.cols.push(newCol({ range_role: 'start', header: t + ' من حديث' }), newCol({ range_role: 'end', header: t + ' إلى حديث' })); redraw(); });
   });
-  $$('[data-del]').forEach(b => b.onclick = () => { const c = cols[+b.dataset.del]; if (c.pair_column_id) setPair(c, null); if (!c._new) S.removedCols.push(c.id); cols.splice(+b.dataset.del, 1); markDirty(); tabColumns(); });
-  $$('[data-up]').forEach(b => b.onclick = () => { const i = +b.dataset.up; [cols[i - 1], cols[i]] = [cols[i], cols[i - 1]]; markDirty(); tabColumns(); });
-  $$('[data-down]').forEach(b => b.onclick = () => { const i = +b.dataset.down; [cols[i + 1], cols[i]] = [cols[i], cols[i + 1]]; markDirty(); tabColumns(); });
-  $('#addCol').onclick = () => { cols.push(newCol({ task: 'custom', range_role: 'single' })); markDirty(); tabColumns(); };
-  $('#addRange').onclick = () => { const a = newCol({ task: 'review', range_role: 'start', header: 'المراجعة من' }), b = newCol({ task: 'review', range_role: 'end', header: 'المراجعة إلى' }); a.pair_column_id = b.id; b.pair_column_id = a.id; cols.push(a, b); markDirty(); tabColumns(); };
-}
-function setPair(c, otherId) {
-  const cols = S.cols;
-  if (c.pair_column_id) { const old = cols.find(x => x.id === c.pair_column_id); if (old) { old.pair_column_id = null; old.range_role = 'single'; } }
-  c.pair_column_id = otherId;
-  if (!otherId) { c.range_role = 'single'; return; }
-  const o = cols.find(x => x.id === otherId);
-  if (o.pair_column_id && o.pair_column_id !== c.id) { const o2 = cols.find(x => x.id === o.pair_column_id); if (o2) { o2.pair_column_id = null; o2.range_role = 'single'; } }
-  o.pair_column_id = c.id;
-  const first = cols.indexOf(c) < cols.indexOf(o) ? c : o;
-  first.range_role = 'start'; (first === c ? o : c).range_role = 'end';
-  o.task = c.task; o.task_label = c.task_label; o.executor = c.executor; o.value_type = c.value_type === 'text' ? 'text' : 'number';
+  $$('[data-tdel]').forEach(b => b.onclick = () => { const T = tasks[+b.dataset.tdel]; if (T.cols.length && !confirm(`حذف مهمة «${taskTitle(T)}» بكل أعمدتها؟`)) return; T.cols.forEach(c => S.removedCols.push(c.id)); tasks.splice(+b.dataset.tdel, 1); redraw(); });
+  $$('[data-tup]').forEach(b => b.onclick = () => { const i = +b.dataset.tup; [tasks[i - 1], tasks[i]] = [tasks[i], tasks[i - 1]]; redraw(); });
+  $$('[data-tdown]').forEach(b => b.onclick = () => { const i = +b.dataset.tdown; [tasks[i + 1], tasks[i]] = [tasks[i], tasks[i + 1]]; redraw(); });
+  $('#addTask').onclick = () => { tasks.push(newTask({ task: 'memo', counts: false })); redraw(); window.scrollTo(0, document.body.scrollHeight); };
 }
 function columnIssues() {
   const out = [], seen = {};
-  S.cols.forEach((c, i) => {
-    const n = 'العمود ' + (i + 1);
-    if (!c.header.trim()) out.push(n + ': اكتب اسم العمود كما في الإكسل.');
-    else if (seen[c.header.trim()]) out.push(n + ': الاسم «' + c.header + '» مكرر.'); else seen[c.header.trim()] = 1;
-    if (c.task === 'custom' && !String(c.task_label || '').trim()) out.push(n + ': اكتب اسم المهمة.');
-    if (c.range_role !== 'single' && !c.pair_column_id) out.push(n + ': بداية النطاق أو نهايته يجب أن يرتبط بعمود آخر.');
-    if (c.pair_column_id) { const o = S.cols.find(x => x.id === c.pair_column_id); if (!o) out.push(n + ': العمود المرتبط محذوف.'); else if (o.range_role === c.range_role) out.push(n + ': العمودان المرتبطان يجب أن يكون أحدهما بداية والآخر نهاية.'); }
-    if (c.range_role !== 'single' && !['number', 'text'].includes(c.value_type)) out.push(n + ': النطاق يكون رقمًا أو نصًا.');
+  if (!S.tasks) tasksFromCols();
+  if (!S.tasks.length) out.push('أضف مهمة واحدة على الأقل.');
+  S.tasks.forEach((T, ti) => {
+    const n = 'المهمة ' + (ti + 1) + ' (' + taskTitle(T) + ')';
+    if (!T.cols.length) out.push(n + ': أضف عمودًا واحدًا على الأقل.');
+    if (T.task === 'custom' && !String(T.task_label || '').trim()) out.push(n + ': اكتب اسم المهمة.');
+    let open = null;
+    T.cols.forEach((c, ci) => {
+      const cn = n + '، العمود ' + (ci + 1);
+      if (!c.header.trim()) out.push(cn + ': اكتب اسم العمود كما في الإكسل.');
+      else if (seen[c.header.trim()]) out.push(cn + ': الاسم «' + c.header.trim() + '» مكرر في الخطة.'); else seen[c.header.trim()] = 1;
+      if (c.range_role !== 'single' && !['number', 'text'].includes(c.value_type)) out.push(cn + ': النطاق يكون رقمًا أو نصًا.');
+      if (c.range_role === 'start') { if (open) out.push(n + ': «' + open.header + '» بداية نطاق بلا نهاية بعدها.'); open = c; }
+      if (c.range_role === 'end') { if (!open) out.push(cn + ': نهاية نطاق بلا بداية قبلها.'); open = null; }
+    });
+    if (open) out.push(n + ': «' + open.header + '» بداية نطاق بلا نهاية بعدها.');
+    if (T.task === 'repeat' && T.cols.length > 1) out.push(n + ': التكرار عمود رقم واحد فقط.');
   });
-  if (!S.cols.length) out.push('أضف عمودًا واحدًا على الأقل.');
-  S.cols.forEach((c, i) => { if (c.task === 'repeat' && (c.value_type !== 'number' || c.range_role !== 'single')) out.push('العمود ' + (i + 1) + ': التكرار يكون رقمًا مفردًا.'); });
   return out;
 }
-function refreshIssues() { const is = columnIssues(); const html = is.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${is.map(esc).join('<br>')}</div>` : '<div class="okbox">الأعمدة سليمة. أي تعديل هنا يظهر فورًا في تبويب «أيام الخطة والإكسل» وفي نموذج الإكسل الذي تنزّله.</div>'; const holder = $$('#tab > .grid > div').filter(d => d.classList.contains('errbox') || d.classList.contains('okbox')).pop(); if (holder) holder.outerHTML = html; }
+function refreshIssues() { const is = columnIssues(); const html = is.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${is.map(esc).join('<br>')}</div>` : '<div class="okbox">المهام والأعمدة سليمة. أي تعديل هنا يظهر فورًا في تبويب «أيام الخطة والإكسل» وفي نموذج الإكسل الذي تنزّله.</div>'; const holder = $$('#tab > .grid > div').filter(d => d.classList.contains('errbox') || d.classList.contains('okbox')).pop(); if (holder) holder.outerHTML = html; }
 
 // ---------- ٣. الأيام والإكسل ----------
 const DAY_HEADERS = ['اليوم', 'رقم اليوم', 'يوم', 'day'];
