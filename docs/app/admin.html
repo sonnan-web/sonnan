@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127m">
+<link rel="stylesheet" href="app.css?v=20261127n">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127m"></script>
+<script src="app.js?v=20261127n"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -211,7 +211,7 @@ SECTIONS.home = async el => {
 // ============ المتابعة اليومية: للتسميع، وللواجب (تنفيذ الطالب) ============
 SECTIONS.daily = el => followSection(el, 'rec');
 SECTIONS.dexec = el => followSection(el, 'exec');
-const FOL = { plan: '', mode: 'day', date: TODAY, from: A.addDays(TODAY, -13), to: TODAY, month: TODAY.slice(0, 7) };
+const FOL = { plan: '', mode: 'day', date: TODAY, from: A.addDays(TODAY, -13), to: TODAY, month: TODAY.slice(0, 7), cFrom: TODAY.slice(0, 8) + '01', cTo: TODAY };
 const PROG_CACHE = {};
 async function planProgress(planId) {
   if (PROG_CACHE[planId]) return PROG_CACHE[planId];
@@ -242,7 +242,8 @@ async function followSection(el, kind) {
     <div class="card" style="--a:var(--${color});margin-bottom:10px"><div class="tbl-tools" style="margin:0">
       <label class="small">الخطة <select id="fPlan" style="width:auto">${usable.map(p => opt(p.id, p.name, p.id === FOL.plan)).join('')}</select></label>
       <div class="seg"><button type="button" data-m="day" aria-pressed="${FOL.mode === 'day'}">يوم</button><button type="button" data-m="range" aria-pressed="${FOL.mode === 'range'}">فترة</button><button type="button" data-m="cal" aria-pressed="${FOL.mode === 'cal'}">تقويم</button></div>
-      ${FOL.mode === 'cal' ? `<button class="btn ghost sm" id="fmPrev" type="button">الشهر السابق</button><input type="month" id="fMonth" value="${FOL.month}" style="width:auto"><button class="btn ghost sm" id="fmNext" type="button">الشهر التالي</button><input type="search" id="fQ" placeholder="بحث باسم الطالب…" style="width:auto;min-width:170px">`
+      ${FOL.mode === 'cal' ? `<label class="small">من <input type="date" id="fcF" value="${FOL.cFrom}" style="width:auto"></label><label class="small">إلى <input type="date" id="fcT" value="${FOL.cTo}" style="width:auto"></label>
+        <div class="seg"><button type="button" data-cq="month">هذا الشهر</button><button type="button" data-cq="prev">الشهر السابق</button><button type="button" data-cq="30">آخر 30 يومًا</button></div><input type="search" id="fQ" placeholder="بحث باسم الطالب…" style="width:auto;min-width:170px">`
         : FOL.mode === 'day' ? `<button class="btn ghost sm" id="fPrev" type="button">السابق</button><input type="date" id="fDate" value="${day}" style="width:auto"><button class="btn ghost sm" id="fNext" type="button">التالي</button><span class="small muted">${A.dayName(day)} · ${A.hijri(day)}</span>`
         : `<label class="small">من <input type="date" id="fFrom" value="${from}" style="width:auto"></label><label class="small">إلى <input type="date" id="fTo" value="${FOL.to}" style="width:auto"></label>`}
     </div></div>
@@ -257,6 +258,9 @@ async function followSection(el, kind) {
   $('#fTo') && ($('#fTo').onchange = e => { FOL.to = e.target.value; route(); });
   const shiftMonth = k => { const [y, m] = FOL.month.split('-').map(Number); return new Date(Date.UTC(y, m - 1 + k, 1)).toISOString().slice(0, 7); };
   $('#fMonth') && ($('#fMonth').onchange = e => { if (e.target.value) { FOL.month = e.target.value; route(); } });
+  $('#fcF') && ($('#fcF').onchange = e => { if (e.target.value) { FOL.cFrom = e.target.value; if (FOL.cTo < FOL.cFrom) FOL.cTo = FOL.cFrom; route(); } });
+  $('#fcT') && ($('#fcT').onchange = e => { if (e.target.value) { FOL.cTo = e.target.value; if (FOL.cTo < FOL.cFrom) FOL.cFrom = FOL.cTo; route(); } });
+  $$('[data-cq]', el).forEach(b => b.onclick = () => { const q = b.dataset.cq; if (q === 'month') { FOL.cFrom = TODAY.slice(0, 8) + '01'; FOL.cTo = TODAY; } else if (q === '30') { FOL.cFrom = A.addDays(TODAY, -29); FOL.cTo = TODAY; } else { const [y, m] = TODAY.split('-').map(Number); const d = new Date(Date.UTC(y, m - 2, 1)); FOL.cFrom = d.toISOString().slice(0, 10); FOL.cTo = new Date(Date.UTC(y, m - 1, 0)).toISOString().slice(0, 10); } route(); });
   $('#fmPrev') && ($('#fmPrev').onclick = () => { FOL.month = shiftMonth(-1); route(); });
   $('#fmNext') && ($('#fmNext').onclick = () => { FOL.month = shiftMonth(1); route(); });
   cardFull($('#fCard'));
@@ -274,6 +278,10 @@ async function followSection(el, kind) {
   const pctColor = v => v == null ? '' : v >= 90 ? 'var(--green)' : v >= 70 ? 'var(--teal)' : v >= 50 ? '#9A6A08' : 'var(--red)';
   const pctHtml = v => v == null ? '—' : `<b style="color:${pctColor(v)}">${v}٪</b>`;
   let tbl, expCols;
+  // زر «رصد إجراء» آخر كل صف
+  const actCol = { key: '_ac', label: '', html: r => `<button class="btn sm ghost" type="button" data-act="${r.s.id}">رصد إجراء</button>` };
+  const dtA = (box, o) => dataTable(box, { ...o, cols: [...o.cols, actCol] });
+  $('#fTbl').addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) actionPopup(D.studentById[b.dataset.act], isR ? 'rec' : 'exec', P); });
 
   if (isR && FOL.mode === 'day') {
     // ===== التسميع: يوم واحد =====
@@ -293,7 +301,7 @@ async function followSection(el, kind) {
     $('#fTitle').textContent = 'حالة التسميع لكل طالب';
     $('#fHint').textContent = !work ? 'هذا اليوم ليس من أيام الخطة.' : !recD ? 'هذا اليوم ليس من أيام التسميع في الخطة.' : 'اضغط على الطالب لملفه وتقاريره، و«رصد» لرصد طالب لم يُرصد.';
     const pill = { done: 'ok', makeup: 'gold', review: 'info', excused: 'violet', absent: 'bad', none: 'bad', off: 'plain' };
-    tbl = dataTable($('#fTbl'), { rows, sortKey: 'state', pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+    tbl = dtA($('#fTbl'), { rows, sortKey: 'state', pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
       { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'pday', label: 'يوم الخطة', num: true },
       { key: 'state', label: 'الحالة', filter: true, html: x => `<span class="pill ${pill[x.k]}">${x.state}</span>` },
       ...tasks.map(t => ({ key: 't_' + t.key, label: t.name, html: x => x['t_' + t.key] ? esc(x['t_' + t.key]) : '<span class="muted">—</span>' })),
@@ -327,7 +335,7 @@ async function followSection(el, kind) {
     $('#fTitle').textContent = 'متابعة التسميع للفترة';
     $('#fHint').textContent = `${A.greg(from)} – ${A.greg(to)} · «متخلّف» يوم تسميع مضى بلا رصد ولا استئذان ولا تعويض`;
     const fp = { 'منتظم': 'ok', 'متأخر': 'warn', 'تنبيه مستحق': 'warn', 'إنذار مستحق': 'bad' };
-    tbl = dataTable($('#fTbl'), { rows, sortKey: 'behind', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+    tbl = dtA($('#fTbl'), { rows, sortKey: 'behind', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
       { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
       { key: 'days', label: 'أيام التسميع', num: true }, { key: 'done', label: 'منجز', num: true }, { key: 'makeup', label: 'تعويض', num: true }, { key: 'review', label: 'ربط ومراجعة', num: true }, { key: 'excused', label: 'مستأذن', num: true },
       { key: 'behind', label: 'متخلّف', num: true, html: x => x.behind ? `<b style="color:var(--red)">${x.behind}</b>` : '0' }, { key: 'pct', label: 'نسبة الإنجاز', num: true, html: x => pctHtml(x.pct) },
@@ -354,7 +362,7 @@ async function followSection(el, kind) {
     $('#fTitle').textContent = 'تنفيذ الواجب لكل طالب';
     $('#fHint').textContent = work ? 'الواجب = مهام يوم الخطة التي يعلّم عليها الطالب. ✓ أنجزها، ✗ لم يعلّم عليها.' : 'هذا اليوم ليس من أيام الخطة.';
     const pill = { full: 'ok', part: 'warn', none: 'bad', excused: 'violet', off: 'plain' };
-    tbl = dataTable($('#fTbl'), { rows, sortKey: 'state', pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+    tbl = dtA($('#fTbl'), { rows, sortKey: 'state', pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
       { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'pday', label: 'يوم الخطة', num: true },
       ...tasksE.map(t => ({ key: 't_' + t.key, label: t.name, filter: true, html: x => x['t_' + t.key] === '✓' ? '<b style="color:var(--green)">✓</b>' : x['t_' + t.key] === '✗' ? '<b style="color:var(--red)">✗</b>' : '<span class="muted">—</span>' })),
       { key: 'pct', label: 'الإنجاز', num: true, html: x => pctHtml(x.pct) }, { key: 'state', label: 'الحالة', filter: true, html: x => `<span class="pill ${pill[x.k]}">${x.state}</span>` }] });
@@ -385,7 +393,7 @@ async function followSection(el, kind) {
     $('#fTitle').textContent = 'متابعة الواجب للفترة';
     $('#fHint').textContent = `${A.greg(from)} – ${A.greg(to)} · حتى أمس`;
     const fp = { 'منتظم': 'ok', 'متقطع': 'warn', 'لا ينفّذ': 'bad' };
-    tbl = dataTable($('#fTbl'), { rows, sortKey: 'pct', dir: 1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+    tbl = dtA($('#fTbl'), { rows, sortKey: 'pct', dir: 1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
       { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
       { key: 'days', label: 'أيام الواجب', num: true }, { key: 'full', label: 'مكتمل', num: true }, { key: 'part', label: 'جزئي', num: true }, { key: 'none', label: 'لم ينفّذ', num: true, html: x => x.none ? `<b style="color:var(--red)">${x.none}</b>` : '0' }, { key: 'exc', label: 'مستأذن', num: true },
       { key: 'streak', label: 'أطول انقطاع', num: true, html: x => x.streak ? x.streak + ' يوم' : '—' }, { key: 'pct', label: 'نسبة التنفيذ', num: true, html: x => pctHtml(x.pct) },
@@ -823,7 +831,7 @@ async function studentFile(id) {
   const st = statsOf(s);
   const recs = (D.recsByStudent[id] || []).slice(0, 15);
   const PL = await plansFull(), P = s.assign ? PL[s.assign.plan_id] : null;
-  let month = (FOL.mode === 'cal' ? FOL.month : TODAY.slice(0, 7));
+  let month = (FOL.mode === 'cal' ? FOL.cFrom.slice(0, 7) : TODAY.slice(0, 7));
   drawer('الطالب: ' + s.name, `
     <div class="row" style="justify-content:flex-start"><button class="btn" id="qEdit">تعديل البيانات</button><a class="btn ghost" href="student-file.html?id=${id}" target="_blank" rel="noopener">عرض الملف الكامل</a>${['withdrawn', 'dismissed'].includes(s.status) ? '<button class="btn gold" id="qBack">إعادة للانتظام</button>' : ''}</div>
     ${['withdrawn', 'dismissed'].includes(s.status) ? `<div class="hintbox">${s.status === 'withdrawn' ? 'انسحب الطالب' : 'فُصل الطالب'}، وتوقف دخوله للمنصة. سجلاته محفوظة.</div>` : ''}
@@ -1171,10 +1179,59 @@ async function gradeForm(id) {
   });
 }
 
+// ============ رصد إجراء من المتابعة اليومية ============
+// يقترح السبب تلقائيًا (انقطاع عن التسميع أو عن تنفيذ الواجب) ويمكن تعديله، ويُسجَّل في «سجل الإجراءات»
+const ACT_ST = ['بانتظار رد الطالب', 'رد الطالب', 'لم يتم الاستجابة'];
+async function actionPopup(s, kind, P) {
+  if (!s) return;
+  let reason = '';
+  if (kind === 'rec') {
+    const last = (D.recsByStudent[s.id] || []).find(r => ACH.includes(r.status))?.rec_date;
+    reason = last ? `منقطع عن التسميع منذ ${A.daysBetween(last, TODAY)} يومًا (آخر تسميع ${A.greg(last)})` : `لم يُسمّع منذ بدايته في ${A.greg(s.assign?.start_date || s.join_date)}`;
+  } else if (P && s.assign) {
+    const prog = await planProgress(P.id), nDays = Object.keys(P.days).length, tasks = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both').filter(t => !A.isViewOnly(t));
+    let n = 0, d = A.addDays(TODAY, -1), g = 0, lastDone = null;
+    while (g++ < 120 && d >= s.assign.start_date) {
+      if (isWork(P, d) && !A.holdOn(s.assign, d)) { const dn = A.planDayFor(s.assign, P, nDays, d), dv = P.days[dn]?.vals || {}, done = prog[s.id]?.[dn] || new Set();
+        const req = tasks.filter(t => A.fmtTaskVal(t, dv) != null); if (req.length) { if (req.some(t => t.cols.some(c => done.has(c.id)))) { lastDone = d; break; } n++; } }
+      d = A.addDays(d, -1);
+    }
+    reason = n ? `لم ينفّذ الواجب ${n} ${n > 2 && n < 11 ? 'أيام' : 'يومًا'}${lastDone ? ` (آخر تنفيذ ${A.greg(lastDone)})` : ''}` : 'متأخر في تنفيذ الواجب';
+  }
+  const { data: open } = await db.from('follow_up_actions').select('*').eq('student_id', s.id).is('closed_at', null).order('case_date', { ascending: false }).limit(1);
+  const cur = (open || [])[0];
+  drawer('رصد إجراء: ' + s.name, `<div class="stack">
+    ${cur ? `<div class="hintbox">للطالب حالة مفتوحة منذ ${A.greg(cur.case_date)} (${esc(cur.reason || '')})، فيُضاف هذا الإجراء إليها.</div>` : ''}
+    <div class="card" style="padding:8px 12px"><b>${esc(s.name)}</b><div class="hint">${esc(s.teacher)} · ${esc(s.room)} · ${esc(s.plan)}${s.phone ? ` · <span dir="ltr">${esc(s.phone)}</span>` : ''}</div></div>
+    <label class="f">السبب<input id="apR" type="text" value="${esc(reason)}"></label>
+    <div class="g2"><label class="f">كيف تم التواصل<select id="apM">${METHODS.map(m => opt(m, m)).join('')}</select></label><label class="f">تاريخ الإجراء<input id="apD" type="date" value="${TODAY}"></label></div>
+    <label class="f">خلاصة إجراء المشرف<textarea id="apA" rows="3" placeholder="مثال: أرسلت له رسالة أسأله عن سبب الانقطاع"></textarea></label>
+    <label class="f">رد الطالب<textarea id="apP" rows="2" placeholder="اتركه فارغًا إن لم يرد بعد"></textarea></label>
+    <div><b class="small">حالة الإجراء</b><div class="seg" id="apS" style="margin-top:6px">${[...ACT_ST, 'أخرى'].map((k, i) => `<button type="button" data-st="${k}" aria-pressed="${i === 0}">${k}</button>`).join('')}</div>
+      <input id="apO" type="text" placeholder="اكتب حالة الإجراء" style="margin-top:6px" hidden></div>
+    ${s.phone ? `<a class="btn ghost" id="apWa" target="_blank" rel="noopener" href="#">فتح محادثة واتساب برسالة جاهزة</a>` : ''}
+    <button class="btn" id="apGo" type="button">تسجيل الإجراء</button>
+    <p class="hint">يظهر في «إجراءات المشرف ← سجل الإجراءات» حتى تغلقه، فراجعه وحدّثه.</p></div>`, root => {
+    let st = ACT_ST[0];
+    $$('[data-st]', root).forEach(b => b.onclick = () => { st = b.dataset.st; $$('[data-st]', root).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#apO', root).hidden = st !== 'أخرى'; if (st === 'أخرى') $('#apO', root).focus(); });
+    $('#apWa', root) && ($('#apWa', root).onclick = e => { e.preventDefault(); const l = waLink(s.phone, msgTpl(s, $('#apR', root).value)); if (l) window.open(l, '_blank', 'noopener'); $('#apM', root).value = 'واتساب'; });
+    $('#apGo', root).onclick = async () => {
+      const status = st === 'أخرى' ? $('#apO', root).value.trim() : st; if (!status) return toast('اكتب حالة الإجراء', true);
+      const reasonV = $('#apR', root).value.trim(), method = $('#apM', root).value, date = $('#apD', root).value || TODAY, summary = $('#apA', root).value.trim(), reply = $('#apP', root).value.trim();
+      let caseId = cur?.id;
+      if (!caseId) { const { data, error } = await db.from('follow_up_actions').insert({ student_id: s.id, case_date: date, reason: reasonV || null, status, contact_date: date, contact_method: method, created_by: me.id }).select('id').single(); if (error) return toast(error.message, true); caseId = data.id; }
+      else { const { error } = await db.from('follow_up_actions').update({ status }).eq('id', caseId); if (error) return toast(error.message, true); }
+      const { error } = await db.from('follow_up_contacts').insert({ action_id: caseId, contact_date: date, method, summary: summary || reasonV || null, reply: reply || null, created_by: me.id }); if (error) return toast(error.message, true);
+      if (method === 'إشعار في المنصة' && summary && s.user_id) notify([s.user_id], 'follow_up', 'رسالة من إدارة البرنامج', summary, ['inbox', 'push']).catch(() => {});
+      toast('سُجّل الإجراء في سجل الإجراءات'); closeDrawer();
+    };
+  });
+}
+
 // ============ إجراءات المشرف ============
 // المتعثرون (يكتشفهم النظام)، وحالات المتابعة بسجل تواصل لكل حالة، وسجل كل الإشعارات والرسائل
 const AC = { tab: 'struggling', status: 'open' };
-const CASE_ST = { 'مفتوحة': 'warn', 'بانتظار رد الطالب': 'info', 'أغلقت الحالة': 'ok', 'لم يتم التجاوب': 'bad', 'انسحب': 'plain', 'مفصول': 'bad' };
+const CASE_ST = { 'مفتوحة': 'warn', 'بانتظار رد الطالب': 'info', 'رد الطالب': 'violet', 'لم يتم الاستجابة': 'warn', 'أغلقت الحالة': 'ok', 'لم يتم التجاوب': 'bad', 'انسحب': 'plain', 'مفصول': 'bad' };
 const OPEN_ST = ['مفتوحة', 'بانتظار رد الطالب'];
 const METHODS = ['واتساب', 'إشعار في المنصة', 'بريد إلكتروني', 'اتصال', 'لقاء'];
 const waLink = (phone, text) => { const d = String(phone || '').replace(/\D/g, '').replace(/^00/, ''); return d ? `https://wa.me/${d}?text=${encodeURIComponent(text)}` : null; };
@@ -1194,7 +1251,7 @@ SECTIONS.actions = async el => {
   const X = await actionsData();
   X_openCache = X.fa;
   if (!el.isConnected) return;
-  const openOf = sid => X.fa.find(f => f.student_id === sid && OPEN_ST.includes(f.status));
+  const openOf = sid => X.fa.find(f => f.student_id === sid && !f.closed_at);
   // المتعثرون: غياب في نافذة الاحتساب، أو التزام منخفض، أو انقطاع عن الرصد
   const leaveOn = (sid, d) => X.lv.some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d);
   const struggling = actives().filter(s => s.assign).map(s => {
@@ -1212,11 +1269,12 @@ SECTIONS.actions = async el => {
   }).filter(r => r.reasons.length);
   const cases = X.fa.map(f => { const s = D.studentById[f.student_id] || {}; const cs = X.fc.filter(c => c.action_id === f.id); const lc = cs[0];
     return { f, s, cs, name: s.name || '—', teacher: s.teacher || '—', date: f.case_date, reason: f.reason || '', lastC: lc?.contact_date || f.contact_date || null, method: lc?.method || f.contact_method || '', n: cs.length, status: f.status, days: A.daysBetween(f.case_date, f.closed_at ? f.closed_at.slice(0, 10) : TODAY), summary: lc?.summary || f.action_summary || '', reply: lc?.reply || f.student_reply || '' }; });
-  const openCases = cases.filter(c => OPEN_ST.includes(c.status)), month = TODAY.slice(0, 7);
+  cases.forEach(c => { c.open = !c.f.closed_at; c.lastUpd = (c.cs[0]?.created_at || c.f.created_at || '').slice(0, 10); c.stale = c.open && c.lastUpd && c.lastUpd < TODAY; });
+  const openCases = cases.filter(c => c.open), month = TODAY.slice(0, 7);
   el.innerHTML = `${secHead('إجراءات المشرف', 'متابعة الطلاب المتعثرين والتواصل معهم', 'orange', `<button class="btn gold sm" id="newCase">+ حالة جديدة</button>`)}
     <div class="card" style="--a:var(--orange);margin-bottom:10px"><div class="minis">
       ${mini('متعثرون الآن', fmtNum(struggling.length), 'red', fmtNum(struggling.filter(r => !r.open).length) + ' بلا حالة مفتوحة')}${mini('حالات مفتوحة', fmtNum(openCases.length), 'orange')}
-      ${mini('بانتظار رد الطالب', fmtNum(cases.filter(c => c.status === 'بانتظار رد الطالب').length), 'blue')}${mini('أُغلقت هذا الشهر', fmtNum(cases.filter(c => c.f.closed_at?.slice(0, 7) === month).length), 'green')}
+      ${mini('تحتاج تحديثًا', fmtNum(cases.filter(c => c.stale).length), 'violet', 'مفتوحة ولم تُحدَّث منذ أمس')}${mini('بانتظار رد الطالب', fmtNum(cases.filter(c => c.open && c.status === 'بانتظار رد الطالب').length), 'blue')}${mini('أُغلقت هذا الشهر', fmtNum(cases.filter(c => c.f.closed_at?.slice(0, 7) === month).length), 'green')}
       ${mini('انسحب', fmtNum(cases.filter(c => c.status === 'انسحب').length), 'slate')}${mini('مفصول', fmtNum(cases.filter(c => c.status === 'مفصول').length), 'red')}</div></div>
     <div class="card" style="--a:var(--orange);margin-bottom:10px"><div class="seg">${[['struggling', 'المتعثرون'], ['cases', 'سجل الإجراءات'], ['log', 'سجل الإشعارات والرسائل']].map(([k, l]) => `<button type="button" data-at="${k}" aria-pressed="${AC.tab === k}">${l}</button>`).join('')}</div></div>
     <div class="card c-orange" id="acCard"><div class="head"><h3 id="acT"></h3><div class="row" style="gap:6px" id="acTools"></div></div><div id="acTbl"></div></div>`;
@@ -1234,13 +1292,13 @@ SECTIONS.actions = async el => {
       after: root => { $$('[data-nc]', root).forEach(b => b.onclick = () => { const r = struggling.find(x => x.s.id === b.dataset.nc); openCase(null, r.s, r.reasons.join('، ')); }); $$('[data-oc]', root).forEach(b => b.onclick = () => caseDrawer(cases.find(c => c.f.id === b.dataset.oc))); } });
   } else if (AC.tab === 'cases') {
     $('#acT').textContent = 'سجل الإجراءات';
-    $('#acTools').innerHTML = `<select id="acSt" style="width:auto"><option value="open"${AC.status === 'open' ? ' selected' : ''}>المفتوحة</option><option value=""${!AC.status ? ' selected' : ''}>كل الحالات</option>${Object.keys(CASE_ST).map(k => opt(k, k, AC.status === k)).join('')}</select><button class="btn ghost sm" id="acExp">تصدير</button>`;
-    const rows = cases.filter(c => !AC.status || (AC.status === 'open' ? OPEN_ST.includes(c.status) : c.status === AC.status));
+    $('#acTools').innerHTML = `<select id="acSt" style="width:auto"><option value="open"${AC.status === 'open' ? ' selected' : ''}>المفتوحة</option><option value="stale"${AC.status === 'stale' ? ' selected' : ''}>تحتاج تحديثًا</option><option value=""${!AC.status ? ' selected' : ''}>كل الحالات</option>${Object.keys(CASE_ST).map(k => opt(k, k, AC.status === k)).join('')}</select><button class="btn ghost sm" id="acExp">تصدير</button>`;
+    const rows = cases.filter(c => !AC.status || (AC.status === 'open' ? c.open : AC.status === 'stale' ? c.stale : c.status === AC.status));
     const tbl = dataTable($('#acTbl'), { rows, sortKey: 'date', dir: -1, pageSize: 200, onRow: r => caseDrawer(r), cols: [
       { key: 'date', label: 'تاريخ الحالة', html: r => A.greg(r.date) }, { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'reason', label: 'سبب التعثر' },
       { key: 'lastC', label: 'آخر تواصل', html: r => r.lastC ? `${A.greg(r.lastC)}<div class="hint">${esc(r.method)}</div>` : '—' }, { key: 'n', label: 'مرات التواصل', num: true },
       { key: 'reply', label: 'آخر رد للطالب', html: r => r.reply ? `<span class="small">${esc(r.reply.slice(0, 80))}${r.reply.length > 80 ? '…' : ''}</span>` : '<span class="muted">—</span>' },
-      { key: 'status', label: 'الحالة', filter: true, html: r => `<span class="pill ${CASE_ST[r.status] || 'plain'}">${esc(r.status)}</span>${OPEN_ST.includes(r.status) ? `<div class="hint">مفتوحة منذ ${r.days} يوم</div>` : ''}` }] });
+      { key: 'status', label: 'الحالة', filter: true, html: r => `<span class="pill ${CASE_ST[r.status] || 'plain'}">${esc(r.status)}</span>${r.open ? `<div class="hint">${r.stale ? '<b style="color:var(--violet)">تحتاج تحديثًا</b> · ' : ''}مفتوحة منذ ${r.days} يوم</div>` : ''}` }] });
     $('#acSt').onchange = e => { AC.status = e.target.value; route(); };
     $('#acExp').onclick = () => A.exportXlsx('سجل إجراءات المشرف - ' + TODAY, 'الإجراءات', [['تاريخ الحالة', r => r.date], ['الطالب', r => r.name], ['المعلم', r => r.teacher], ['سبب التعثر', r => r.reason], ['آخر تواصل', r => r.lastC], ['طريقة التواصل', r => r.method], ['خلاصة إجراء المشرف', r => r.summary], ['خلاصة رد الطالب', r => r.reply], ['حالة الإجراء', r => r.status], ['الخاتمة', r => r.f.outcome], ['تاريخ الإغلاق', r => r.f.closed_at?.slice(0, 10)]], tbl.getRows());
   } else {
@@ -1273,12 +1331,12 @@ function openCase(_, s0, reason0) {
   });
 }
 let X_openCache = [];
-const X_open = sid => X_openCache.some(f => f.student_id === sid && OPEN_ST.includes(f.status));
+const X_open = sid => X_openCache.some(f => f.student_id === sid && !f.closed_at);
 // تفاصيل الحالة: سجل التواصل، وتواصل جديد، وإغلاق الحالة
 async function caseDrawer(c) {
   const f = c.f, s = c.s || D.studentById[f.student_id] || {};
   const { data: cs } = await db.from('follow_up_contacts').select('*').eq('action_id', f.id).order('created_at', { ascending: false });
-  const open = OPEN_ST.includes(f.status);
+  const open = !f.closed_at;
   drawer(`حالة: ${s.name || ''}`, `<div class="stack">
     <div class="card" style="padding:8px 12px"><div class="row"><span>${esc(f.reason || 'بلا سبب محدد')}</span><span class="pill ${CASE_ST[f.status] || 'plain'}">${esc(f.status)}</span></div>
       <div class="hint">فُتحت ${A.greg(f.case_date)} · ${esc(s.teacher || '')} · ${esc(s.plan || '')}${s.phone ? ` · <span dir="ltr">${esc(s.phone)}</span>` : ''}${f.outcome ? ' · الخاتمة: ' + esc(f.outcome) : ''}</div></div>
@@ -1306,8 +1364,9 @@ async function caseDrawer(c) {
       if (method === 'واتساب') { const l = waLink(s.phone, msg); if (!l) return toast('لا يوجد رقم جوال للطالب', true); window.open(l, '_blank', 'noopener'); }
       if (method === 'إشعار في المنصة' || method === 'بريد إلكتروني') { if (!s.user_id) return toast('لا يوجد حساب للطالب', true); await notify([s.user_id], 'follow_up', 'رسالة من إدارة البرنامج', msg, method === 'بريد إلكتروني' ? ['email', 'inbox'] : ['inbox', 'push']); }
       const { error } = await db.from('follow_up_contacts').insert({ action_id: f.id, method, summary: msg, reply: rep || null, created_by: me.id }); if (error) return toast(error.message, true);
-      await db.from('follow_up_actions').update({ status: rep ? 'مفتوحة' : ($('#cWait', root).checked ? 'بانتظار رد الطالب' : 'مفتوحة'), contact_date: f.contact_date || null }).eq('id', f.id);
-      toast('سُجّل التواصل'); f.status = rep ? 'مفتوحة' : ($('#cWait', root).checked ? 'بانتظار رد الطالب' : 'مفتوحة'); caseDrawer({ ...c, f }); if (current === 'actions') route();
+      const nst = rep ? 'رد الطالب' : ($('#cWait', root).checked ? 'بانتظار رد الطالب' : 'مفتوحة');
+      await db.from('follow_up_actions').update({ status: nst }).eq('id', f.id);
+      toast('سُجّل التواصل'); f.status = nst; caseDrawer({ ...c, f }); if (current === 'actions') route();
     });
     $$('[data-co]', root).forEach(b => b.onclick = async () => {
       const st = b.dataset.co, note = $('#coN', root).value.trim();
@@ -1342,7 +1401,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127m&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127n&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
@@ -1914,8 +1973,8 @@ function dayState(s, P, d, ctx) {
 }
 // عرض «تقويم» داخل المتابعة اليومية: صف لكل طالب وعمود لكل يوم من الشهر
 async function renderCal(el, P, view, studs, title) {
-  const [y, m] = FOL.month.split('-').map(Number);
-  const first = `${FOL.month}-01`, last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+  // نطاق التقويم (حتى 92 يومًا)
+  const first = FOL.cFrom, last = [FOL.cTo, A.addDays(FOL.cFrom, 91)].sort()[0];
   const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both').filter(t => !A.isViewOnly(t));
   const hasExec = view === 'exe';
   const K = view === 'rec' ? REC_K : EXE_K, key = view === 'rec' ? 'rec' : 'exe';
@@ -1936,13 +1995,14 @@ async function renderCal(el, P, view, studs, title) {
     $('#fTbl').innerHTML = rows.length ? `<div class="tbl-wrap" style="max-height:70vh"><table class="cal-t"><thead><tr><th class="cal-n">الطالب</th>${dates.map(d => `<th class="${d === TODAY ? 'today' : ''}${isWork(P, d) ? '' : ' wk'}" title="${A.dayName(d)} ${A.greg(d)} · ${A.hijri(d)}">${A.dayName(d).replace('ال', '').slice(0, 2)}<br>${+d.slice(8)}</th>`).join('')}
       <th class="num" title="${view === 'rec' ? 'أيام التسميع المنجزة: تم + عوّض + ربط ومراجعة' : 'أيام الواجب المكتملة'}">${view === 'rec' ? 'منجز' : 'مكتمل'}</th><th class="num" title="${K[badKey][0]}">${K[badKey][1]}</th></tr></thead><tbody>
       ${rows.map(([g, i]) => `<tr><td class="cal-n"><a href="#" data-sc="${i}">${esc(g.s.name)}</a><div class="hint">${esc(g.s.teacher)} · ${esc(g.s.room)}</div></td>${g.days.map((x, di) => { const k = x[key] ? K[x[key]] : null; return `<td class="cal-c" data-c="${i}|${di}" title="${k ? esc(k[0]) : ''}"><span style="${k && k[1] ? `background:${k[2]};color:${k[3]}` : ''}">${k ? k[1] : ''}</span></td>`; }).join('')}
-        <td class="num"><b style="color:var(--green)">${g.days.filter(x => okKeys.includes(x[key])).length}</b></td><td class="num">${(n => n ? `<b style="color:var(--red)">${n}</b>` : '0')(g.days.filter(x => x[key] === badKey).length)}</td></tr>`).join('')}
+        <td class="num"><b style="color:var(--green)">${g.days.filter(x => okKeys.includes(x[key])).length}</b></td><td class="num">${(n => n ? `<b style="color:var(--red)">${n}</b>` : '0')(g.days.filter(x => x[key] === badKey).length)}</td><td><button class="btn sm ghost" type="button" data-act="${g.s.id}">رصد إجراء</button></td></tr>`).join('')}
       </tbody></table></div><div class="tbl-foot">${rows.length} طالبًا</div>` : '<div class="empty">لا يوجد طلاب</div>';
     $$('[data-c]', $('#fTbl')).forEach(td => td.onclick = () => { const [si, di] = td.dataset.c.split('|').map(Number); calDay(grid[si].s, P, dates[di], grid[si].days[di]); });
     $$('[data-sc]', $('#fTbl')).forEach(a => a.onclick = e => { e.preventDefault(); studentFile(grid[+a.dataset.sc].s.id); });
+    $$('[data-act]', $('#fTbl')).forEach(b => b.onclick = e => { e.stopPropagation(); actionPopup(D.studentById[b.dataset.act], view === 'rec' ? 'rec' : 'exec', P); });
   };
   $('#fQ') && $('#fQ').addEventListener('input', draw); draw();
-  $('#fExport').onclick = () => A.exportXlsx(`${title} - تقويم - ${P.name} - ${FOL.month}`, 'التقويم', [['الطالب', g => g.s.name], ['المعلم', g => g.s.teacher], ['الفترة', g => g.s.room],
+  $('#fExport').onclick = () => A.exportXlsx(`${title} - تقويم - ${P.name} - ${first} إلى ${last}`, 'التقويم', [['الطالب', g => g.s.name], ['المعلم', g => g.s.teacher], ['الفترة', g => g.s.room],
     ...dates.map((d, di) => [d, g => { const x = g.days[di][key]; return x && K[x][1] ? K[x][0] : ''; }]), [view === 'rec' ? 'أيام منجزة' : 'أيام مكتملة', g => g.days.filter(x => okKeys.includes(x[key])).length], [K[badKey][0], g => g.days.filter(x => x[key] === badKey).length]], grid);
 }
 function calDay(s, P, d, x) {
