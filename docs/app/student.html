@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127o">
+<link rel="stylesheet" href="app.css?v=20261127p">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127o"></script>
+<script src="app.js?v=20261127p"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -140,8 +140,8 @@ const memorized = +memR.data || 0;
 // الالتزام والضبط: من قاعدة البيانات بنفس حساب لوحة الشرف (حسب قواعد الخطة ودرجات المهام)
 const M = { dabt: null, iltizam: null, days: 0 };
 if (P && asg) {
-  const { data: pc } = await db.rpc('plan_commitment', { p_plan: asg.plan_id, p_from: null, p_to: null, p_student: stu.id });
-  const r = (pc || [])[0]; if (r) { M.iltizam = r.iltizam == null ? null : Math.round(+r.iltizam); M.dabt = r.dabt == null ? null : Math.round(+r.dabt); M.days = r.days; }
+  const { data: pc } = await db.rpc('plan_metrics', { p_plan: asg.plan_id, p_from: null, p_to: null, p_student: stu.id });
+  const r = (pc || [])[0]; if (r) { Object.assign(M, r); M.iltizam = r.iltizam == null ? null : Math.round(+r.iltizam); M.dabt = r.dabt == null ? null : Math.round(+r.dabt); M.ach = r.ach == null ? null : Math.round(+r.ach); M.fin = A.finishDate(r, P); M.sb = A.stumbleInfo(r, P); }
 }
 
 const TABS = [["home", "الرئيسية", "home"], ["log", "سجلّي", "book"], ["honor", "لوحة الشرف", "star"], ["leave", "الاستئذان", "leave"]];
@@ -242,6 +242,11 @@ SECTIONS.home = async el => {
       <div class="st" style="--c:var(--blue)" title="متوسط درجات التسميع${avg == null ? '' : ': ' + fmtNum(avg, 2)}"><b>${M.dabt == null ? '—' : M.dabt + '٪'}</b><span>الضبط</span></div>
       <div class="st" style="--c:var(--violet)"><b>${fmtNum(recs.filter(r => ['present', 'makeup'].includes(r.status)).length)}</b><span>جلسة تسميع</span></div>
     </div>
+    ${M.ach != null ? `<div class="stats3">
+      <div class="st" style="--c:var(--teal)" title="أيام الإنجاز المنفّذة من أيام الإنجاز المستحقة حتى أمس"><b>${M.ach}٪</b><span>مستوى الإنجاز</span></div>
+      <div class="st" style="--c:var(--gold)" title="بسرعتك الحالية"><b style="font-size:14px">${A.finishText(M.fin)}</b><span>الختم المتوقع</span></div>
+      <div class="st" style="--c:var(--red)" title="أيام لم تُنفَّذ فيها مهمة الإنجاز${M.sb?.window ? ' في آخر ' + M.sb.window + ' يوم' : ''}"><b>${M.sb?.inWin ?? 0}</b><span>أيام التعثر</span></div>
+    </div>` : ''}
     ${A.isMobile && (ps === 'default' || ps === 'needs-install') ? `<div class="notice blue"><span>${ps === 'needs-install' ? 'ثبّت التطبيق على جوالك لتصلك الإشعارات.' : 'فعّل الإشعارات لتصلك رسائل المعلم والإدارة.'}</span><button class="btn sm" id="enableBtn">${ps === 'needs-install' ? 'تثبيت' : 'تفعيل'}</button></div>` : ''}
     ${hold ? '' : stageMeter()}
     <div class="h3row"><h3>مهام اليوم</h3><span>${!workToday || hold ? '' : `اليوم ${dayN} من ${nDays}${execN && canExec ? ` · أنجزت ${doneN} من ${execN}` : ''}`}</span></div>
@@ -278,7 +283,7 @@ SECTIONS.log = el => {
   el.innerHTML = `<div class="stats3">
       <div class="st" style="--c:var(--green)"><b>${achDays}</b><span>أيام الإنجاز</span></div>
       <div class="st" style="--c:var(--violet)"><b>${excDays}</b><span>أيام الاستئذان</span></div>
-      <div class="st" style="--c:var(--red)"><b>${Math.max(0, base - achDays)}</b><span>غياب تقديري</span></div>
+      <div class="st" style="--c:var(--red)"><b>${M.stumbles ?? Math.max(0, base - achDays)}</b><span>أيام التعثر</span></div>
     </div>
     <div class="seg" style="margin-bottom:10px">${[['all', 'الكل', recs.length], ['present', 'حاضر', cnt('present')], ['makeup', 'تعويض', cnt('makeup')], ['review_only', 'ربط ومراجعة', cnt('review_only')], ['excused', 'مستأذن', cnt('excused')]].filter(x => x[0] === 'all' || x[2]).map(([k, l, n]) => `<button type="button" data-f="${k}" aria-pressed="${logFilter === k}">${l} (${n})</button>`).join('')}</div>
     ${list.slice(0, logShown).map(r => `<div class="rec"><div class="top"><b>${A.dayName(r.rec_date)} ${A.greg(r.rec_date)}</b>${statusPill(r.status)}</div>

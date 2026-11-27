@@ -346,15 +346,19 @@ function tabRules() {
       <div><button class="btn sm ghost" type="button" id="addDed">+ نوع خطأ</button></div>
     </fieldset>` : ''}
 
+    <fieldset class="c-green"><legend>الإنجاز</legend>
+      <p class="hint">الإنجاز يُحسب من المهام المعلّمة «مهمة الإنجاز» في «المهام والأعمدة» (مثل الحفظ في برنامج الحفظ، أو المراجعة في برنامج المراجعة). مستوى الإنجاز = أيام الخطة التي نُفّذت فيها مهام الإنجاز ÷ أيامها المستحقة منذ بداية الطالب، ومنه تاريخ الختم المتوقع.</p>
+      <label class="f" style="max-width:420px">يُعدّ اليوم منجزًا إذا<select id="pBy">${[['teacher', 'رصده المعلم في جلسة التسميع'], ['student', 'علّم عليه الطالب'], ['either', 'رصده المعلم أو علّم عليه الطالب'], ['both', 'رصده المعلم وعلّم عليه الطالب']].map(([k, l]) => `<option value="${k}"${(P.progress_by || 'either') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      ${(() => { const t = (S.tasks || (tasksFromCols(), S.tasks)).filter(T => T.is_progress); return t.length ? `<div class="okbox" style="margin-top:6px">مهام الإنجاز: ${t.map(T => esc(taskTitle(T))).join('، ')}</div>` : '<div class="errbox" style="margin-top:6px">لا توجد «مهمة الإنجاز» بعد. علّمها في «المهام والأعمدة» ليُحسب الإنجاز والختم المتوقع.</div>'; })()}
+    </fieldset>
+
     <fieldset class="c-red"><legend>الانضباط</legend>
       <p class="hint">كل القيم تحددها أنت، ولا توجد قيمة افتراضية. الحقل الفارغ يعني أن القاعدة غير مفعّلة. الاستئذان المقبول لا يُحسب غيابًا، والتعويض في المهلة يلغي غياب اليوم الفائت.</p>
-      ${absOpts.length ? `<div><b class="small">يُعدّ الطالب غائبًا في يوم الخطة إذا</b>
-        <div class="choices" style="margin-top:6px">${absOpts.map(o => `<label title="${esc(o[2])}"><input type="radio" name="absIs" value="${o[0]}"${D.absence_is === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div>
-        <p class="hint" style="margin-top:4px">${esc((absOpts.find(o => o[0] === D.absence_is) || absOpts[0])[2])}</p></div>` : '<div class="note">لا يُحسب الغياب تلقائيًا لهذه الخطة لأنها بلا تسميع وبلا تنفيذ.</div>'}
+      <div class="note"><b>يوم التعثر:</b> يوم فيه مهمة «عليها درجة» لم ينفّذها من عليه التنفيذ حسب «الالتزام»: ${(() => { const pr = parties(P); return pr.s && pr.t ? 'الطالب (لم يعلّم عليها) أو المعلم (لم يرصدها)' : pr.t ? 'المعلم (لم يرصدها)' : 'الطالب (لم يعلّم عليها)'; })()}. أيام الاستئذان والتوقف للاختبار لا تُحسب. أيام التعثر هي التي تُبنى عليها التنبيهات والإنذارات، وتظهر في التقارير.</div>
       <div class="g3">
-        <label class="f" for="dWin">نافذة الاحتساب <span class="hint">آخر كم يوم خطة تُعدّ فيها الغيابات</span><input id="dWin" type="number" min="1" value="${D.window_days ?? ''}"></label>
-        <label class="f" for="dAlert">غيابات تُنشئ تنبيهًا <span class="hint">داخل النافذة</span><input id="dAlert" type="number" min="1" value="${D.alert_after ?? ''}"></label>
-        <label class="f" for="dWarn">غيابات تُنشئ إنذارًا <span class="hint">داخل النافذة</span><input id="dWarn" type="number" min="1" value="${D.warning_after ?? ''}"></label>
+        <label class="f" for="dWin">نافذة الاحتساب <span class="hint">آخر كم يوم خطة تُعدّ فيها أيام التعثر، والفارغ = منذ بداية الطالب</span><input id="dWin" type="number" min="1" value="${D.window_days ?? ''}"></label>
+        <label class="f" for="dAlert">أيام تعثر تُنشئ تنبيهًا <span class="hint">داخل النافذة</span><input id="dAlert" type="number" min="1" value="${D.alert_after ?? ''}"></label>
+        <label class="f" for="dWarn">أيام تعثر تُنشئ إنذارًا <span class="hint">داخل النافذة</span><input id="dWarn" type="number" min="1" value="${D.warning_after ?? ''}"></label>
         <label class="f" for="dEsc">إنذارات قبل الإحالة للفصل<input id="dEsc" type="number" min="1" value="${D.escalate_after ?? ''}"></label>
         <label class="f" for="dLeave">أقصى استئذان في الشهر <span class="hint">أيام؛ ما زاد يُعرض على المشرف</span><input id="dLeave" type="number" min="0" value="${D.leave_max_month ?? ''}"></label>
         <label class="f" for="dMk">مهلة التعويض <span class="hint">أيام بعد الغياب</span><input id="dMk" type="number" min="0" value="${D.makeup_within_days ?? ''}"></label>
@@ -385,6 +389,7 @@ function tabRules() {
   $$('[data-dd]').forEach(b => b.onclick = () => { R.deductions.splice(+b.dataset.dd, 1); markDirty(); tabRules(); });
   $('#addDed') && ($('#addDed').onclick = () => { R.deductions.push({ key: 'd' + Date.now(), label: '', value: 0 }); markDirty(); tabRules(); });
   $$('[name=absIs]').forEach(r => r.onchange = () => { D.absence_is = r.value; markDirty(); tabRules(); });
+  $('#pBy') && ($('#pBy').onchange = e => { P.progress_by = e.target.value; markDirty(); });
   [['dWin', 'window_days'], ['dAlert', 'alert_after'], ['dWarn', 'warning_after'], ['dEsc', 'escalate_after'], ['dLeave', 'leave_max_month'], ['dMk', 'makeup_within_days']]
     .forEach(([id, k]) => $('#' + id).oninput = e => { D[k] = numOrNull(e.target.value); markDirty(); });
   weightMsg();
@@ -407,6 +412,7 @@ const COL_HELP = `
     <li><b>لمن تظهر:</b> «للطالب» في صفحته فقط، «للمعلم» في نموذج الرصد فقط، «للمعلم والطالب» للاثنين، «لا أحد» للحساب فقط. هل يعلّم الطالب على ما يظهر له؟ تحدده «القواعد» ← تنفيذ الطالب.</li>
     <li><b>تقييم الضبط ونسبتها:</b> المهمة يرصد المعلم أخطاءها، ومنها درجة الجلسة («الضبط»). إذا عُلّمت أكثر من مهمة، فالنسبة حصة كل مهمة من الضبط.</li>
     <li><b>عليها درجة والدرجة:</b> المهمة يُحسب بها «الالتزام»، ويرى الطالب درجتها على بطاقتها. نصيب الطالب (إذا علّم عليها) ونصيب المعلم (إذا رصد فيها قيمة) تحددهما «القواعد ← الالتزام». الفارغ يأخذ الباقي من 100 بالتساوي، وإذا كُتبت كلها فمجموعها 100.</li>
+    <li><b>مهمة الإنجاز:</b> المهمة التي يُقاس بها تقدّم الطالب في الخطة (مثل الحفظ). منها «مستوى الإنجاز» و«الختم المتوقع». ومن يُعتبر منفّذها تحدده «القواعد ← الإنجاز».</li>
     <li><b>إلزامي:</b> عند رفع الإكسل تظهر خانات المهمة الفارغة بالأحمر الفاتح مع تنبيه، ويُقبل الرفع. الخانة الفارغة تعني أنه لا واجب في ذلك اليوم.</li>
     <li><b>أعمدة المهمة:</b> «اسم العمود في الإكسل» يجب أن يطابق رأس العمود في الملف حرفيًا. أول عمود أو أول نطاق هو قيمة المهمة، وباقي الأعمدة تفاصيل تظهر داخل بطاقتها (مثل صفحة الحفظ ونص الحديث).</li>
     <li><b>نوع القيمة:</b> رقم، نص، رابط، أو نعم/لا (علامة صح: إذا علّم الطالب فهي نعم). في الإكسل تكتب «نعم» في الأيام التي فيها المهمة وتتركها فارغة في غيرها.</li>
@@ -414,7 +420,7 @@ const COL_HELP = `
     <li><b>يعرض مقدار (لعمود نعم/لا):</b> يربطه بنطاق مهمة أخرى، فيرى الطالب مثلًا «هل قرأت مقدار الشرح: من حديث 10 إلى حديث 11».</li>
     <li><b>التكرار:</b> عمود رقم مفرد دائمًا (عدد مرات التكرار المطلوبة).</li>
   </ul></details>`;
-function newTask(over) { return Object.assign({ _id: uid(), task: 'custom', task_label: '', executor: 'both', graded: false, grade_weight: null, counts: false, weight: null, required: false, cols: [] }, over || {}); }
+function newTask(over) { return Object.assign({ _id: uid(), task: 'custom', task_label: '', executor: 'both', graded: false, grade_weight: null, counts: false, weight: null, is_progress: false, required: false, cols: [] }, over || {}); }
 // بناء المهام من الأعمدة المحفوظة
 function tasksFromCols() {
   const cols = S.cols, byId = Object.fromEntries(cols.map(c => [c.id, c]));
@@ -425,7 +431,7 @@ function tasksFromCols() {
     const m = byId[mid], ordered = [], seen = new Set();
     const put = c => { if (!c || seen.has(c.id)) return; seen.add(c.id); ordered.push(c); if (c.range_role === 'start' && c.pair_column_id && byId[c.pair_column_id]) { seen.add(c.pair_column_id); ordered.push(byId[c.pair_column_id]); } };
     put(m); cs.forEach(c => { if (c.range_role !== 'end' || !c.pair_column_id) put(c); }); cs.forEach(put);
-    return newTask({ task: m.task, task_label: m.task_label || '', executor: m.executor, graded: !!m.graded, grade_weight: m.grade_weight ?? null, counts: !!m.counts, weight: m.weight ?? null, required: !!m.required, cols: ordered });
+    return newTask({ task: m.task, task_label: m.task_label || '', executor: m.executor, graded: !!m.graded, grade_weight: m.grade_weight ?? null, counts: !!m.counts, weight: m.weight ?? null, is_progress: !!m.is_progress, required: !!m.required, cols: ordered });
   });
 }
 // كتابة المهام إلى الأعمدة: خصائص المهمة، والترتيب، وربط النطاقات، والتفاصيل
@@ -434,7 +440,7 @@ function syncCols() {
   S.tasks.forEach(T => {
     let open = null;
     T.cols.forEach(c => {
-      Object.assign(c, { task: T.task, task_label: T.task === 'custom' ? T.task_label : '', executor: T.executor, graded: !!T.graded, grade_weight: T.graded ? T.grade_weight : null, counts: !!T.counts, weight: T.counts ? T.weight : null, required: !!T.required, pair_column_id: null, detail_of: null });
+      Object.assign(c, { task: T.task, task_label: T.task === 'custom' ? T.task_label : '', executor: T.executor, graded: !!T.graded, grade_weight: T.graded ? T.grade_weight : null, counts: !!T.counts, weight: T.counts ? T.weight : null, is_progress: !!T.is_progress, required: !!T.required, pair_column_id: null, detail_of: null });
       if (T.task === 'repeat') { c.value_type = 'number'; c.range_role = 'single'; }
       if (c.value_type !== 'bool') c.shows_column_id = null;
     });
@@ -465,6 +471,7 @@ function tabColumns() {
           ${T.graded ? `<label class="f small" style="width:96px">نسبتها من الضبط<input type="number" data-tk="grade_weight" min="0" max="100" step="1" value="${T.grade_weight ?? ''}" placeholder="بالتساوي"></label>` : ''}</span>
         <span class="tgrade"><label class="tchk"><input type="checkbox" data-tk="counts"${T.counts ? ' checked' : ''}${off ? ' disabled' : ''}> عليها درجة</label>
           ${T.counts ? `<label class="f small" style="width:96px">الدرجة<input type="number" data-tk="weight" min="0" max="100" step="1" value="${T.weight ?? ''}" placeholder="بالتساوي"></label>` : ''}</span>
+        <label class="tchk" title="المهمة التي يُحسب بها الإنجاز والختم المتوقع"><input type="checkbox" data-tk="is_progress"${T.is_progress ? ' checked' : ''}${off ? ' disabled' : ''}> مهمة الإنجاز</label>
         <label class="tchk"><input type="checkbox" data-tk="required"${T.required ? ' checked' : ''}> إلزامي</label>
         <span class="tact"><button class="btn sm ghost" type="button" data-tup="${ti}" ${ti ? '' : 'disabled'} aria-label="نقل المهمة لأعلى">↑</button><button class="btn sm ghost" type="button" data-tdown="${ti}" ${ti < tasks.length - 1 ? '' : 'disabled'} aria-label="نقل المهمة لأسفل">↓</button><button class="btn sm danger" type="button" data-tdel="${ti}">حذف المهمة</button></span>
       </div>
@@ -905,14 +912,14 @@ async function savePlan() {
   const btn = $('#savePlan'); btn.disabled = true; btn.textContent = 'جارٍ الحفظ…';
   try {
     const row = { name: P.name.trim(), description: P.description || null, book_name: P.book_name || null, audio_url: P.audio_url || null, book_url: P.book_url || null, whatsapp_url: P.whatsapp_url || null, extra_links: (P.extra_links || []).filter(l => (l.url || '').trim()).map(l => ({ label: (l.label || '').trim() || 'رابط', url: l.url.trim() })), status: P.status,
-      workdays: P.workdays, recitation_mode: P.recitation_mode, recitation_days: P.recitation_days, student_execution: P.student_execution,
+      workdays: P.workdays, recitation_mode: P.recitation_mode, progress_by: P.progress_by || 'either', recitation_days: P.recitation_days, student_execution: P.student_execution,
       execution_weight: P.execution_weight, recitation_weight: P.recitation_weight, score_rules: P.score_rules, discipline_rules: P.discipline_rules };
     let planId = P.id;
     if (planId) { const r = await db.from('program_plans').update(row).eq('id', planId); if (r.error) throw r.error; }
     else { row.created_by = S.user.id; const r = await db.from('program_plans').insert(row).select('id').single(); if (r.error) throw r.error; planId = r.data.id; }
     if (S.removedCols.length) { const r = await db.from('plan_columns').delete().in('id', S.removedCols); if (r.error) throw r.error; }
     // الأعمدة بطلب واحد: الترتيب والاسم والارتباط معًا (قيود التفرد مؤجلة لنهاية الطلب)
-    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, shows_column_id: c.value_type === 'bool' && c.range_role === 'single' ? (c.shows_column_id || null) : null, graded: ['info', 'none', 'student'].includes(c.executor) ? false : !!c.graded, grade_weight: c.graded ? (c.grade_weight ?? null) : null, detail_of: c.range_role === 'end' ? null : (c.detail_of || null), executor: c.executor, counts: ['info', 'none'].includes(c.executor) ? false : !!c.counts, weight: c.weight, required: !!c.required }));
+    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, shows_column_id: c.value_type === 'bool' && c.range_role === 'single' ? (c.shows_column_id || null) : null, graded: ['info', 'none', 'student'].includes(c.executor) ? false : !!c.graded, is_progress: ['info', 'none'].includes(c.executor) ? false : !!c.is_progress, grade_weight: c.graded ? (c.grade_weight ?? null) : null, detail_of: c.range_role === 'end' ? null : (c.detail_of || null), executor: c.executor, counts: ['info', 'none'].includes(c.executor) ? false : !!c.counts, weight: c.weight, required: !!c.required }));
     let r = await db.from('plan_columns').upsert(colRows); if (r.error) throw r.error;
     // الأيام: تُستبدل بالكامل عند تغييرها
     const ids = new Set(S.cols.map(c => c.id));

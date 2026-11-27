@@ -212,12 +212,33 @@
     return out;
   }
   const BASIS = { plan: 'حسب أيام الخطة', recitation: 'حسب ما سمّعه للمعلم', execution: 'حسب ما نفّذه الطالب' };
+  // الختم المتوقع بسرعة الطالب الفعلية: أيام الإنجاز الباقية ÷ (أيام منجزة لكل يوم خطة مضى)
+  function finishDate(m, P) {
+    if (!m || !m.ach_total) return null;
+    if (!m.ach_left) return { done: true };
+    const rate = m.elapsed ? m.ach_days / m.elapsed : 0; if (!rate) return { never: true };
+    let need = Math.ceil(m.ach_left / rate), d = todayMakkah(), g = 0; const wd = P?.workdays || [0, 1, 2, 3, 4];
+    while (need > 0 && g++ < 4000) { d = addDays(d, 1); if (wd.includes(new Date(d + 'T12:00:00Z').getUTCDay())) need--; }
+    return { date: d, rate };
+  }
+  const finishText = f => !f ? '—' : f.done ? 'ختم الخطة' : f.never ? 'لم يبدأ الإنجاز' : greg(f.date);
+  // التعثر حسب قواعد الخطة: أيام التعثر داخل نافذة الاحتساب، وما يستحقه من تنبيه وإنذار وإحالة
+  function stumbleInfo(m, P, warnsIssued) {
+    const R = P?.discipline_rules || {}, wd = P?.workdays || [0, 1, 2, 3, 4];
+    let from = null;
+    if (R.window_days) { let n = 0, d = addDays(todayMakkah(), -1), g = 0; while (n < R.window_days && g++ < 400) { if (wd.includes(new Date(d + 'T12:00:00Z').getUTCDay())) n++; if (n < R.window_days) d = addDays(d, -1); } from = d; }
+    const inWin = (m?.stumble_dates || []).filter(x => !from || x >= from).length;
+    const alerts = R.alert_after ? Math.floor(inWin / R.alert_after) : 0, warns = R.warning_after ? Math.floor(inWin / R.warning_after) : 0;
+    const dismiss = R.escalate_after && (warnsIssued || 0) >= R.escalate_after;
+    const label = dismiss ? 'إحالة للفصل' : warns ? 'إنذار مستحق' : alerts ? 'تنبيه مستحق' : inWin ? 'متعثر' : 'منتظم';
+    return { inWin, total: m?.stumbles || 0, window: R.window_days || null, alerts, warns, dismiss, label, sev: dismiss ? 4 : warns ? 3 : alerts ? 2 : inWin ? 1 : 0, last: (m?.stumble_dates || [])[0] || null };
+  }
   // لوحة الطالب عند اختياره للرصد (المعلم والمشرف): الالتزام التراكمي والضبط ومراحل خطته
   async function studentPanel(box, stu, assign, P) {
     if (!box) return; box.innerHTML = '';
     if (!assign || !P) return;
     const [{ data: pc }, { data: st }, { data: rc }] = await Promise.all([
-      db.rpc('plan_commitment', { p_plan: assign.plan_id, p_from: null, p_to: null, p_student: stu.id }),
+      db.rpc('plan_metrics', { p_plan: assign.plan_id, p_from: null, p_to: null, p_student: stu.id }),
       db.from('plan_stages').select('*').eq('plan_id', assign.plan_id).order('seq'),
       db.from('plan_recitations').select('status, vals').eq('student_id', stu.id).is('superseded_by', null)]);
     const stages = st || [];
@@ -232,13 +253,15 @@
     }
     if (!box.isConnected) return;
     const list = stageStatus({ P, stages, exams, attempts, assign: { ...assign, holds }, recs: rc || [], progress });
-    box.innerHTML = stagePanelHtml(list, (pc || [])[0] || { iltizam: null, dabt: null });
+    const m = (pc || [])[0] || { iltizam: null, dabt: null };
+    box.innerHTML = stagePanelHtml(list, m, P);
   }
   // لوحة مراحل الطالب (للمعلم والمشرف عند اختياره للرصد)
-  function stagePanelHtml(list, commit) {
+  function stagePanelHtml(list, commit, P) {
+    const fin = P && commit?.ach_total ? finishDate(commit, P) : null, sb = P && commit ? stumbleInfo(commit, P) : null;
     const S = { progress: ['', ''], done: ['أنهى المرحلة', 'info'], hold: ['بانتظار الاختبار', 'warn'], grading: ['بانتظار التصحيح', 'violet'], passed: ['اجتاز', 'ok'] };
     return `<div class="card" style="--a:var(--gold);padding:10px 12px;margin-bottom:10px">
-      ${commit ? `<div class="row small" style="margin-bottom:${list.length ? 6 : 0}px"><span>الالتزام التراكمي <b style="font-size:15px">${commit.iltizam == null ? '—' : Math.round(+commit.iltizam) + '٪'}</b></span><span>الضبط <b style="font-size:15px">${commit.dabt == null ? '—' : Math.round(+commit.dabt) + '٪'}</b></span></div>` : ''}
+      ${commit ? `<div class="row small" style="margin-bottom:${list.length ? 6 : 0}px;flex-wrap:wrap;gap:4px 12px"><span>الالتزام التراكمي <b style="font-size:15px">${commit.iltizam == null ? '—' : Math.round(+commit.iltizam) + '٪'}</b></span><span>الضبط <b style="font-size:15px">${commit.dabt == null ? '—' : Math.round(+commit.dabt) + '٪'}</b></span>${commit.ach != null ? `<span>الإنجاز <b style="font-size:15px">${Math.round(+commit.ach)}٪</b></span>` : ''}${fin ? `<span>الختم المتوقع <b>${finishText(fin)}</b></span>` : ''}${sb && sb.inWin ? `<span class="pill ${sb.sev >= 3 ? 'bad' : 'warn'}">${sb.label} · ${sb.inWin} يوم تعثر${sb.window ? ' في آخر ' + sb.window : ''}</span>` : ''}</div>` : ''}
       ${list.map(x => `<div style="padding:5px 0;border-top:1px dashed var(--line,#e5e5e5)"><div class="row small"><b>${esc(x.st.name)}</b><span>${x.state === 'progress' ? `باقي <b>${fmtNum(x.remaining)}</b> ${esc(x.unit)}` : `<span class="pill ${S[x.state][1]}">${S[x.state][0]}</span>`}${x.best ? ` · الاختبار <b>${fmtNum(x.best.score, 1)}٪</b>${x.state !== 'passed' ? ` (${x.tries} من ${x.e.max_attempts})` : ''}` : ''}</span></div>
         ${x.state === 'progress' ? `<div style="height:6px;border-radius:5px;background:#eef2f2;margin-top:4px;overflow:hidden"><div style="height:100%;width:${x.pct}%;background:linear-gradient(90deg,#CBB994,#0F2F33)"></div></div>` : ''}</div>`).join('')}</div>`;
   }
@@ -717,5 +740,5 @@
 
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
+    unionCount, planDayFor, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, finishDate, finishText, stumbleInfo, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
 })();

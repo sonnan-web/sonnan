@@ -169,3 +169,7 @@ update public.plan_columns set graded = counts where graded = false and counts;
 -- انظر migration «supervisor_actions» في Supabase (follow_up_contacts, end_student, reactivate_student)
 
 -- خيارات المرحلة: basis (plan/recitation/execution) و hold_enabled و stop_value، وتحديث stage_bounds — انظر migration «stage_options»
+
+-- الإنجاز والتعثر الموحّدان: plan_columns.is_progress (مهمة الإنجاز) و program_plans.progress_by (من ينفّذ الإنجاز: teacher/student/either/both)
+-- والدالة plan_metrics(p_plan, p_from, p_to, p_student) ← iltizam, dabt, ach, ach_days, ach_due, ach_total, ach_left, elapsed, stumbles, stumble_dates
+-- و plan_commitment صارت غلافًا لها — انظر migration «plan_metrics» في Supabase للنص الكامل

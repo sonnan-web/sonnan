@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127o">
+<link rel="stylesheet" href="app.css?v=20261127p">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127o"></script>
+<script src="app.js?v=20261127p"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -565,6 +565,14 @@ function parseDate(v) {
   return null;
 }
 
+// مقاييس الخطة الموحّدة من قاعدة البيانات: الالتزام، الضبط، الإنجاز، أيام التعثر
+async function loadMetrics(force) {
+  if (D.metrics && !force && Date.now() - D.metricsAt < 60000) return D.metrics;
+  const { data } = await db.rpc('plan_metrics', { p_plan: null, p_from: null, p_to: null, p_student: null });
+  D.metrics = Object.fromEntries((data || []).map(x => [x.student_id, x])); D.metricsAt = Date.now();
+  return D.metrics;
+}
+const pctColor = v => v >= 90 ? 'var(--green)' : v >= 70 ? 'var(--teal)' : v >= 50 ? '#9A6A08' : 'var(--red)';
 // التنفيذ: مهام الطالب التي علّم عليها ÷ مهامه المطلوبة في أيام الخطة المنقضية
 async function loadPlanData(force) {
   if (D.planCols && !force) return;
@@ -607,9 +615,10 @@ SECTIONS.students = async el => {
   const showArch = SECTIONS.students.arch || false;
   const list = D.students.filter(s => showArch ? s.is_archived : !s.is_archived);
   // الالتزام من قاعدة البيانات (نفس حساب صفحة الطالب ولوحة الشرف)
-  const { data: pcAll } = await db.rpc('plan_commitment', { p_plan: null, p_from: null, p_to: null, p_student: null });
-  const ilOf = Object.fromEntries((pcAll || []).map(x => [x.student_id, x.iltizam == null ? null : Math.round(+x.iltizam)]));
-  const rows = list.map(s => { const st = statsOf(s); return { s, name: s.name, email: s.email, phone: s.phone || '', plan: s.plan, teacher: s.teacher, room: s.room, status: s.is_archived ? 'مؤرشف' : s.statusLabel, pct: st.pct, il: ilOf[s.id] ?? null, avg: st.avg, count: st.count }; });
+  const MX = await loadMetrics(true);
+  const rows = list.map(s => { const st = statsOf(s), m = MX[s.id]; const fin = m && s.planObj ? A.finishDate(m, s.planObj) : null;
+    return { s, name: s.name, email: s.email, phone: s.phone || '', plan: s.plan, teacher: s.teacher, room: s.room, status: s.is_archived ? 'مؤرشف' : s.statusLabel,
+      pct: m?.ach == null ? st.pct : Math.round(+m.ach), il: m?.iltizam == null ? null : Math.round(+m.iltizam), fin: fin?.date || null, finT: A.finishText(fin), stb: m?.stumbles ?? null, avg: st.avg, count: st.count }; });
   el.innerHTML = `${secHead('الطلاب وملفاتهم', fmtNum(rows.length) + (showArch ? ' طالب مؤرشف' : ' طالب'), 'teal',
       `<button class="btn gold sm" id="addStu">+ إضافة طالب</button><button class="btn ghost sm" id="impStu">استيراد طلاب</button><button class="btn ghost sm" id="expStu">تصدير</button><button class="btn ghost sm" id="archToggle">${showArch ? 'عرض الطلاب الحاليين' : 'عرض المؤرشفين'}</button>`)}
     <div class="card c-teal" id="sCard"><div class="head"><h3>${showArch ? 'الطلاب المؤرشفون' : 'بيانات الطلاب'}</h3><span class="hint">«متوسط الدرجة» متوسط درجات التسميع التي رصدها المعلمون، من ${'10'}. نسبة التنفيذ والتقييم المركب في «عرض الملف».</span></div><div id="sTbl"></div></div>
@@ -620,7 +629,9 @@ SECTIONS.students = async el => {
     { key: 'plan', label: 'الخطة', filter: true }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
     { key: 'status', label: 'الحالة', filter: true, html: r => `<span class="pill ${r.s.is_archived ? 'plain' : (STU_STATUS[r.s.status] || [, 'plain'])[1]}">${esc(r.status)}</span>` },
     { key: 'il', label: 'الالتزام', num: true, html: r => r.il == null ? '—' : `<b style="color:${r.il >= 90 ? 'var(--green)' : r.il >= 70 ? 'var(--teal)' : r.il >= 50 ? '#9A6A08' : 'var(--red)'}">${r.il}٪</b>` },
-    { key: 'pct', label: 'مستوى الإنجاز', num: true, html: r => r.pct == null ? '—' : `<b style="color:${r.pct >= 90 ? 'var(--green)' : r.pct >= 70 ? 'var(--teal)' : r.pct >= 50 ? '#9A6A08' : 'var(--red)'}">${r.pct}٪</b>` },
+    { key: 'pct', label: 'مستوى الإنجاز', num: true, html: r => r.pct == null ? '—' : `<b style="color:${pctColor(r.pct)}">${r.pct}٪</b>` },
+    { key: 'fin', label: 'الختم المتوقع', html: r => r.finT },
+    { key: 'stb', label: 'أيام التعثر', num: true, html: r => r.stb == null ? '—' : r.stb ? `<b style="color:var(--red)">${r.stb}</b>` : '0' },
     { key: 'avg', label: 'متوسط الدرجة', num: true, html: r => r.avg == null ? '—' : fmtNum(r.avg, 2) },
     { key: 'count', label: 'السجلات', num: true },
     { key: 'act', label: 'خيارات', html: r => `<span class="ibtns">
@@ -645,7 +656,7 @@ SECTIONS.students = async el => {
       ['الاسم', x => x.s.name], ['البريد الإلكتروني', x => x.s.email], ['رقم الجوال', x => x.s.phone], ['الجنسية', x => x.s.nationality], ['مكان الإقامة', x => x.s.residence], ['الجنس', x => x.s.gender],
       ['نوع الإثبات', x => pv[x.s.id]?.id_type], ['رقم الإثبات', x => pv[x.s.id]?.id_number], ['تاريخ الميلاد', x => x.s.birth_date], ['التعليم', x => x.s.education], ['حفظ القرآن', x => x.s.quran_parts],
       ['الخطة', x => x.s.plan], ['الالتزام ٪', x => x.il], ['المعلم', x => x.s.teacher], ['الفترة', x => x.s.room], ['الحالة', x => x.status], ['حالة القبول', x => x.s.app_status], ['تاريخ الانضمام', x => x.s.join_date],
-      ['مستوى الإنجاز ٪', x => x.pct], ['متوسط الدرجة', x => x.avg == null ? '' : Math.round(x.avg * 100) / 100], ['المحفوظ', x => x.st.memorized], ['عدد السجلات', x => x.count], ['آخر رصد', x => x.st.last], ['ملاحظات', x => x.s.notes]], out);
+      ['مستوى الإنجاز ٪', x => x.pct], ['الختم المتوقع', x => x.fin || x.finT], ['أيام التعثر', x => x.stb], ['متوسط الدرجة', x => x.avg == null ? '' : Math.round(x.avg * 100) / 100], ['المحفوظ', x => x.st.memorized], ['عدد السجلات', x => x.count], ['آخر رصد', x => x.st.last], ['ملاحظات', x => x.s.notes]], out);
   };
   $('#archToggle').onclick = () => { SECTIONS.students.arch = !showArch; route(); };
 };
@@ -831,11 +842,12 @@ async function studentFile(id) {
   const st = statsOf(s);
   const recs = (D.recsByStudent[id] || []).slice(0, 15);
   const PL = await plansFull(), P = s.assign ? PL[s.assign.plan_id] : null;
+  const MX = await loadMetrics(), mm = MX[id], fin = mm && s.planObj ? A.finishDate(mm, s.planObj) : null, sbi = mm && s.planObj ? A.stumbleInfo(mm, s.planObj) : null;
   let month = (FOL.mode === 'cal' ? FOL.cFrom.slice(0, 7) : TODAY.slice(0, 7));
   drawer('الطالب: ' + s.name, `
     <div class="row" style="justify-content:flex-start"><button class="btn" id="qEdit">تعديل البيانات</button><a class="btn ghost" href="student-file.html?id=${id}" target="_blank" rel="noopener">عرض الملف الكامل</a>${['withdrawn', 'dismissed'].includes(s.status) ? '<button class="btn gold" id="qBack">إعادة للانتظام</button>' : ''}</div>
     ${['withdrawn', 'dismissed'].includes(s.status) ? `<div class="hintbox">${s.status === 'withdrawn' ? 'انسحب الطالب' : 'فُصل الطالب'}، وتوقف دخوله للمنصة. سجلاته محفوظة.</div>` : ''}
-    <div class="card c-teal"><div class="minis">${mini('المحفوظ', fmtNum(st.memorized, 1), 'green')}${mini('الإنجاز', st.pct == null ? '—' : st.pct + '٪', 'teal')}${mini('متوسط الدرجة', st.avg == null ? '—' : fmtNum(st.avg, 2), 'blue')}${mini('غياب تقديري', fmtNum(st.absences), 'red')}</div></div>
+    <div class="card c-teal"><div class="minis">${mini('المحفوظ', fmtNum(st.memorized, 1), 'green')}${mini('مستوى الإنجاز', mm?.ach == null ? (st.pct == null ? '—' : st.pct + '٪') : Math.round(+mm.ach) + '٪', 'teal', mm?.ach_total ? `${mm.ach_days} من ${mm.ach_due} يومًا مستحقًا` : '')}${mini('الختم المتوقع', A.finishText(fin), 'gold', mm?.ach_left ? `باقي ${mm.ach_left} يوم إنجاز` : '')}${mini('الالتزام', mm?.iltizam == null ? '—' : Math.round(+mm.iltizam) + '٪', 'green')}${mini('الضبط', mm?.dabt == null ? '—' : Math.round(+mm.dabt) + '٪', 'blue')}${mini('أيام التعثر', fmtNum(mm?.stumbles ?? st.absences), 'red', sbi && sbi.sev >= 2 ? sbi.label : sbi?.window ? `${sbi.inWin} في آخر ${sbi.window} يوم` : '')}</div></div>
     ${P ? `<div class="card c-teal"><div class="head"><h3>تقويم الشهر</h3><div class="row" style="gap:4px"><button class="btn ghost sm" id="smPrev" type="button">‹ السابق</button><b id="smLbl" class="small"></b><button class="btn ghost sm" id="smNext" type="button">التالي ›</button></div></div>
       <div class="hint" style="margin-bottom:6px">لكل يوم: حالة التسميع ثم حالة تنفيذ الواجب. اضغط على اليوم للتفاصيل.</div><div id="smCal"></div></div>` : '<div class="card c-teal"><h3>تقويم الشهر</h3><div class="empty">الطالب غير مسند إلى خطة، فلا يوجد له تقويم. أسنده من «خطط البرامج» ← «إضافة طلاب».</div></div>'}
     <div class="card"><dl class="dl"><dt>البريد</dt><dd dir="ltr" style="text-align:right">${esc(s.email || '')}</dd><dt>الجوال</dt><dd dir="ltr" style="text-align:right">${esc(s.phone || '—')}</dd><dt>المعلم</dt><dd>${esc(s.teacher)}</dd><dt>الفترة</dt><dd>${esc(s.room)}</dd><dt>الخطة</dt><dd>${esc(s.plan)}</dd></dl></div>
@@ -905,39 +917,29 @@ async function notify(userIds, kind, title, body, channels, dedupe) {
 // ============ الانضباط والمتابعة ============
 SECTIONS.discipline = async el => {
   await loadRecs();
-  const [{ data: ev }, { data: fa }, { data: lv }] = await Promise.all([
-    db.from('discipline_events').select('*').order('event_date', { ascending: false }),
-    Promise.resolve({ data: [] }),
-    db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved')
-  ]);
-  const leaveDays = {}; (lv || []).forEach(l => { for (let d = l.date_from; d <= l.date_to; d = A.addDays(d, 1)) (leaveDays[l.student_id] ||= new Set()).add(d); });
-  const rows = actives().map(s => {
-    const P = s.planObj, R = P?.discipline_rules || {}, wd = P?.workdays || [0, 1, 2, 3, 4];
-    const win = R.window_days || 14;
-    // آخر «win» يوم خطة حتى أمس
-    const days = []; let d = A.addDays(TODAY, -1), g = 0;
-    const startD = s.assign?.start_date || s.join_date;
-    while (days.length < win && g++ < 400 && (!startD || d >= startD)) { if (wd.includes(new Date(d + 'T12:00:00Z').getUTCDay())) days.push(d); d = A.addDays(d, -1); }
-    const rs = D.recsByStudent[s.id] || [];
-    const doneDays = new Set(rs.filter(r => ACH.includes(r.status) || r.status === 'excused').map(r => r.rec_date));
-    rs.filter(r => r.status === 'makeup' && r.makes_up_date).forEach(r => doneDays.add(r.makes_up_date));
-    const recDay = dd => !P || P.recitation_mode === 'daily' || (P.recitation_mode === 'days' && P.recitation_days.includes(new Date(dd + 'T12:00:00Z').getUTCDay()));
-    const absent = days.filter(dd => recDay(dd) && !doneDays.has(dd) && !(leaveDays[s.id]?.has(dd)));
+  const [{ data: ev }, MX] = await Promise.all([
+    db.from('discipline_events').select('*').order('event_date', { ascending: false }), loadMetrics()]);
+  // يوم التعثر: يوم خطة لم ينفّذ فيه صاحب الإنجاز مهمة الإنجاز (بلا استئذان ولا توقف ولا تعويض)
+  const rows = actives().filter(s => s.assign).map(s => {
+    const P = s.planObj, R = P?.discipline_rules || {}, m = MX[s.id];
     const mine = (ev || []).filter(e => e.student_id === s.id && e.status === 'active');
     const alerts = mine.filter(e => e.kind === 'alert').length, warns = mine.filter(e => e.kind === 'warning').length;
+    const sb = A.stumbleInfo(m, P, warns);
     let sug = '', sev = 0;
-    if (R.escalate_after && warns >= R.escalate_after) { sug = 'إحالة للفصل'; sev = 3; }
-    else if (R.warning_after && absent.length >= R.warning_after) { sug = 'إنذار مستحق'; sev = 2; }
-    else if (R.alert_after && absent.length >= R.alert_after) { sug = 'تنبيه مستحق'; sev = 1; }
-    return { s, name: s.name, teacher: s.teacher, win, absent: absent.length, absentDays: absent, alerts, warns, last: lastRecOf(s), sug, sev };
+    if (sb.dismiss) { sug = 'إحالة للفصل'; sev = 3; }
+    else if (sb.warns > warns) { sug = 'إنذار مستحق'; sev = 2; }
+    else if (sb.alerts > alerts) { sug = 'تنبيه مستحق'; sev = 1; }
+    const absentDays = (m?.stumble_dates || []).filter((x, i) => i < sb.inWin);
+    return { s, name: s.name, teacher: s.teacher, win: R.window_days ? R.window_days + ' يوم' : 'منذ البداية', absent: sb.inWin, total: sb.total, absentDays, alerts, warns, dueA: sb.alerts, dueW: sb.warns, last: lastRecOf(s), sug, sev };
   });
-  el.innerHTML = `${secHead('الانضباط والمتابعة', 'الغياب يُحسب من قواعد خطة كل طالب', 'red')}
+  el.innerHTML = `${secHead('الانضباط والمتابعة', 'التعثر والتنبيه والإنذار حسب قواعد خطة كل طالب', 'red')}
     <div class="card" style="--a:var(--red);margin-bottom:10px"><div class="minis">${mini('إحالة للفصل', fmtNum(rows.filter(r => r.sev === 3).length), 'red')}${mini('إنذار مستحق', fmtNum(rows.filter(r => r.sev === 2).length), 'orange')}${mini('تنبيه مستحق', fmtNum(rows.filter(r => r.sev === 1).length), 'amber')}${mini('منضبطون', fmtNum(rows.filter(r => !r.sev).length), 'green')}</div></div>
     <div class="card c-red" id="dCard"><div class="head"><h3>حالة الانضباط لكل طالب</h3><span class="hint">إصدار التنبيه أو الإنذار يسجّله ويرسل إشعارًا للطالب. لا يُصدر شيء تلقائيًا حتى تعتمده.</span></div><div id="dTbl"></div></div>
     <div class="hintbox" style="margin-top:10px">سجل التواصل مع الطلاب المتعثرين وإغلاق حالاتهم صار في قسم <a href="#actions">«إجراءات المشرف»</a>.</div>`;
   dataTable($('#dTbl'), { rows, sortKey: 'sev', dir: -1, pageSize: 200, cols: [
-    { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'absent', label: 'غياب في النافذة', num: true, html: r => `${r.absent} <span class="hint">/ ${r.win} يوم</span>` },
-    { key: 'alerts', label: 'تنبيهات', num: true }, { key: 'warns', label: 'إنذارات', num: true }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' },
+    { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'absent', label: 'أيام التعثر في النافذة', num: true, html: r => `${r.absent ? `<b style="color:var(--red)">${r.absent}</b>` : 0} <span class="hint">/ ${r.win}</span>` },
+    { key: 'total', label: 'كل أيام التعثر', num: true },
+    { key: 'alerts', label: 'تنبيهات صدرت', num: true, html: r => `${r.alerts}${r.dueA > r.alerts ? ` <span class="hint">من ${r.dueA} مستحق</span>` : ''}` }, { key: 'warns', label: 'إنذارات صدرت', num: true, html: r => `${r.warns}${r.dueW > r.warns ? ` <span class="hint">من ${r.dueW} مستحق</span>` : ''}` }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' },
     { key: 'sug', label: 'المقترح', filter: true, html: r => r.sug ? `<span class="pill ${r.sev >= 2 ? 'bad' : 'warn'}">${r.sug}</span>` : '<span class="pill ok">منضبط</span>' },
     { key: 'act', label: '', html: r => `<button class="btn ghost sm" data-ev="alert" data-s="${r.s.id}">تنبيه</button> <button class="btn danger sm" data-ev="warning" data-s="${r.s.id}">إنذار</button>` }],
     onRow: r => studentFile(r.s.id),
@@ -947,8 +949,8 @@ SECTIONS.discipline = async el => {
 function issueEvent(studentId, kind, row) {
   const s = D.studentById[studentId];
   const days = (row?.absentDays || []).slice(0, 10).map(A.greg).join('، ');
-  drawer(`إصدار ${KIND[kind]}: ${s.name}`, `<p class="small">أيام الغياب في النافذة: ${days || 'لا يوجد'}</p>
-    <label class="f" for="eR">السبب (يصل للطالب)<textarea id="eR">${kind === 'alert' ? 'تغيب عن التسميع دون استئذان' : 'تكرر الغياب عن التسميع دون استئذان'}${days ? ' في: ' + days : ''}</textarea></label>
+  drawer(`إصدار ${KIND[kind]}: ${s.name}`, `<p class="small">أيام التعثر في النافذة: ${days || 'لا يوجد'}</p>
+    <label class="f" for="eR">السبب (يصل للطالب)<textarea id="eR">${kind === 'alert' ? 'لم يُنجز المطلوب في الخطة' : 'تكرر عدم إنجاز المطلوب في الخطة'}${days ? ' في: ' + days : ''}</textarea></label>
     <div class="chips"><label><input type="checkbox" id="eMail" checked>إرسال بالبريد أيضًا</label><label><input type="checkbox" id="ePush" checked>إشعار على الجوال</label></div>
     <button class="btn ${kind === 'alert' ? '' : 'danger'}" id="eGo">إصدار ${KIND[kind]}</button>`, root => {
     $('#eGo', root).onclick = async () => {
@@ -1241,10 +1243,9 @@ async function actionsData() {
     fetchAll(() => db.from('follow_up_actions').select('*').order('case_date', { ascending: false })),
     fetchAll(() => db.from('follow_up_contacts').select('*').order('created_at', { ascending: false })),
     fetchAll(() => db.from('notifications').select('id, recipient_user_id, channel, kind, title, body, status, error, created_at, sent_at, read_at').order('created_at', { ascending: false }).limit(3000)),
-    db.rpc('plan_commitment', { p_plan: null, p_from: null, p_to: null, p_student: null }).then(r => r.data || []),
-    db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').then(r => r.data || [])
+    loadMetrics(true)
   ]);
-  return { fa, fc, nt, pc: Object.fromEntries(pc.map(x => [x.student_id, x])), lv };
+  return { fa, fc, nt, pc };
 }
 SECTIONS.actions = async el => {
   await loadRecs();
@@ -1252,21 +1253,15 @@ SECTIONS.actions = async el => {
   X_openCache = X.fa;
   if (!el.isConnected) return;
   const openOf = sid => X.fa.find(f => f.student_id === sid && !f.closed_at);
-  // المتعثرون: غياب في نافذة الاحتساب، أو التزام منخفض، أو انقطاع عن الرصد
-  const leaveOn = (sid, d) => X.lv.some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d);
+  // المتعثرون: من له أيام تعثر في نافذة الاحتساب حسب قواعد خطته (يوم لم يُنفّذ فيه صاحب الإنجاز مهمة الإنجاز)
   const struggling = actives().filter(s => s.assign).map(s => {
-    const P = s.planObj, R = P?.discipline_rules || {}, wd = P?.workdays || [0, 1, 2, 3, 4], win = R.window_days || 10;
-    const days = []; let d = A.addDays(TODAY, -1), g = 0; const st = s.assign.start_date;
-    while (days.length < win && g++ < 200 && d >= st) { if (wd.includes(new Date(d + 'T12:00:00Z').getUTCDay())) days.push(d); d = A.addDays(d, -1); }
-    const rs = D.recsByStudent[s.id] || [], done = new Set(rs.filter(r => [...ACH, 'excused'].includes(r.status)).map(r => r.rec_date)); rs.filter(r => r.makes_up_date).forEach(r => done.add(r.makes_up_date));
-    const absent = P?.recitation_mode === 'none' ? 0 : days.filter(x => A.isRecitationDay(P, x) && !done.has(x) && !leaveOn(s.id, x) && !A.holdOn(s.assign, x)).length;
-    const il = X.pc[s.id]?.iltizam == null ? null : Math.round(+X.pc[s.id].iltizam), last = lastRecOf(s), gap = last ? A.daysBetween(last, TODAY) : A.daysBetween(st, TODAY);
+    const P = s.planObj, m = X.pc[s.id], sb = A.stumbleInfo(m, P);
+    const il = m?.iltizam == null ? null : Math.round(+m.iltizam), last = lastRecOf(s);
     const reasons = [];
-    if (absent >= (R.alert_after || 2)) reasons.push(`غاب ${absent} من آخر ${days.length} ${days.length > 2 && days.length < 11 ? 'أيام' : 'يوم'} تسميع`);
-    if (il != null && il < 60 && (X.pc[s.id]?.days || 0) >= 5) reasons.push(`الالتزام ${il}٪`);
-    if (gap >= 7) reasons.push(last ? `لا رصد منذ ${gap} يومًا` : 'لم يُرصد له شيء');
-    return { s, name: s.name, teacher: s.teacher, room: s.room, phone: s.phone, il, last, absent, reasons, sev: reasons.length + (absent >= (R.warning_after || 99) ? 1 : 0), open: openOf(s.id) };
-  }).filter(r => r.reasons.length);
+    if (sb.inWin) reasons.push(`${sb.inWin} ${sb.inWin > 2 && sb.inWin < 11 ? 'أيام' : 'يوم'} تعثر${sb.window ? ' في آخر ' + sb.window + ' يوم' : ''}`);
+    if (sb.sev >= 2) reasons.push(sb.label);
+    return { s, name: s.name, teacher: s.teacher, room: s.room, phone: s.phone, il, ach: m?.ach == null ? null : Math.round(+m.ach), last, absent: sb.inWin, reasons, sev: sb.sev * 100 + sb.inWin, open: openOf(s.id) };
+  }).filter(r => r.absent);
   const cases = X.fa.map(f => { const s = D.studentById[f.student_id] || {}; const cs = X.fc.filter(c => c.action_id === f.id); const lc = cs[0];
     return { f, s, cs, name: s.name || '—', teacher: s.teacher || '—', date: f.case_date, reason: f.reason || '', lastC: lc?.contact_date || f.contact_date || null, method: lc?.method || f.contact_method || '', n: cs.length, status: f.status, days: A.daysBetween(f.case_date, f.closed_at ? f.closed_at.slice(0, 10) : TODAY), summary: lc?.summary || f.action_summary || '', reply: lc?.reply || f.student_reply || '' }; });
   cases.forEach(c => { c.open = !c.f.closed_at; c.lastUpd = (c.cs[0]?.created_at || c.f.created_at || '').slice(0, 10); c.stale = c.open && c.lastUpd && c.lastUpd < TODAY; });
@@ -1282,10 +1277,11 @@ SECTIONS.actions = async el => {
   $('#newCase').onclick = () => openCase(null);
   cardFull($('#acCard'));
   if (AC.tab === 'struggling') {
-    $('#acT').textContent = 'الطلاب المتعثرون'; $('#acTools').innerHTML = '<span class="hint">يكتشفهم النظام من الغياب في نافذة الاحتساب، والالتزام تحت 60٪، والانقطاع عن الرصد 7 أيام</span>';
+    $('#acT').textContent = 'الطلاب المتعثرون'; $('#acTools').innerHTML = '<span class="hint">يوم التعثر: يوم خطة لم يُنفّذ فيه صاحب الإنجاز (الطالب أو المعلم حسب الخطة) مهمة الإنجاز، بلا استئذان ولا تعويض. يُحسب في نافذة الاحتساب من قواعد الخطة.</span>';
     dataTable($('#acTbl'), { rows: struggling, sortKey: 'sev', dir: -1, pageSize: 200, onRow: r => studentFile(r.s.id), cols: [
       { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true },
       { key: 'reasons', label: 'سبب التعثر', val: r => r.reasons.join('، '), html: r => r.reasons.map(x => `<span class="pill warn" style="margin:1px">${esc(x)}</span>`).join(' ') },
+      { key: 'absent', label: 'أيام التعثر', num: true }, { key: 'ach', label: 'الإنجاز', num: true, html: r => r.ach == null ? '—' : r.ach + '٪' },
       { key: 'il', label: 'الالتزام', num: true, html: r => r.il == null ? '—' : r.il + '٪' }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' },
       { key: 'open', label: 'الإجراء', val: r => r.open ? 'حالة مفتوحة' : 'بلا إجراء', filter: true, html: r => r.open ? `<span class="pill ${CASE_ST[r.open.status]}">${r.open.status}</span>` : '<span class="pill bad">بلا إجراء</span>' },
       { key: 'act', label: '', html: r => `<span class="opts">${r.open ? `<button class="btn sm" data-oc="${r.open.id}">متابعة الحالة</button>` : `<button class="btn sm gold" data-nc="${r.s.id}">فتح حالة</button>`}${waLink(r.phone, '') ? `<a class="btn sm ghost" target="_blank" rel="noopener" href="${esc(waLink(r.phone, msgTpl(r.s, r.reasons.join('، '))))}">واتساب</a>` : ''}</span>` }],
@@ -1401,7 +1397,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127o&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127p&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
@@ -1649,7 +1645,9 @@ SECTIONS.reports = async el => {
   const by = k => recs.filter(r => r.status === k).length;
   const scores = recs.filter(r => r.score != null).map(r => +r.score);
   const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
-  const per = studs.map(s => ({ s, st: statsOf(s, st.from, st.to) }));
+  const { data: mR } = await db.rpc('plan_metrics', { p_plan: null, p_from: st.from, p_to: st.to, p_student: null });
+  const mOf = Object.fromEntries((mR || []).map(x => [x.student_id, x]));
+  const per = studs.map(s => { const x = statsOf(s, st.from, st.to), m = mOf[s.id]; if (m?.ach != null) x.pct = Math.round(+m.ach); x.stumbles = m?.stumbles ?? x.absences; x.il = m?.iltizam == null ? null : Math.round(+m.iltizam); return { s, st: x }; });
   const memTotal = per.reduce((a, x) => a + x.st.memorized, 0);
   const avgPct = (() => { const v = per.map(x => x.st.pct).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; })();
   const tBars = D.teachers.map(t => { const rs = recs.filter(r => r.teacher_id === t.id); const sc = rs.filter(r => r.score != null).map(r => +r.score); return [t.name, rs.length, sc.length ? sc.reduce((a, b) => a + b, 0) / sc.length : 0]; }).filter(x => x[1]).sort((a, b) => b[1] - a[1]);
@@ -1671,7 +1669,7 @@ SECTIONS.reports = async el => {
     </div></div>
     <div class="grid">
       <div class="card span5 c-teal"><div class="head"><h3>توزيع حالات الرصد</h3></div>${donut(['present', 'makeup', 'review_only', 'excused'].map(k => [STATUS[k].label, by(k), STATUS[k].color]), 'جلسة')}</div>
-      <div class="card span7 c-green"><div class="head"><h3>نسبة الإنجاز للطلاب</h3></div>${donut(pctBands, 'طالب')}<p class="note">نسبة الإنجاز = أيام الإنجاز (حضور، تعويض، ربط ومراجعة) ÷ أيام الخطة في الفترة بعد طرح أيام الاستئذان.</p></div>
+      <div class="card span7 c-green"><div class="head"><h3>نسبة الإنجاز للطلاب</h3></div>${donut(pctBands, 'طالب')}<p class="note">مستوى الإنجاز = الأيام التي نُفّذت فيها «مهمة الإنجاز» المحددة في الخطة (ممن حددته الخطة: الطالب أو المعلم) ÷ أيام الإنجاز المستحقة في الفترة، بعد طرح الاستئذان وأيام التوقف.</p></div>
       <div class="card span6 c-blue"><div class="head"><h3>الجلسات حسب المعلم</h3></div>${bars(tBars.map(x => [x[0], x[1]]), 'var(--blue)')}</div>
       <div class="card span6 c-violet"><div class="head"><h3>متوسط الدرجة حسب المعلم</h3></div>${bars(tBars.map(x => [x[0], x[2]]), 'var(--violet)', v => fmtNum(v, 2))}</div>
       <div class="card span12 c-amber"><div class="head"><h3>الجلسات اليومية</h3></div><div class="cols-chart">${perDay.map(([d, n]) => `<div class="col" title="${A.greg(d)}: ${n}"><span class="v">${n || ''}</span><span class="bw"><span class="b" style="height:${(n / maxDay * 100).toFixed(1)}%"></span></span><span class="l">${d.slice(8)}</span></div>`).join('')}</div></div>
@@ -1679,10 +1677,10 @@ SECTIONS.reports = async el => {
     </div>
     <div class="sec-h" style="--c:var(--green)"><b>إنجاز الطلاب</b><span>اضغط على العنوان للترتيب، وعلى الطالب لفتح ملفه</span></div>
     <div class="card c-green" id="achCard"><div class="head"><h3>جدول الإنجاز</h3></div><div id="achTbl"></div></div></div>`;
-  dataTable($('#achTbl'), { rows: per.map(x => ({ s: x.s, name: x.s.name, teacher: x.s.teacher, room: x.s.room, expected: x.st.expected, ach: x.st.achDays, present: x.st.present, makeup: x.st.makeup, review: x.st.review_only, excused: x.st.excused, absent: x.st.absences, pct: x.st.pct, avg: x.st.avg, mem: x.st.memorized, last: x.st.last })), sortKey: 'pct', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
+  dataTable($('#achTbl'), { rows: per.map(x => ({ s: x.s, name: x.s.name, teacher: x.s.teacher, room: x.s.room, expected: x.st.expected, ach: x.st.achDays, present: x.st.present, makeup: x.st.makeup, review: x.st.review_only, excused: x.st.excused, absent: x.st.stumbles, pct: x.st.pct, avg: x.st.avg, mem: x.st.memorized, last: x.st.last })), sortKey: 'pct', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
     { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'room', label: 'الفترة', filter: true }, { key: 'expected', label: 'أيام الخطة', num: true }, { key: 'ach', label: 'أيام الإنجاز', num: true },
-    { key: 'present', label: 'حضور', num: true }, { key: 'makeup', label: 'تعويض', num: true }, { key: 'review', label: 'ربط ومراجعة', num: true }, { key: 'excused', label: 'استئذان', num: true }, { key: 'absent', label: 'غياب', num: true, html: r => r.absent ? `<b style="color:var(--red)">${r.absent}</b>` : '0' },
-    { key: 'pct', label: 'الإنجاز', num: true, html: r => r.pct == null ? '—' : `<b style="color:${r.pct >= 90 ? 'var(--green)' : r.pct >= 70 ? 'var(--teal)' : r.pct >= 50 ? '#9A6A08' : 'var(--red)'}">${r.pct}٪</b>` },
+    { key: 'present', label: 'حضور', num: true }, { key: 'makeup', label: 'تعويض', num: true }, { key: 'review', label: 'ربط ومراجعة', num: true }, { key: 'excused', label: 'استئذان', num: true }, { key: 'absent', label: 'أيام التعثر', num: true, html: r => r.absent ? `<b style="color:var(--red)">${r.absent}</b>` : '0' },
+    { key: 'pct', label: 'مستوى الإنجاز', num: true, html: r => r.pct == null ? '—' : `<b style="color:${pctColor(r.pct)}">${r.pct}٪</b>` },
     { key: 'avg', label: 'متوسط الدرجة', num: true, html: r => r.avg == null ? '—' : fmtNum(r.avg, 2) }, { key: 'mem', label: 'المحفوظ', num: true, html: r => fmtNum(r.mem, 1) }, { key: 'last', label: 'آخر رصد', html: r => r.last ? A.greg(r.last) : '—' }] });
   $$('#repRoot .card').forEach(cardFull);
   const root = $('#repRoot');
@@ -1729,7 +1727,9 @@ SECTIONS.summary = async el => {
       • <b>التسميع</b>: عدد الأحاديث التي سمّعها للمعلم (حفظ وربط ومراجعة)، و<b>المحفوظ المسمَّع</b> بلا تكرار للأحاديث المعادة.<br>
       • <b>الالتزام</b>: من المهام التي عليها درجة في الخطة: نصيب الطالب إذا علّم عليها، ونصيب المعلم إذا رصد فيها قيمة، حسب «القواعد ← الالتزام». الأيام التي ليس فيها مهام عليها درجة لا تُحسب.<br>
       • <b>الضبط</b>: متوسط درجة التسميع ÷ الدرجة الكاملة، من المهام المعلّمة «تقييم الضبط».<br>
-      • <b>مستوى الإنجاز</b>: أيام التسميع المنجزة (تم، عوّض، ربط ومراجعة) ÷ أيام التسميع في الفترة منذ بداية خطته، بعد طرح الاستئذان.<br>
+      • <b>مستوى الإنجاز</b>: الأيام التي نُفّذت فيها «مهمة الإنجاز» المحددة في الخطة (كالحفظ في خطة الحفظ)، ممن حددته الخطة في «القواعد ← الإنجاز» (الطالب أو المعلم أو أحدهما أو كلاهما) ÷ أيام الإنجاز المستحقة منذ بداية خطته، بعد طرح الاستئذان وأيام التوقف. والتعويض يُحسب لليوم الفائت.<br>
+      • <b>الختم المتوقع</b>: أيام الإنجاز الباقية في الخطة ÷ سرعة الطالب الفعلية (أيام منجزة لكل يوم خطة مضى)، تُعدّ من اليوم على أيام تقدّم الخطة.<br>
+      • <b>أيام التعثر</b>: كل يوم إنجاز مستحق لم يُنفّذ فيه صاحب الإنجاز مهمة الإنجاز. <b>الانضباط</b>: التنبيه والإنذار المستحقان حسب «القواعد ← الانضباط» في نافذة الاحتساب.<br>
     </div></details>`;
   $$('[data-sp]', el).forEach(b => b.onclick = () => { st.preset = b.dataset.sp; route(); });
   $('#sF').onchange = e => { st.preset = 'custom'; st.from = e.target.value; route(); };
@@ -1787,16 +1787,20 @@ SECTIONS.summary = async el => {
     return o;
   });
   // الالتزام والضبط من قاعدة البيانات (نفس حساب صفحة الطالب ولوحة الشرف)
-  const pcs = {}; for (const id of planIds) { const { data } = await db.rpc('plan_commitment', { p_plan: id, p_from: from, p_to: to, p_student: null }); (data || []).forEach(r => pcs[r.student_id] = r); }
+  const pcs = {}; for (const id of planIds) { const { data } = await db.rpc('plan_metrics', { p_plan: id, p_from: from, p_to: to, p_student: null }); (data || []).forEach(r => pcs[r.student_id] = r); }
+  const MX = await loadMetrics();
   if (!el.isConnected) return;
-  rows.forEach(o => { const r = pcs[o.s.id]; o.commit = r?.iltizam == null ? null : Math.round(+r.iltizam); o.dabt = r?.dabt == null ? null : Math.round(+r.dabt); o.basis = ''; });
+  // الإنجاز والتعثر في الفترة، والختم المتوقع وحالة الانضباط من كل مدة الطالب
+  rows.forEach(o => { const r = pcs[o.s.id], g = MX[o.s.id], P = o.s.planObj; o.commit = r?.iltizam == null ? null : Math.round(+r.iltizam); o.dabt = r?.dabt == null ? null : Math.round(+r.dabt); o.basis = '';
+    if (r?.ach != null) o.ach = Math.round(+r.ach); o.achDays = r?.ach_days ?? null; o.achDue = r?.ach_due ?? null; o.absent = r?.stumbles ?? o.absent;
+    const f = g && P ? A.finishDate(g, P) : null; o.fin = f?.date || null; o.finT = A.finishText(f); o.left = g?.ach_left ?? null;
+    const sb = g && P ? A.stumbleInfo(g, P) : null; o.disc = sb ? sb.label : '—'; o.discSev = sb?.sev || 0; });
   const exA = await fetchAll(() => db.from('exam_attempts').select('student_id, passed, status, submitted_at').eq('status', 'graded'));
   rows.forEach(o => { const m = exA.filter(a => a.student_id === o.s.id && (a.submitted_at || '').slice(0, 10) >= from && (a.submitted_at || '').slice(0, 10) <= to); o.exams = m.length; o.examsPassed = m.filter(a => a.passed).length; });
   const sum = k => rows.reduce((a, r) => a + (r[k] || 0), 0);
   const avgOf = k => { const v = rows.map(r => r[k]).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
   $('#sKpi').innerHTML = `<div class="minis">${mini('الطلاب', fmtNum(rows.length), 'slate')}${mini('أحاديث الحفظ', fmtNum(sum('memo')), 'green')}${mini('الربط', fmtNum(sum('link')), 'teal')}${mini('المراجعة', fmtNum(sum('review')), 'blue')}${mini('مرات التكرار', fmtNum(sum('repeat')), 'violet')}${mini('أحاديث مسمَّعة', fmtNum(sum('recited')), 'amber')}
-    ${mini('متوسط الالتزام', avgOf('commit') == null ? '—' : avgOf('commit') + '٪', 'teal')}${mini('متوسط الضبط', avgOf('dabt') == null ? '—' : avgOf('dabt') + '٪', 'violet')}${mini('متوسط الإنجاز', avgOf('ach') == null ? '—' : avgOf('ach') + '٪', 'green')}${mini('الاختبارات', fmtNum(sum('exams')), 'amber', sum('exams') ? 'نسبة الاجتياز ' + Math.round(sum('examsPassed') / sum('exams') * 100) + '٪' : '')}</div>`;
-  const pctColor = v => v >= 90 ? 'var(--green)' : v >= 70 ? 'var(--teal)' : v >= 50 ? '#9A6A08' : 'var(--red)';
+    ${mini('متوسط الالتزام', avgOf('commit') == null ? '—' : avgOf('commit') + '٪', 'teal')}${mini('متوسط الضبط', avgOf('dabt') == null ? '—' : avgOf('dabt') + '٪', 'violet')}${mini('متوسط الإنجاز', avgOf('ach') == null ? '—' : avgOf('ach') + '٪', 'green')}${mini('أيام التعثر', fmtNum(sum('absent')), 'red', fmtNum(rows.filter(r => r.discSev >= 2).length) + ' طالب عليه تنبيه أو إنذار مستحق')}${mini('الاختبارات', fmtNum(sum('exams')), 'amber', sum('exams') ? 'نسبة الاجتياز ' + Math.round(sum('examsPassed') / sum('exams') * 100) + '٪' : '')}</div>`;
   const pctHtml = v => v == null ? '—' : `<b style="color:${pctColor(v)}">${v}٪</b>`;
   const n0 = k => ({ key: k, num: true, html: x => x[k] == null ? '—' : fmtNum(x[k]) });
   const tbl = dataTable($('#sTbl'), { rows, sortKey: 'commit', dir: -1, pageSize: 300, onRow: r => studentFile(r.s.id), cols: [
@@ -1804,15 +1808,17 @@ SECTIONS.summary = async el => {
     { ...n0('memo'), label: 'الحفظ' }, { ...n0('link'), label: 'الربط' }, { ...n0('review'), label: 'المراجعة' }, { ...n0('repeat'), label: 'التكرار' },
     { ...n0('recited'), label: 'التسميع' }, { key: 'memorized', label: 'المحفوظ المسمَّع', num: true, html: x => fmtNum(x.memorized, 1) },
     { key: 'avg', label: 'متوسط الدرجة', num: true, html: x => x.avg == null ? '—' : fmtNum(x.avg, 2) },
-    { key: 'commit', label: 'الالتزام', num: true, html: x => pctHtml(x.commit) }, { key: 'dabt', label: 'الضبط', num: true, html: x => pctHtml(x.dabt) }, { key: 'ach', label: 'مستوى الإنجاز', num: true, html: x => pctHtml(x.ach) }, { key: 'exams', label: 'الاختبارات', num: true, html: x => x.exams ? `${x.examsPassed}/${x.exams} <span class="hint">مجتاز</span>` : '—' },
+    { key: 'commit', label: 'الالتزام', num: true, html: x => pctHtml(x.commit) }, { key: 'dabt', label: 'الضبط', num: true, html: x => pctHtml(x.dabt) }, { key: 'ach', label: 'مستوى الإنجاز', num: true, html: x => pctHtml(x.ach) + (x.achDue ? ` <span class="hint">${x.achDays}/${x.achDue}</span>` : '') },
+    { key: 'fin', label: 'الختم المتوقع', html: x => x.finT }, { ...n0('left'), label: 'أيام إنجاز باقية' }, { key: 'exams', label: 'الاختبارات', num: true, html: x => x.exams ? `${x.examsPassed}/${x.exams} <span class="hint">مجتاز</span>` : '—' },
     { ...n0('recDays'), label: 'أيام التسميع' }, { ...n0('execDays'), label: 'أيام التنفيذ' }, { ...n0('excused'), label: 'الاستئذان' },
-    { key: 'absent', label: 'الغياب', num: true, html: x => x.absent ? `<b style="color:var(--red)">${x.absent}</b>` : '0' },
+    { key: 'absent', label: 'أيام التعثر', num: true, html: x => x.absent ? `<b style="color:var(--red)">${x.absent}</b>` : '0' },
+    { key: 'disc', label: 'الانضباط', filter: true, html: x => `<span class="pill ${x.discSev >= 3 ? 'bad' : x.discSev >= 2 ? 'bad' : x.discSev ? 'warn' : 'ok'}">${esc(x.disc)}</span>` },
     { key: 'last', label: 'آخر رصد', html: x => x.last ? A.greg(x.last) : '—' }] });
   $('#sExport').onclick = () => A.exportXlsx(`التقرير الإجمالي - ${from} إلى ${to}`, 'التقرير الإجمالي', [
     ['الطالب', x => x.name], ['البريد', x => x.email], ['الخطة', x => x.program], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['الجنس', x => x.gender], ['الجنسية', x => x.nat],
     ['الحفظ', x => x.memo], ['الربط', x => x.link], ['المراجعة', x => x.review], ['التكرار', x => x.repeat], ['التسميع', x => x.recited], ['المحفوظ المسمَّع', x => x.memorized],
-    ['متوسط الدرجة', x => x.avg == null ? null : +x.avg.toFixed(2)], ['نسبة التسميع ٪', x => x.recPct], ['نسبة التنفيذ ٪', x => x.exPct], ['الالتزام ٪', x => x.commit], ['الضبط ٪', x => x.dabt], ['مستوى الإنجاز ٪', x => x.ach], ['اختبارات', x => x.exams], ['اختبارات مجتازة', x => x.examsPassed],
-    ['أيام التسميع', x => x.recDays], ['أيام التنفيذ', x => x.execDays], ['الاستئذان', x => x.excused], ['الغياب', x => x.absent], ['آخر رصد', x => x.last]], tbl.getRows());
+    ['متوسط الدرجة', x => x.avg == null ? null : +x.avg.toFixed(2)], ['نسبة التسميع ٪', x => x.recPct], ['نسبة التنفيذ ٪', x => x.exPct], ['الالتزام ٪', x => x.commit], ['الضبط ٪', x => x.dabt], ['مستوى الإنجاز ٪', x => x.ach], ['أيام الإنجاز المنفّذة', x => x.achDays], ['أيام الإنجاز المستحقة', x => x.achDue], ['الختم المتوقع', x => x.fin || x.finT], ['أيام إنجاز باقية', x => x.left], ['اختبارات', x => x.exams], ['اختبارات مجتازة', x => x.examsPassed],
+    ['أيام التسميع', x => x.recDays], ['أيام التنفيذ', x => x.execDays], ['الاستئذان', x => x.excused], ['أيام التعثر', x => x.absent], ['الانضباط', x => x.disc], ['آخر رصد', x => x.last]], tbl.getRows());
 };
 
 // ============ جلسات المعلمين: كم يسمّع كل معلم في اليوم وفي الفترة ============
