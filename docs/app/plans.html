@@ -324,6 +324,7 @@ function tabRules() {
 
     ${rec ? `<fieldset class="c-violet"><legend>درجة التسميع</legend>
       <p class="hint">الدرجة = الدرجة الكاملة − (عدد كل نوع خطأ × قيمة خصمه). يرى المعلم هذه الأنواع في نموذج الرصد ويضغط + لكل خطأ.</p>
+      ${(() => { const g = gradedP(); if (!g.length) return '<div class="note"><b>تُطبَّق على:</b> الجلسة كلها، لأنه لا توجد مهمة معلّمة «في التقييم» في «أعمدة الخطة». علّم المهمة التي تريد تقييمها ليرصد المعلم أخطاءها هي فقط.</div>'; const w = normW(g.map(tW)); return `<div class="note"><b>تُطبَّق على:</b> ${g.map((t, i) => esc(t.name) + (g.length > 1 ? ` (${Math.round(w[i] * 100)}٪)` : '')).join('، ')} فقط، وهي المعلّمة «في التقييم» في «أعمدة الخطة». يرصد المعلم الأخطاء عليها، وباقي المهام رصد فقط.${g.length > 1 ? ' درجة الجلسة متوسطها حسب الأوزان.' : ''}</div>`; })()}
       <label class="f" for="sMax" style="max-width:220px">الدرجة الكاملة<input id="sMax" type="number" min="1" step="0.5" value="${R.max ?? ''}"></label>
       <div class="table-wrap"><table><thead><tr><th>نوع الخطأ (كما يراه المعلم)</th><th>يُخصم لكل خطأ</th><th></th></tr></thead><tbody>
         ${R.deductions.map((d, i) => `<tr><td><input type="text" data-dl="${i}" value="${esc(d.label)}"></td><td><input type="number" step="0.05" min="0" data-dv="${i}" value="${d.value}"></td><td><button class="btn sm danger" type="button" data-dd="${i}">حذف</button></td></tr>`).join('')}
@@ -606,6 +607,11 @@ function parseSheet(fileName, aoa) {
 }
 
 // ---------- ٤. المعاينة ----------
+// الوزن الفارغ يأخذ الباقي من 100 بالتساوي
+function normW(ws) { const has = w => w != null && w !== '' && !isNaN(+w); const g = ws.filter(has).reduce((a, w) => a + +w, 0), f = ws.filter(w => !has(w)).length, rest = Math.max(0, 100 - g); const o = ws.map(w => has(w) ? +w : (f ? rest / f : 0)); const t = o.reduce((a, b) => a + b, 0); return t ? o.map(w => w / t) : ws.map(() => 1 / (ws.length || 1)); }
+const tW = t => { const c = t.cols.find(c => c.weight != null && c.weight !== ''); return c ? +c.weight : null; };
+const gradedP = () => groupTasks(c => c.executor === 'teacher' || c.executor === 'both').filter(t => t.cols.some(c => c.counts));
+const execP = () => { const all = groupTasks(c => c.executor === 'student' || c.executor === 'both').filter(t => t.single?.value_type !== 'url'); const g = all.filter(t => t.cols.some(c => c.counts)); return g.length ? g : all; };
 function groupTasks(filterFn) {
   // يجمع كل عمودين مرتبطين في مهمة واحدة؛ وعمود «تفاصيل لـ» يُعرض داخل مهمته
   const out = [], used = {};
@@ -643,7 +649,11 @@ function tabPreview() {
   const teacherTasks = groupTasks(c => c.executor === 'teacher' || c.executor === 'both');
   const canExec = P.student_execution !== 'none';
   const R = P.score_rules;
-  const score = Math.max(0, (R.max || 0) - R.deductions.reduce((s, d) => s + (S.previewDed[d.key] || 0) * (Number(d.value) || 0), 0));
+  const graded = gradedP(), perTask = graded.length > 0, gW = normW(graded.map(tW));
+  const eKeys = new Set(execP().map(t => t.key));
+  const tScore = k => Math.max(0, (R.max || 0) - R.deductions.reduce((s, d) => s + ((S.previewDed[k] || {})[d.key] || 0) * (Number(d.value) || 0), 0));
+  const score = perTask ? graded.reduce((a, t, i) => a + gW[i] * tScore(t.key), 0) : tScore('_all');
+  const dedRows = k => R.deductions.map(d => `<div class="row"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ded"><button type="button" data-ded="${esc(d.key)}" data-tk="${k}" data-dir="-1">−</button><b>${(S.previewDed[k] || {})[d.key] || 0}</b><button type="button" data-ded="${esc(d.key)}" data-tk="${k}" data-dir="1">+</button></span></div>`).join('');
   const recDays = P.recitation_mode === 'daily' ? P.workdays : P.recitation_mode === 'days' ? P.recitation_days : [];
   $('#tab').innerHTML = `<div class="grid">
     <div class="row" style="justify-content:flex-start"><label class="f" for="pvDay" style="width:200px">يوم الخطة<select id="pvDay">${S.days.map(d => `<option value="${d.day_number}"${d.day_number === day.day_number ? ' selected' : ''}>اليوم ${d.day_number}</option>`).join('')}</select></label>
@@ -652,23 +662,23 @@ function tabPreview() {
       <div><h3 style="margin-bottom:8px">شاشة الطالب</h3><div class="phone">
         <div class="row"><b>اليوم ${day.day_number}</b><span class="pill ${canExec ? 'gold' : 'plain'}">${P.student_execution === 'none' ? 'لا تنفيذ على الطالب' : P.student_execution === 'counts' ? 'تنفيذك يدخل في تقييمك' : 'تنفيذك للمتابعة'}</span></div>
         ${studentTasks.map(t => { const txt = fmtTask(t, vals); if (txt == null) return ''; const info = t.cols[0].executor === 'info'; const exec = canExec && !info; const on = S.previewTicks[t.key];
-          return `<div class="task"><button type="button" class="tick ${exec ? (on ? 'on' : '') : 'none'}" data-tick="${t.key}" ${exec ? '' : 'tabindex="-1" aria-hidden="true"'}>${on ? '✓' : ''}</button><div><b>${esc(t.name)}</b><span class="small muted">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span>${previewDetails(t, vals)}</div></div>`; }).join('') || '<p class="muted small">لا توجد مهام للطالب في هذا اليوم.</p>'}
+          return `<div class="task"><button type="button" class="tick ${exec ? (on ? 'on' : '') : 'none'}" data-tick="${t.key}" ${exec ? '' : 'tabindex="-1" aria-hidden="true"'}>${on ? '✓' : ''}</button><div><b>${esc(t.name)}</b>${exec && eKeys.has(t.key) ? ' <span class="pill gold" style="font-size:10px">يُحسب في الالتزام</span>' : ''}<span class="small muted" style="display:block">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span>${previewDetails(t, vals)}</div></div>`; }).join('') || '<p class="muted small">لا توجد مهام للطالب في هذا اليوم.</p>'}
         <p class="muted small">التسميع: ${P.recitation_mode === 'none' ? 'لا يوجد' : recDays.map(i => DAYS[i]).join('، ') || 'لم تُحدد أيام'}</p>
       </div></div>
       <div><h3 style="margin-bottom:8px">رصد المعلم</h3><div class="phone" style="--c:var(--blue)">
         ${P.recitation_mode === 'none' ? '<p class="muted">هذه الخطة بلا تسميع، فلا يظهر للمعلم نموذج رصد.</p>' : `
         <p class="small muted">يظهر النموذج في أيام التسميع: ${recDays.map(i => DAYS[i]).join('، ') || 'لم تُحدد'}</p>
-        ${teacherTasks.map(t => `<div class="task" style="grid-template-columns:1fr"><div><b>${esc(t.name)}</b><span class="small muted"> المقرر: ${esc(fmtTask(t, vals) ?? '—')}</span>
-          <div class="g2" style="margin-top:6px">${t.cols.map(c => `<label class="f small">${esc(c.header)}<input type="${c.value_type === 'number' ? 'number' : 'text'}" value="${esc(vals[c.id] ?? '')}" step="0.5"></label>`).join('')}</div></div></div>`).join('') || '<p class="muted small">لا توجد أعمدة يرصدها المعلم.</p>'}
+        ${teacherTasks.map(t => { const gi = graded.findIndex(g => g.key === t.key); return `<div class="task" style="grid-template-columns:1fr"><div><b>${esc(t.name)}</b> ${perTask ? (gi >= 0 ? `<span class="pill violet" style="font-size:10px">تقييم${graded.length > 1 ? ' ' + Math.round(gW[gi] * 100) + '٪' : ''}</span>` : '<span class="pill plain" style="font-size:10px">رصد فقط</span>') : ''}<span class="small muted"> المقرر: ${esc(fmtTask(t, vals) ?? '—')}</span>${previewDetails(t, vals)}
+          <div class="g2" style="margin-top:6px">${t.cols.map(c => `<label class="f small">${esc(c.header)}<input type="${c.value_type === 'number' ? 'number' : 'text'}" value="${esc(vals[c.id] ?? '')}" step="0.5"></label>`).join('')}</div>
+          ${perTask && gi >= 0 ? `<div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px"><b class="small">أخطاء ${esc(t.name)}</b>${dedRows(t.key)}<div class="row"><span>درجة المهمة</span><span class="score">${tScore(t.key).toFixed(2)} <span class="hint">من ${R.max}</span></span></div></div>` : ''}</div></div>`; }).join('') || '<p class="muted small">لا توجد أعمدة يرصدها المعلم.</p>'}
         ${groupTasks(c => c.executor === 'info').map(t => { const txt = fmtTask(t, vals); return txt == null ? '' : `<div class="task" style="grid-template-columns:1fr;--teal:var(--slate)"><div><b>${esc(t.name)} <span class="hint">للعرض فقط</span></b><span class="small muted">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span></div></div>`; }).join('')}
-        <div class="task" style="grid-template-columns:1fr"><b>الأخطاء</b>
-          ${R.deductions.map(d => `<div class="row"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ded"><button type="button" data-ded="${esc(d.key)}" data-dir="-1">−</button><b>${S.previewDed[d.key] || 0}</b><button type="button" data-ded="${esc(d.key)}" data-dir="1">+</button></span></div>`).join('')}
-          <div class="row"><span>الدرجة</span><span class="score">${score.toFixed(2)} <span class="hint">من ${R.max}</span></span></div></div>`}
+        <div class="task" style="grid-template-columns:1fr">${perTask ? '' : `<b>الأخطاء <span class="hint">(للجلسة كلها: لا توجد مهمة معلّمة «في التقييم»)</span></b>${dedRows('_all')}`}
+          <div class="row"><span>${perTask ? 'درجة الجلسة' : 'الدرجة'}</span><span class="score">${score.toFixed(2)} <span class="hint">من ${R.max}</span></span></div></div>`}
       </div></div>
     </div></div>`;
   $('#pvDay').onchange = e => { S.previewDay = +e.target.value; S.previewTicks = {}; S.previewDed = {}; tabPreview(); };
   $$('[data-tick]').forEach(b => b.onclick = () => { S.previewTicks[b.dataset.tick] = !S.previewTicks[b.dataset.tick]; tabPreview(); });
-  $$('[data-ded]').forEach(b => b.onclick = () => { const k = b.dataset.ded; S.previewDed[k] = Math.max(0, (S.previewDed[k] || 0) + +b.dataset.dir); tabPreview(); });
+  $$('[data-ded]').forEach(b => b.onclick = () => { const k = b.dataset.ded, box = (S.previewDed[b.dataset.tk] ||= {}); box[k] = Math.max(0, (box[k] || 0) + +b.dataset.dir); tabPreview(); });
 }
 
 // ---------- ٥. الإسناد ----------
