@@ -148,7 +148,9 @@ const DAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربع�
 const TASKS = { memo: 'حفظ', link: 'ربط', review: 'مراجعة', repeat: 'تكرار', explain: 'شرح', listen: 'سماع', custom: 'مهمة أخرى' };
 const VTYPES = { number: 'رقم', text: 'نص', url: 'رابط', bool: 'نعم / لا' };
 const ROLES = { single: 'قيمة مفردة', start: 'بداية نطاق (القيمة الدنيا)', end: 'نهاية نطاق (القيمة القصوى)' };
-const EXEC = { student: 'الطالب', teacher: 'المعلم', both: 'الطالب والمعلم', info: 'للعرض فقط' };
+// لمن يظهر العمود (التنفيذ نفسه تحدده «القواعد»). «لا أحد»: عمود للحساب فقط لا يظهر لأحد
+const EXEC = { student: 'للطالب', teacher: 'للمعلم', both: 'للمعلم والطالب', none: 'لا أحد (للحساب فقط)' };
+const EXEC_OLD = { info: 'للطالب (عرض فقط)' };
 const todayMakkah = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh' }).format(new Date());
 
 // ============ الحالة ============
@@ -241,7 +243,7 @@ function render() {
     <aside class="card grid"${EMBED ? ' hidden' : ''}>
       <div class="row"><h3>الخطط</h3><button class="btn sm gold" type="button" id="newPlan">+ خطة جديدة</button></div>
       <div class="plans-list">${S.plans.map(p => `<button type="button" data-open="${p.id}" aria-current="${P && p.id === P.id}">${esc(p.name)}<small>${esc(p.book_name || '')} · ${p.status === 'active' ? 'مفعّلة' : p.status === 'archived' ? 'مؤرشفة' : 'مسودة'}</small></button>`).join('') || '<p class="muted small">لا توجد خطط بعد.</p>'}</div>
-      <p class="hint">الخطة هي طريقة البرنامج: أعمدتها، ومن ينفّذ، وأيام التسميع، وقواعد التنبيه والإنذار. أنشئها ثم أسندها للطلاب.</p>
+      <p class="hint">الخطة هي طريقة البرنامج: أعمدتها، ولمن تظهر، وأيام التسميع، وقواعد التنبيه والإنذار. أنشئها ثم أسندها للطلاب.</p>
     </aside>
     <section class="card">
       <div class="row">
@@ -390,7 +392,7 @@ const COL_HELP = `
     <li><b>دوره:</b> «قيمة مفردة» عمود مستقل. «بداية نطاق» و«نهاية نطاق» عمودان يُربطان معًا مثل «من حديث» و«إلى حديث»؛ البداية هي القيمة الدنيا والنهاية هي القيمة القصوى، وتتأكد المنصة أن البداية لا تزيد على النهاية.</li>
     <li><b>يعرض مقدار (لأعمدة نعم/لا):</b> يربط المهمة بنطاق من الخطة، فيرى الطالب مثلًا «هل قرأت مقدار الشرح: من 10 إلى 11» مع علامة صح. علامة الصح = نعم، وبدونها = لا.</li>
     <li><b>مرتبط بعمود:</b> العمود الآخر من النطاق. عند الربط يصبح العمودان مهمة واحدة تظهر «من … إلى …».</li>
-    <li><b>من ينفّذ:</b> «الطالب» تظهر له مهمة يعلّم عليها في صفحته ولا تظهر للمعلم. «المعلم» تظهر في نموذج الرصد عند المعلم فقط. «الطالب والمعلم» تظهر للطالب مهمةً وللمعلم حقلًا في الرصد. «للعرض فقط» معلومة بلا تنفيذ، تظهر للطالب في يومه (مثل رابط الشرح) وتظهر للمعلم مرجعًا في الرصد دون أن يدخلها.</li>
+    <li><b>لمن تظهر:</b> «للطالب» تظهر في صفحته فقط. «للمعلم» تظهر في نموذج الرصد عند المعلم فقط. «للمعلم والطالب» تظهر للاثنين. «لا أحد» عمود للحساب فقط، لا يظهر لأحد، وتستخدمه المنصة في الحساب (مثل أرقام الصفحات). هل يعلّم الطالب على ما يظهر له؟ هذا تحدده «القواعد» ← تنفيذ الطالب.</li>
     <li><b>في التقييم والوزن:</b> هل يدخل إنجاز هذه المهمة في نسبة الطالب، وبأي وزن مقارنة بالمهام الأخرى.</li>
     <li><b>إلزامي:</b> عند رفع الإكسل تظهر خاناته الفارغة بالأحمر الفاتح مع تنبيه، ويُقبل الرفع. الخانة الفارغة تعني أنه لا واجب في هذا العمود في ذلك اليوم.</li>
     <li><b>التكرار:</b> قيمته رقم مفرد دائمًا (عدد مرات التكرار المطلوبة)، لذلك يُقفل نوع القيمة ودوره.</li>
@@ -400,10 +402,10 @@ function tabColumns() {
   const issues = columnIssues();
   const P = S.plan;
   $('#tab').innerHTML = `<div class="grid">
-    ${P.recitation_mode === 'none' && cols.some(c => c.executor === 'teacher' || c.executor === 'both') ? '<div class="errbox">الخطة بلا تسميع، فالأعمدة التي منفّذها «المعلم» لن تظهر لأحد. غيّر منفّذها أو فعّل التسميع.</div>' : ''}
-    ${P.student_execution === 'none' && cols.some(c => c.executor === 'student') ? '<div class="errbox">الخطة بلا تنفيذ عند الطالب، فالأعمدة التي منفّذها «الطالب» تظهر له للاطلاع فقط دون تعليم.</div>' : ''}
+    ${P.recitation_mode === 'none' && cols.some(c => c.executor === 'teacher' || c.executor === 'both') ? '<div class="errbox">الخطة بلا تسميع، فالأعمدة التي تظهر «للمعلم» لن يراها أحد. غيّر «لمن تظهر» أو فعّل التسميع.</div>' : ''}
+    ${P.student_execution === 'none' && cols.some(c => c.executor === 'student') ? '<div class="errbox">الخطة بلا تنفيذ عند الطالب، فالأعمدة التي تظهر «للطالب» يراها للاطلاع فقط دون تعليم.</div>' : ''}
     <div class="table-wrap"><table>
-      <thead><tr><th>#</th><th>اسم العمود في الإكسل</th><th>المهمة</th><th>نوع القيمة</th><th>دوره</th><th>مرتبط بعمود</th><th>من ينفّذ</th><th>في التقييم</th><th>الوزن</th><th>إلزامي</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>اسم العمود في الإكسل</th><th>المهمة</th><th>نوع القيمة</th><th>دوره</th><th>مرتبط بعمود</th><th>لمن تظهر</th><th>في التقييم</th><th>الوزن</th><th>إلزامي</th><th></th></tr></thead>
       <tbody>${cols.map((c, i) => { const rep = c.task === 'repeat'; return `<tr data-i="${i}">
         <td class="colnum">${i + 1}</td>
         <td><input type="text" data-k="header" value="${esc(c.header)}" placeholder="مثال: الحفظ من حديث" style="min-width:150px"></td>
@@ -413,9 +415,9 @@ function tabColumns() {
         <td><select data-k="range_role"${rep ? ' disabled title="التكرار قيمة مفردة دائمًا"' : ''}>${Object.entries(ROLES).filter(([k]) => !rep || k === 'single').map(([k, v]) => `<option value="${k}"${c.range_role === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
         <td>${c.value_type === 'bool' && c.range_role === 'single' ? `<select data-k="shows_column_id" title="يظهر للطالب مقدار هذا النطاق بجانب المهمة"><option value="">يعرض مقدار: لا</option>${cols.filter(o => o.range_role === 'start' && o.pair_column_id).map(o => { const e = cols.find(x => x.id === o.pair_column_id); return `<option value="${o.id}"${c.shows_column_id === o.id ? ' selected' : ''}>يعرض مقدار: ${esc((o.header || '').trim())} – ${esc((e?.header || '').trim())}</option>`; }).join('')}</select>`
           : `<select data-k="pair_column_id"${rep ? ' disabled' : ''}><option value="">لا</option>${rep ? '' : cols.filter(o => o.id !== c.id && o.task !== 'repeat').map(o => `<option value="${o.id}"${c.pair_column_id === o.id ? ' selected' : ''}>${esc(o.header || 'عمود ' + (cols.indexOf(o) + 1))}</option>`).join('')}</select>`}</td>
-        <td><select data-k="executor">${Object.entries(EXEC).map(([k, v]) => `<option value="${k}"${c.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
-        <td style="text-align:center"><input type="checkbox" data-k="counts"${c.counts ? ' checked' : ''}${c.executor === 'info' ? ' disabled' : ''}></td>
-        <td><input type="number" data-k="weight" min="0" step="1" value="${c.weight ?? ''}" style="width:70px"${c.counts && c.executor !== 'info' ? '' : ' disabled'}></td>
+        <td><select data-k="executor">${Object.entries({ ...EXEC, ...(EXEC_OLD[c.executor] ? { [c.executor]: EXEC_OLD[c.executor] } : {}) }).map(([k, v]) => `<option value="${k}"${c.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
+        <td style="text-align:center"><input type="checkbox" data-k="counts"${c.counts ? ' checked' : ''}${['info', 'none'].includes(c.executor) ? ' disabled' : ''}></td>
+        <td><input type="number" data-k="weight" min="0" step="1" value="${c.weight ?? ''}" style="width:70px"${c.counts && !['info', 'none'].includes(c.executor) ? '' : ' disabled'}></td>
         <td style="text-align:center"><input type="checkbox" data-k="required"${c.required ? ' checked' : ''}></td>
         <td style="white-space:nowrap"><button class="btn sm ghost" type="button" data-up="${i}" ${i ? '' : 'disabled'} aria-label="نقل لأعلى">↑</button> <button class="btn sm ghost" type="button" data-down="${i}" ${i < cols.length - 1 ? '' : 'disabled'} aria-label="نقل لأسفل">↓</button> <button class="btn sm danger" type="button" data-del="${i}">حذف</button></td>
       </tr>`; }).join('')}</tbody></table></div>
@@ -743,7 +745,7 @@ async function savePlan() {
     else { row.created_by = S.user.id; const r = await db.from('program_plans').insert(row).select('id').single(); if (r.error) throw r.error; planId = r.data.id; }
     if (S.removedCols.length) { const r = await db.from('plan_columns').delete().in('id', S.removedCols); if (r.error) throw r.error; }
     // الأعمدة بطلب واحد: الترتيب والاسم والارتباط معًا (قيود التفرد مؤجلة لنهاية الطلب)
-    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, shows_column_id: c.value_type === 'bool' && c.range_role === 'single' ? (c.shows_column_id || null) : null, executor: c.executor, counts: c.executor === 'info' ? false : !!c.counts, weight: c.weight, required: !!c.required }));
+    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, shows_column_id: c.value_type === 'bool' && c.range_role === 'single' ? (c.shows_column_id || null) : null, executor: c.executor, counts: ['info', 'none'].includes(c.executor) ? false : !!c.counts, weight: c.weight, required: !!c.required }));
     let r = await db.from('plan_columns').upsert(colRows); if (r.error) throw r.error;
     // الأيام: تُستبدل بالكامل عند تغييرها
     const ids = new Set(S.cols.map(c => c.id));

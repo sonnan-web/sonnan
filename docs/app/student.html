@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127a">
+<link rel="stylesheet" href="app.css?v=20261127b">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127a"></script>
+<script src="app.js?v=20261127b"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -138,8 +138,10 @@ SECTIONS.home = async el => {
   const live = room && room.active && (room.days || []).includes(dn) && room.start_time && now >= room.start_time.slice(0, 5) && now <= (room.end_time || '23:59').slice(0, 5);
   const workToday = planLive && A.workdaysBetween(TODAY, TODAY, wd);
   const visTasks = tasks.filter(t => A.fmtTaskVal(t, today?.vals) != null);
-  const doneN = visTasks.filter(t => t.executor !== 'info' && t.cols.some(c => progress.has(c.id))).length;
-  const execN = visTasks.filter(t => t.executor !== 'info').length;
+  // الرابط والعمود «للعرض فقط» معلومة بلا علامة إنجاز
+  const viewOnly = t => t.executor === 'info' || t.single?.value_type === 'url';
+  const doneN = visTasks.filter(t => !viewOnly(t) && t.cols.some(c => progress.has(c.id))).length;
+  const execN = visTasks.filter(t => !viewOnly(t)).length;
   const ps = A.pushState();
   el.innerHTML = `
     <section class="hello"><div style="min-width:0">
@@ -159,7 +161,7 @@ SECTIONS.home = async el => {
     ${!P ? '<div class="empty">لم تُسند لك خطة بعد. تواصل مع إدارة البرنامج.</div>'
       : !planLive ? '<div class="empty">خطتك لم تُفعَّل بعد.</div>'
       : !workToday ? '<div class="empty">اليوم ليس من أيام الخطة. استرح وراجع ما حفظت.</div>'
-      : `${visTasks.map(t => { const v = A.fmtTaskVal(t, today?.vals); const info = t.executor === 'info'; const can = canExec && !info; const on = t.cols.some(c => progress.has(c.id)); const isUrl = t.single?.value_type === 'url';
+      : `${visTasks.map(t => { const v = A.fmtTaskVal(t, today?.vals); const info = viewOnly(t); const can = canExec && !info; const on = t.cols.some(c => progress.has(c.id)); const isUrl = t.single?.value_type === 'url';
           return `<div class="task${on ? ' done' : ''}"><button type="button" class="tick ${can ? (on ? 'on' : '') : 'none'}" ${can ? `data-tick="${t.key}" aria-pressed="${on}" aria-label="${on ? 'إلغاء الإنجاز' : 'تم الإنجاز'}: ${esc(t.name)}"` : 'disabled aria-hidden="true"'}>${on ? '✓' : ''}</button>
             <div><b>${esc(t.single?.value_type === 'bool' ? (t.single.header || t.name).trim() : t.name)}</b><span class="v">${isUrl ? `<a href="${esc(today.vals[t.single.id])}" target="_blank" rel="noopener">فتح الرابط</a>` : t.single?.value_type === 'bool' ? esc(A.taskAmount(t, today?.vals, cols) || 'مطلوب اليوم') : t.task === 'repeat' ? esc(v) + ' مرة' : esc(v)}</span></div></div>`; }).join('') || '<div class="empty">لا مهام في هذا اليوم.</div>'}
       ${canExec && execN ? `<p class="hint" style="margin:2px 4px 0">${P.student_execution === 'counts' ? 'علّم على المهمة بعد إنجازها، ويدخل تنفيذك في تقييمك.' : 'علّم على المهمة بعد إنجازها لمتابعة نفسك.'}</p>` : ''}

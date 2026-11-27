@@ -145,3 +145,7 @@ alter table public.teachers add column if not exists record_scope text not null 
 -- روابط إضافية للخطة، وعمود نعم/لا يعرض مقدار نطاق (مثل مقدار الحفظ)
 alter table public.program_plans add column if not exists extra_links jsonb not null default '[]'::jsonb;
 alter table public.plan_columns add column if not exists shows_column_id uuid references public.plan_columns(id) on delete set null;
+
+-- «لمن تظهر»: إضافة «لا أحد» (عمود للحساب فقط)
+alter table public.plan_columns drop constraint if exists plan_columns_executor_check;
+alter table public.plan_columns add constraint plan_columns_executor_check check (executor in ('student', 'teacher', 'both', 'info', 'none'));
