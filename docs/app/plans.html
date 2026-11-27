@@ -94,6 +94,7 @@ td.err{background:#FFF4F4;color:#8F2530}
 .tcard table.tcols td,.tcard table.tcols th{padding:5px 6px}
 .tcard tr.det td:first-child{padding-inline-start:22px}
 .tcard tr.det .hint{display:block;font-size:11px}
+th.tgrp{background:#0F2F33;color:#CBB994;text-align:center;border-inline:2px solid #fff}th.tgrp.alt{background:#173F43}th.alt{background:#eef3f3}
 td.emptyc{background:#FDE8E7;box-shadow:inset 0 0 0 1px #F1B9B5}
 .warnbox{border:1px solid #F1B9B5;background:#FFF7F6;color:#8F4A2B;border-radius:10px;padding:8px 12px;font-size:12px}
 
@@ -457,7 +458,7 @@ function tabColumns() {
         ${T.task === 'custom' ? `<label class="f small">اسم المهمة<input type="text" data-tk="task_label" value="${esc(T.task_label)}" placeholder="مثال: قراءة التلخيص"></label>` : ''}
         <label class="f small">لمن تظهر<select data-tk="executor">${Object.entries({ ...EXEC, ...(EXEC_OLD[T.executor] ? { [T.executor]: EXEC_OLD[T.executor] } : {}) }).map(([k, v]) => `<option value="${k}"${T.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
         <label class="tchk"><input type="checkbox" data-tk="counts"${T.counts ? ' checked' : ''}${off ? ' disabled' : ''}> في التقييم</label>
-        <label class="f small" style="width:90px">الوزن<input type="number" data-tk="weight" min="0" step="1" value="${T.weight ?? ''}" placeholder="بالتساوي"${T.counts && !off ? '' : ' disabled'}></label>
+        <label class="f small" style="width:90px">الوزن<input type="number" data-tk="weight" min="0" step="1" value="${T.weight ?? ''}" placeholder="بالتساوي" title="يُستخدم للمهام المعلّمة «في التقييم». الفارغ يأخذ الباقي من 100 بالتساوي"${off ? ' disabled' : ''}></label>
         <label class="tchk"><input type="checkbox" data-tk="required"${T.required ? ' checked' : ''}> إلزامي</label>
         <span class="tact"><button class="btn sm ghost" type="button" data-tup="${ti}" ${ti ? '' : 'disabled'} aria-label="نقل المهمة لأعلى">↑</button><button class="btn sm ghost" type="button" data-tdown="${ti}" ${ti < tasks.length - 1 ? '' : 'disabled'} aria-label="نقل المهمة لأسفل">↓</button><button class="btn sm danger" type="button" data-tdel="${ti}">حذف المهمة</button></span>
       </div>
@@ -465,7 +466,7 @@ function tabColumns() {
         ${T.cols.map((c, ci) => { const isMain = !c.detail_of && !(c.range_role === 'end' && c.pair_column_id && T.cols.find(x => x.id === c.pair_column_id)?.detail_of); return `<tr data-ci="${ci}"${isMain ? '' : ' class="det"'}>
           <td><input type="text" data-k="header" value="${esc(c.header)}" placeholder="مثال: ${esc(taskTitle(T))} من حديث">${isMain ? '' : '<span class="hint">تفاصيل داخل المهمة</span>'}</td>
           <td><select data-k="value_type"${rep ? ' disabled' : ''}>${Object.entries(VTYPES).filter(([k]) => !rep || k === 'number').map(([k, v]) => `<option value="${k}"${c.value_type === k ? ' selected' : ''}>${v}</option>`).join('')}</select>
-            ${c.value_type === 'bool' ? `<select data-k="shows_column_id" style="margin-top:4px"><option value="">يعرض مقدار: لا</option>${rangeMains.filter(([O]) => O !== T).map(([O, m]) => `<option value="${m.id}"${c.shows_column_id === m.id ? ' selected' : ''}>يعرض مقدار: ${esc(taskTitle(O))}</option>`).join('')}</select>` : ''}</td>
+            ${c.value_type === 'bool' ? `<select data-k="shows_column_id" style="margin-top:4px"><option value="">سؤال مستقل (لا يعرض مقدارًا)</option>${rangeMains.filter(([O]) => O !== T).map(([O, m]) => `<option value="${m.id}"${c.shows_column_id === m.id ? ' selected' : ''}>يعرض مقدار: ${esc(taskTitle(O))}</option>`).join('')}</select>` : ''}</td>
           <td><select data-k="range_role"${rep || c.value_type === 'bool' || c.value_type === 'url' ? ' disabled' : ''}>${Object.entries(ROLES).filter(([k]) => (!rep && !['bool', 'url'].includes(c.value_type)) || k === 'single').map(([k, v]) => `<option value="${k}"${c.range_role === k ? ' selected' : ''}>${v}</option>`).join('')}</select></td>
           <td style="white-space:nowrap"><button class="btn sm ghost" type="button" data-cup="${ci}" ${ci ? '' : 'disabled'} aria-label="نقل العمود لأعلى">↑</button><button class="btn sm ghost" type="button" data-cdown="${ci}" ${ci < T.cols.length - 1 ? '' : 'disabled'} aria-label="نقل العمود لأسفل">↓</button><button class="btn sm danger" type="button" data-cdel="${ci}">حذف</button></td>
         </tr>`; }).join('') || '<tr><td colspan="4" class="muted" style="text-align:center">أضف عمودًا لهذه المهمة.</td></tr>'}
@@ -485,6 +486,7 @@ function tabColumns() {
         let v = el.type === 'checkbox' ? el.checked : el.value;
         if (k === 'weight') v = numOrNull(v);
         T[k] = v;
+        if (k === 'weight' && v != null && !T.counts) { T.counts = true; const cb = $('[data-tk="counts"]', card); if (cb) cb.checked = true; }
         if (k === 'task' && v === 'repeat') T.cols = T.cols.slice(0, 1);
         if (k === 'executor' && ['info', 'none'].includes(v)) T.counts = false;
         if (typing) { syncCols(); markDirty(); refreshIssues(); } else redraw();
@@ -542,7 +544,8 @@ function refreshIssues() { const is = columnIssues(); const html = is.length ? `
 // ---------- ٣. الأيام والإكسل ----------
 const DAY_HEADERS = ['اليوم', 'رقم اليوم', 'يوم', 'day'];
 function tabDays() {
-  const cols = S.cols, imp = S.imported;
+  if (!S.tasks) tasksFromCols();
+  const cols = S.tasks.flatMap(T => T.cols), imp = S.imported;
   const rows = imp ? imp.rows : S.days.map(d => ({ day_number: d.day_number, vals: d.vals, errors: {}, empty: {} }));
   const errCount = imp ? imp.rows.reduce((a, r) => a + Object.keys(r.errors).length, 0) + imp.problems.length : 0;
   const emptyCount = imp ? imp.rows.reduce((a, r) => a + Object.keys(r.empty || {}).length, 0) : 0;
@@ -562,8 +565,9 @@ function tabDays() {
       </div>
       ${emptyCount ? `<div class="warnbox">تنبيه: ${emptyCount} خلية فارغة، مظللة بالأحمر الفاتح في الجدول. الخلية الفارغة تعني أنه لا واجب في هذا العمود في ذلك اليوم. إن كان هذا مقصودًا اعتمد الأيام، وإلا صحّح الملف وارفعه مجددًا.</div>` : ''}
       <div class="row" style="justify-content:flex-start"><button class="btn" type="button" id="acceptImp" ${errCount ? 'disabled' : ''}>اعتماد الأيام (${imp.rows.length})</button><button class="btn ghost" type="button" id="cancelImp">إلغاء</button></div>` : ''}
-    ${cols.length ? `<p class="muted small">الجدول يعرض أعمدة الخطة الحالية كما في تبويب «أعمدة الخطة»${S.dirty ? '، بما فيها التعديلات غير المحفوظة' : ''}.</p><div class="table-wrap" style="max-height:480px;overflow:auto"><table>
-      <thead><tr><th>اليوم</th>${cols.map(c => `<th>${esc(c.header)}<br><span class="hint">${esc(taskName(c))}</span></th>`).join('')}</tr></thead>
+    ${cols.length ? `<p class="muted small">الجدول يعرض أعمدة الخطة الحالية كما في تبويب «المهام والأعمدة»، مجمّعة تحت اسم كل مهمة${S.dirty ? '، بما فيها التعديلات غير المحفوظة' : ''}.</p><div class="table-wrap" style="max-height:480px;overflow:auto"><table>
+      <thead><tr><th rowspan="2">اليوم</th>${S.tasks.filter(T => T.cols.length).map((T, i) => `<th colspan="${T.cols.length}" class="tgrp${i % 2 ? ' alt' : ''}">${esc(taskTitle(T))}</th>`).join('')}</tr>
+        <tr>${S.tasks.filter(T => T.cols.length).flatMap((T, i) => T.cols.map(c => `<th class="${i % 2 ? 'alt' : ''}">${esc(c.header)}</th>`)).join('')}</tr></thead>
       <tbody>${rows.length ? '' : `<tr><td colspan="${cols.length + 1}" class="muted" style="text-align:center;padding:16px">لا توجد أيام بعد. نزّل النموذج، املأه، ثم ارفعه.</td></tr>`}${rows.slice(0, 400).map(r => `<tr><td class="colnum${r.errors._day ? ' err' : ''}" title="${esc(r.errors._day || '')}">${esc(r.day_number)}</td>${cols.map(c => { const e = r.errors[c.id]; const em = r.empty?.[c.id]; const v = r.vals[c.id]; return `<td class="${e ? 'err' : em ? 'emptyc' : ''}" title="${esc(e || (em ? (em === 1 ? 'خلية فارغة: لا واجب في هذا اليوم' : em) : ''))}">${v == null || v === '' ? '<span class="muted">—</span>' : c.value_type === 'url' ? `<a href="${esc(v)}" target="_blank" rel="noopener">رابط</a>` : c.value_type === 'bool' ? (v ? '<b style="color:var(--green)">✓</b>' : '<span class="muted">—</span>') : esc(v)}${e ? `<div class="small">${esc(e)}</div>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>
       ${rows.length > 400 ? `<p class="muted small">يُعرض أول ٤٠٠ يوم من ${rows.length}.</p>` : ''}` : '<div class="empty">أضف أعمدة الخطة أولًا من تبويب «أعمدة الخطة».</div>'}
   </div>`;
@@ -583,9 +587,11 @@ function downloadTemplate() {
   const is = columnIssues();
   if (is.length) { S.tab = 'columns'; render(); return toast('صحّح الأعمدة أولًا: ' + is[0], true); }
   const sample = c => c.value_type === 'number' ? (c.range_role === 'end' ? 3 : c.task === 'repeat' ? 20 : 1) : c.value_type === 'bool' ? 'نعم' : c.value_type === 'url' ? 'https://' : '';
-  const rows = [['اليوم', ...S.cols.map(c => c.header)], [1, ...S.cols.map(sample)]];
+  if (!S.tasks) tasksFromCols();
+  const tcols = S.tasks.flatMap(T => T.cols);
+  const rows = [['اليوم', ...tcols.map(c => c.header)], [1, ...tcols.map(sample)]];
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{ wch: 8 }, ...S.cols.map(c => ({ wch: Math.max(12, c.header.length + 4) }))];
+  ws['!cols'] = [{ wch: 8 }, ...tcols.map(c => ({ wch: Math.max(12, c.header.length + 4) }))];
   const help = XLSX.utils.aoa_to_sheet([['العمود', 'المهمة', 'نوع القيمة', 'دوره', 'ما يُكتب فيه'], ...S.cols.map(c => [c.header, taskName(c), VTYPES[c.value_type], ROLES[c.range_role],
     c.value_type === 'bool' ? 'نعم في الأيام التي فيها المهمة، وفارغ في غيرها' : c.value_type === 'url' ? 'رابط يبدأ بـ https://' : c.value_type === 'number' ? 'رقم (يقبل الكسور مثل 12.5)' : 'نص'])]);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'الخطة'); XLSX.utils.book_append_sheet(wb, help, 'شرح الأعمدة');
@@ -717,7 +723,8 @@ function tabPreview() {
       <div><h3 style="margin-bottom:8px">شاشة الطالب</h3><div class="phone">
         <div class="row"><b>اليوم ${day.day_number}</b><span class="pill ${canExec ? 'gold' : 'plain'}">${P.student_execution === 'none' ? 'لا تنفيذ على الطالب' : P.student_execution === 'counts' ? 'تنفيذك يدخل في تقييمك' : 'تنفيذك للمتابعة'}</span></div>
         ${studentTasks.map(t => { const txt = fmtTask(t, vals); if (txt == null) return ''; const info = t.cols[0].executor === 'info'; const exec = canExec && !info; const on = S.previewTicks[t.key];
-          return `<div class="task"><button type="button" class="tick ${exec ? (on ? 'on' : '') : 'none'}" data-tick="${t.key}" ${exec ? '' : 'tabindex="-1" aria-hidden="true"'}>${on ? '✓' : ''}</button><div><b>${esc(t.name)}</b>${exec && eKeys.has(t.key) ? ' <span class="pill gold" style="font-size:10px">يُحسب في الالتزام</span>' : ''}<span class="small muted" style="display:block">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span>${previewDetails(t, vals)}</div></div>`; }).join('') || '<p class="muted small">لا توجد مهام للطالب في هذا اليوم.</p>'}
+          return `<div class="task"><button type="button" class="tick ${exec ? (on ? 'on' : '') : 'none'}" data-tick="${t.key}" ${exec ? '' : 'tabindex="-1" aria-hidden="true"'}>${on ? '✓' : ''}</button><div><b>${esc(t.name)}</b>${exec && eKeys.has(t.key) ? (P.student_execution === 'counts' ? ' <span class="pill gold" style="font-size:10px">يدخل في التقييم</span>' : ' <span class="pill plain" style="font-size:10px">في نسبة الالتزام فقط</span>') : ''}<span class="small muted" style="display:block">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span>${previewDetails(t, vals)}</div></div>`; }).join('') || '<p class="muted small">لا توجد مهام للطالب في هذا اليوم.</p>'}
+        ${canExec ? `<p class="hint" style="margin:4px 0">${P.student_execution === 'counts' ? 'إنجاز الطالب للمهام المعلَّمة يدخل في تقييمه النهائي حسب وزن التنفيذ في «القواعد».' : '«للمتابعة»: إنجاز الطالب يُحسب في نسبة «الالتزام» (لصفحته والشهادة ولوحة الشرف) ولا يدخل في التقييم النهائي.'}</p>` : ''}
         <p class="muted small">التسميع: ${P.recitation_mode === 'none' ? 'لا يوجد' : recDays.map(i => DAYS[i]).join('، ') || 'لم تُحدد أيام'}</p>
       </div></div>
       <div><h3 style="margin-bottom:8px">رصد المعلم</h3><div class="phone" style="--c:var(--blue)">
