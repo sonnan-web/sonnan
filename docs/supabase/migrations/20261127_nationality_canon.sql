@@ -167,3 +167,5 @@ update public.plan_columns set graded = counts where graded = false and counts;
 
 -- إجراءات المشرف: حالة «مفصول»، وخاتمة الحالة، وسجل تواصل متعدد، وإنهاء التحاق الطالب وإعادته
 -- انظر migration «supervisor_actions» في Supabase (follow_up_contacts, end_student, reactivate_student)
+
+-- خيارات المرحلة: basis (plan/recitation/execution) و hold_enabled و stop_value، وتحديث stage_bounds — انظر migration «stage_options»

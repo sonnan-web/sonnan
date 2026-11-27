@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127l">
+<link rel="stylesheet" href="app.css?v=20261127m">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127l"></script>
+<script src="app.js?v=20261127m"></script>
 <style>
 .wrap{max-width:1200px;margin:0 auto;padding:12px max(14px,env(safe-area-inset-left,0px)) 90px}
 .room-card{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
@@ -188,19 +188,19 @@ SECTIONS.record = el => {
   el.innerHTML = `<div class="sec-h" style="--c:var(--teal)"><b>رصد جلسة التسميع</b><span>${T.record_scope === 'assigned' ? 'طلاب فتراتك: ' + recPool.length : allStudents.length + ' طالبًا · طلابي ' + students.length}</span></div>
     <div class="card c-teal" style="margin-bottom:10px"><label class="f" for="q">اختر الطالب
       <div class="search"><input id="q" type="search" placeholder="اكتب اسم الطالب أو بريده…" autocomplete="off" value="${esc(recPick?.name || '')}"><div class="dd" id="dd" hidden></div></div></label></div>
-    <div id="rwBox"></div>`;
+    <div id="spBox"></div><div id="rwBox"></div>`;
   const q = $('#q'), dd = $('#dd');
   const showList = () => {
     const t = norm(q.value);
     const list = recPool.filter(s => !t || norm(s.name + ' ' + s.email).includes(t)).sort((a, b) => (b.teacher_id === T.id) - (a.teacher_id === T.id) || a.name.localeCompare(b.name, 'ar')).slice(0, 80);
     dd.innerHTML = list.map(s => `<button type="button" data-id="${s.id}"><span>${esc(s.name)}${s.teacher_id === T.id ? ' <span class="pill ok">طالبي</span>' : ''}</span><span class="small muted">${esc(roomById[roomOf[s.id]]?.name || '')}</span></button>`).join('') || `<div class="muted small" style="padding:10px">${recPool.length ? 'لا يوجد طالب بهذا الاسم' : 'لا يوجد طلاب في فتراتك. تواصل مع المشرف.'}</div>`;
     dd.hidden = false;
-    $$('button', dd).forEach(b => b.onclick = () => { dd.hidden = true; recPick = recPool.find(s => s.id === b.dataset.id); q.value = recPick.name; A.recordWidget($('#rwBox'), ctxFor(recPick)); });
+    $$('button', dd).forEach(b => b.onclick = () => { dd.hidden = true; recPick = recPool.find(s => s.id === b.dataset.id); q.value = recPick.name; A.studentPanel($('#spBox'), recPick, assignOf[recPick.id], PLANS[assignOf[recPick.id]?.plan_id]); A.recordWidget($('#rwBox'), ctxFor(recPick)); });
   };
   q.addEventListener('focus', showList);
   q.addEventListener('input', showList);
   document.addEventListener('click', e => { if (!e.target.closest('.search')) dd.hidden = true; });
-  if (recPick) A.recordWidget($('#rwBox'), ctxFor(recPick));
+  if (recPick) { A.studentPanel($('#spBox'), recPick, assignOf[recPick.id], PLANS[assignOf[recPick.id]?.plan_id]); A.recordWidget($('#rwBox'), ctxFor(recPick)); }
 };
 
 // ============ الغرف ============
@@ -233,7 +233,8 @@ SECTIONS.rooms = async el => {
   $$('.room-head', el).forEach(b => b.onclick = () => { const id = b.closest('.room-card').dataset.room; OPEN.has(id) ? OPEN.delete(id) : OPEN.add(id); SECTIONS.rooms(el); });
   $$('[data-rec]', el).forEach(b => b.onclick = () => {
     const s = allStudents.find(x => x.id === b.dataset.rec);
-    A.drawer('رصد: ' + s.name, '<div id="rwPop"></div>', root => {
+    A.drawer('رصد: ' + s.name, '<div id="spPop"></div><div id="rwPop"></div>', root => {
+      A.studentPanel($('#spPop', root), s, assignOf[s.id], PLANS[assignOf[s.id]?.plan_id]);
       const c = ctxFor(s); c.layout = 'stack';
       c.onSaved = async () => { RECS = null; const l = await roomLast([s.id]); const row = $(`.rs[data-row="${s.id}"] .meta`, el); if (row && l[s.id]) row.innerHTML = `<span>${esc(PLANS[assignOf[s.id]?.plan_id]?.name || 'بلا خطة')}</span><span>·</span><span>آخر رصد ${A.greg(l[s.id].rec_date)}</span>${statusPill(l[s.id].status)}`; };
       A.recordWidget($('#rwPop', root), c);

@@ -264,7 +264,7 @@ function render() {
         <div class="row" style="gap:6px">${S.dirty ? '<span class="pill warn">تغييرات غير محفوظة</span>' : P.id ? '<span class="pill ok">محفوظة</span>' : ''}<button class="btn" type="button" id="savePlan">حفظ الخطة</button></div>
       </div>
       <div class="tabs" role="tablist">
-        ${[['rules', '١. القواعد'], ['columns', '٢. المهام والأعمدة'], ['days', '٣. أيام الخطة والإكسل'], ['preview', '٤. المعاينة'], ['assign', '٥. الإسناد للطلاب']].map(t => `<button type="button" role="tab" data-tab="${t[0]}" aria-selected="${S.tab === t[0]}">${t[1]}</button>`).join('')}
+        ${[['rules', '١. القواعد'], ['columns', '٢. المهام والأعمدة'], ['days', '٣. أيام الخطة والإكسل'], ['exams', '٤. الاختبارات'], ['preview', '٥. المعاينة'], ['assign', '٦. الإسناد للطلاب']].map(t => `<button type="button" role="tab" data-tab="${t[0]}" aria-selected="${S.tab === t[0]}">${t[1]}</button>`).join('')}
       </div>
       <div id="tab"></div>
     </section></div>`;
@@ -274,7 +274,7 @@ function render() {
   $$('[data-open]').forEach(b => b.onclick = () => { if (S.dirty && !confirmLeave()) return; openPlan(b.dataset.open); });
   $$('[data-tab]').forEach(b => b.onclick = () => { S.tab = b.dataset.tab; render(); });
   $('#savePlan').onclick = savePlan;
-  ({ rules: tabRules, columns: tabColumns, days: tabDays, preview: tabPreview, assign: tabAssign })[S.tab]();
+  ({ rules: tabRules, columns: tabColumns, days: tabDays, exams: tabExams, preview: tabPreview, assign: tabAssign })[S.tab]();
 }
 let leaveWarned = false;
 function confirmLeave() { if (leaveWarned) { leaveWarned = false; return true; } leaveWarned = true; toast('لديك تغييرات غير محفوظة. اضغط مرة أخرى للمتابعة دون حفظ.', true); setTimeout(() => leaveWarned = false, 4000); return false; }
@@ -728,6 +728,61 @@ function fmtTask(t, vals) {
 }
 // وحدة النطاق من اسم العمود: «مراجعة من حديث» ← «من حديث 1 إلى حديث 2»
 function fmtRangeP(c, a, b) { const u = c?.value_type === 'number' ? ((String(c.header || '').match(/من\s+([^\s\d]+)/) || [])[1] || '') : ''; return u ? `من ${u} ${a ?? '؟'} إلى ${u} ${b ?? '؟'}` : `من ${a ?? '؟'} إلى ${b ?? '؟'}`; }
+// ---------- ٤. الاختبارات: مراحل الخطة ----------
+// كل مرحلة: متى تنتهي (عمود وقيمة)، وعلى ماذا يُحسب التقدّم، وهل يتوقف البرنامج للاختبار ومتى. بلا مراحل = الخطة طبيعية
+const BASIS_L = { plan: 'حسب أيام الخطة (التاريخ)', recitation: 'حسب ما سمّعه الطالب للمعلم', execution: 'حسب ما نفّذه الطالب وعلّم عليه' };
+const stageBoundsP = st => { const num = v => v != null && v !== '' && !isNaN(+v) ? +v : null; const days = S.days.slice().sort((a, b) => a.day_number - b.day_number);
+  const e = st.end_column_id && num(st.end_value) != null ? days.find(d => num(d.vals?.[st.end_column_id]) != null && num(d.vals[st.end_column_id]) >= +st.end_value) : null; if (!e) return {};
+  if (!st.hold_enabled) return { end: e.day_number }; const sc = st.stop_column_id || st.end_column_id;
+  const s = st.stop_value != null ? days.find(d => num(d.vals?.[sc]) != null && num(d.vals[sc]) >= +st.stop_value) : days.find(d => d.day_number > e.day_number && d.vals?.[sc] != null && d.vals[sc] !== '' && d.vals[sc] !== false);
+  return { end: e.day_number, stop: s?.day_number }; };
+async function tabExams() {
+  const P = S.plan;
+  if (!P.id) { $('#tab').innerHTML = '<div class="empty">احفظ الخطة أولًا، ثم أضف مراحلها واختباراتها.</div>'; return; }
+  $('#tab').innerHTML = '<div class="loading">جارٍ التحميل…</div>';
+  const [{ data: st }, { data: ex }] = await Promise.all([db.from('plan_stages').select('*').eq('plan_id', P.id).order('seq'), db.from('exams').select('*')]);
+  const stages = st || [], exBy = Object.fromEntries((ex || []).map(e => [e.stage_id, e]));
+  if (!S.tasks) tasksFromCols();
+  const numCols = S.tasks.flatMap(T => T.cols.filter(c => c.value_type === 'number').map(c => [c, T]));
+  const cOpt = (sel, empty) => `<option value="">${empty}</option>` + numCols.map(([c, T]) => `<option value="${c.id}"${c.id === sel ? ' selected' : ''}>${esc(taskTitle(T))} · ${esc(c.header.trim())}</option>`).join('');
+  const ord = ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة', 'العاشرة'];
+  $('#tab').innerHTML = `<div class="grid">
+    <div class="note">قسّم الخطة إلى مراحل، ولكل مرحلة اختبار. إذا لم تضف مراحل تبقى الخطة طبيعية. يرى الطالب لكل مرحلة عدّادًا «باقي كذا لإنهاء المرحلة»، ويرى المعلم مراحل الطالب ودرجات اختباراته عند رصده.</div>
+    ${stages.map((x, i) => { const b = stageBoundsP(x), e = exBy[x.id]; return `<div class="tcard" data-sid="${x.id}">
+      <div class="thead"><span class="tnum">${i + 1}</span>
+        <label class="f small">اسم المرحلة<input type="text" data-s="name" value="${esc(x.name)}"></label>
+        <label class="f small">تُحسب<select data-s="basis">${Object.entries(BASIS_L).map(([k, l]) => `<option value="${k}"${x.basis === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <span class="tact"><button class="btn sm danger" type="button" data-sdel="${x.id}">حذف المرحلة</button></span></div>
+      <div class="thead">
+        <label class="f small">تنتهي المرحلة عند العمود<select data-s="end_column_id">${cOpt(x.end_column_id, '— اختر —')}</select></label>
+        <label class="f small" style="width:120px">إذا بلغ القيمة<input type="number" data-s="end_value" value="${x.end_value ?? ''}"></label>
+        <label class="tchk" style="padding-bottom:8px"><input type="checkbox" data-s="hold_enabled"${x.hold_enabled ? ' checked' : ''}> يتوقف البرنامج حتى يختبر</label>
+        ${x.hold_enabled ? `<label class="f small">لا ينفّذ واجب العمود<select data-s="stop_column_id">${cOpt(x.stop_column_id, 'نفس عمود النهاية')}</select></label>
+        <label class="f small" style="width:150px">الذي قيمته <span class="hint">فارغ = أول واجب جديد</span><input type="number" data-s="stop_value" value="${x.stop_value ?? ''}"></label>` : ''}</div>
+      <div class="small" style="padding:0 4px">${x.end_value == null ? '<span style="color:var(--red)">حدّد القيمة التي تنتهي عندها المرحلة.</span>' : !b.end ? '<span style="color:var(--red)">لم أجد يومًا في أيام الخطة يبلغ فيه العمود هذه القيمة.</span>' : `تنتهي في <b>اليوم ${b.end}</b>${x.hold_enabled ? (b.stop ? `، ويتوقف الطالب عند <b>اليوم ${b.stop}</b> فلا يرى واجبه حتى يجتاز الاختبار.` : '، ولم أجد يوم التوقف في أيام الخطة.') : '، ويستمر البرنامج دون توقف.'}`} <span class="hint">· ${BASIS_L[x.basis]}</span></div>
+      <div class="row" style="padding:6px 4px 0;gap:6px;justify-content:flex-start">${e ? `<span class="pill gold">${esc(e.title)} · ${e.mode === 'oral' ? 'شفهي' : 'إلكتروني'} · النجاح ${+e.pass_score}٪ · ${e.max_attempts} محاولة</span>` : '<span class="pill plain">لا يوجد اختبار بعد</span>'}
+        <button class="btn sm" type="button" data-go="${x.id}">${e ? 'إعدادات الاختبار والأسئلة' : '+ إنشاء الاختبار'}</button></div>
+    </div>`; }).join('')}
+    <div class="row" style="justify-content:flex-start"><button class="btn gold" type="button" id="addSt">+ مرحلة جديدة</button></div>
+    <details class="note"><summary><b>ماذا يحدث عند التوقف؟</b> <span class="hint">(اضغط للفتح)</span></summary><div class="small" style="line-height:1.9;margin-top:6px">
+      • يصل الطالب إلى يوم التوقف فتختفي مهامه ويظهر له الاختبار.<br>• أيام الانتظار لا تُحسب غيابًا ولا التزامًا، ولا تقدّم الخطة.<br>• إذا اجتاز تُستأنف خطته من يوم التوقف نفسه.<br>
+      • التوقف يُطبَّق على من يصل يوم التوقف بعد إنشاء المرحلة، ولا يرجع على من تجاوزه قبلها.<br>• «تُحسب» تحدد من أين يُؤخذ عدّاد «باقي كذا»: من التاريخ في الخطة، أو مما سمّعه الطالب فعلًا، أو مما علّم على تنفيذه.</div></details>
+  </div>`;
+  const save = async (id, k, v) => { const { error } = await db.from('plan_stages').update({ [k]: v }).eq('id', id); if (error) return toast(error.message, true); tabExams(); };
+  $$('[data-sid]').forEach(card => $$('[data-s]', card).forEach(el => el.addEventListener('change', () => {
+    const k = el.dataset.s; let v = el.type === 'checkbox' ? el.checked : el.value;
+    if (['end_value', 'stop_value'].includes(k)) v = v === '' ? null : +v; if (k.endsWith('_id')) v = v || null;
+    save(card.dataset.sid, k, v);
+  })));
+  $$('[data-sdel]').forEach(b => b.onclick = async () => { if (!confirm('حذف المرحلة واختبارها ونتائجه؟ ويُلغى توقف الطلاب عليها.')) return; await db.from('plan_stages').delete().eq('id', b.dataset.sdel); tabExams(); });
+  $('#addSt').onclick = async () => {
+    const memoEnd = S.cols.find(c => c.task === 'memo' && !c.detail_of && c.range_role === 'end'), memoStart = S.cols.find(c => c.task === 'memo' && !c.detail_of && c.range_role === 'start');
+    const { error } = await db.from('plan_stages').insert({ plan_id: P.id, seq: stages.length + 1, name: 'المرحلة ' + (ord[stages.length] || stages.length + 1), basis: 'plan', end_column_id: memoEnd?.id || null, stop_column_id: memoStart?.id || null, hold_enabled: true });
+    if (error) return toast(error.message, true); tabExams();
+  };
+  // الاختبار نفسه وأسئلته في قسم «الاختبارات المرحلية» بلوحة المشرف
+  $$('[data-go]').forEach(b => b.onclick = () => { try { window.parent.postMessage({ sonnan: 'open-exam', stage: b.dataset.go, plan: P.id }, '*'); } catch (e) {} if (window.parent === window) location.href = 'admin.html#exams'; });
+}
 function tabPreview() {
   const P = S.plan;
   if (!S.days.length) { $('#tab').innerHTML = '<div class="empty">ارفع أيام الخطة أولًا لتظهر المعاينة.</div>'; return; }

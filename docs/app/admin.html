@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127l">
+<link rel="stylesheet" href="app.css?v=20261127m">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127l"></script>
+<script src="app.js?v=20261127m"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -402,7 +402,8 @@ async function adminRecord(stuId, editId) {
   const PL = await plansFull();
   const s = D.studentById[stuId]; if (!s) return;
   const a = s.assign;
-  drawer((editId ? 'تعديل رصد: ' : 'رصد: ') + s.name, '<div id="rwAdm"></div>', root => {
+  drawer((editId ? 'تعديل رصد: ' : 'رصد: ') + s.name, '<div id="spAdm"></div><div id="rwAdm"></div>', root => {
+    A.studentPanel($('#spAdm', root), s, a, a ? PL[a.plan_id] : null);
     A.recordWidget($('#rwAdm', root), { stu: s, assign: a, P: a ? PL[a.plan_id] : null, roomId: D.roomOfStudent[s.id] || null, roomName: s.room !== '—' ? s.room : '',
       teacherId: s.teacher_id || D.teachers.find(t => !t.is_archived)?.id, teachers: D.teachers.filter(t => !t.is_archived).map(t => ({ id: t.id, name: t.name })),
       meId: me.id, canEdit: () => true, canDelete: true, teacherName: id => D.teacherById[id]?.name || '', layout: 'stack', editId,
@@ -997,23 +998,21 @@ SECTIONS.exams = async el => {
   $('#exPlan').onchange = e => { EX.plan = e.target.value; route(); };
   $$('[data-et]', el).forEach(b => b.onclick = () => { EX.tab = b.dataset.et; route(); });
   if (!P) { $('#exBody').innerHTML = '<div class="empty">لا توجد خطط.</div>'; return; }
-  return EX.tab === 'stages' ? examStages($('#exBody'), P, stages, X) : examResults($('#exBody'), P, stages, X, att, waiting, referred);
+  const r = EX.tab === 'stages' ? examStages($('#exBody'), P, stages, X) : examResults($('#exBody'), P, stages, X, att, waiting, referred);
+  if (EX.openStage) { const st = stages.find(x => x.id === EX.openStage); EX.openStage = null; if (st) { const e = X.examByStage[st.id]; e && e.mode === 'online' && X.qCount[e.id] ? examQuestions(e) : examSettings(st, e); } }
+  return r;
 };
 function examStages(box, P, stages, X) {
   const numCols = P.cols.filter(c => c.value_type === 'number' && !c.detail_of && c.range_role !== 'start');
   const mainCols = P.cols.filter(c => !c.detail_of && c.range_role !== 'end' && c.value_type !== 'url');
   const colName = c => { const t = A.groupTasks(P.cols, () => true).find(t => t.cols.some(x => x.id === c.id)); return (t ? t.name + ' · ' : '') + String(c.header).trim(); };
   const studs = actives().filter(s => s.assign?.plan_id === P.id);
-  box.innerHTML = `<div class="hintbox" style="margin-bottom:10px">قسّم الخطة إلى مراحل. تنتهي المرحلة عند أول يوم في الخطة يبلغ فيه «عمود النهاية» القيمة المحددة، ويستمر الطالب بعدها (مثل أيام المراجعة) حتى أول يوم فيه واجب جديد في «عمود التوقف»، فتتوقف خطته هناك حتى يجتاز اختبار المرحلة. أيام التوقف لا تُحسب غيابًا ولا تقدّمًا في الخطة.</div>
+  box.innerHTML = `<div class="hintbox" style="margin-bottom:10px">المراحل تُضاف وتُعدَّل من «خطط البرامج» ← تعديل الخطة ← «٤. الاختبارات». هنا إعدادات اختبار كل مرحلة وبنك أسئلتها. تنتهي المرحلة عند أول يوم في الخطة يبلغ فيه «عمود النهاية» القيمة المحددة، ويستمر الطالب بعدها (مثل أيام المراجعة) حتى أول يوم فيه واجب جديد في «عمود التوقف»، فتتوقف خطته هناك حتى يجتاز اختبار المرحلة. أيام التوقف لا تُحسب غيابًا ولا تقدّمًا في الخطة.</div>
     ${stages.map((st, i) => { const b = A.stageBounds(P, st), e = X.examByStage[st.id];
       const onHold = (D.holds || []).filter(h => h.stage_id === st.id && !h.hold_to && D.studentById[h.student_id]).length, passed = (D.holds || []).filter(h => h.stage_id === st.id && h.hold_to).length;
       return `<div class="tcard" style="margin-bottom:10px" data-st="${st.id}">
-        <div class="thead"><span class="tnum">${i + 1}</span>
-          <label class="f small">اسم المرحلة<input type="text" data-sf="name" value="${esc(st.name)}"></label>
-          <label class="f small">عمود النهاية<select data-sf="end_column_id"><option value="">—</option>${numCols.map(c => opt(c.id, colName(c), c.id === st.end_column_id)).join('')}</select></label>
-          <label class="f small" style="width:110px">تنتهي عند القيمة<input type="number" data-sf="end_value" value="${st.end_value ?? ''}"></label>
-          <label class="f small">عمود التوقف (أول واجب جديد)<select data-sf="stop_column_id"><option value="">نفس عمود النهاية</option>${mainCols.map(c => opt(c.id, colName(c), c.id === st.stop_column_id)).join('')}</select></label>
-          <span class="tact"><button class="btn sm danger" type="button" data-sdel="${st.id}">حذف المرحلة</button></span></div>
+        <div class="thead"><span class="tnum">${i + 1}</span><b style="align-self:center">${esc(st.name)}</b>
+          <span class="small muted" style="align-self:center">${A.BASIS[st.basis] || ''} · تنتهي عند ${esc(colName(P.cols.find(c => c.id === st.end_column_id) || { header: '—' }))} = ${st.end_value ?? '—'}${st.hold_enabled ? '' : ' · بلا توقف'}</span></div>
         <div class="small" style="padding:0 4px">${b.end_day ? `تنتهي المرحلة في <b>اليوم ${b.end_day}</b> من الخطة، ${b.stop_day ? `ويتوقف الطالب قبل <b>اليوم ${b.stop_day}</b> حتى يجتاز الاختبار.` : 'ولا يوجد بعدها واجب جديد في عمود التوقف، فلا يتوقف الطالب.'}` : '<span style="color:var(--red)">لم أجد يومًا في الخطة يبلغ فيه عمود النهاية هذه القيمة. راجع العمود والقيمة.</span>'}
           ${onHold || passed ? ` · <span class="pill warn">${onHold} بانتظار الاختبار</span> <span class="pill ok">${passed} اجتاز</span>` : ''}
           <span class="hint"> · يُطبَّق التوقف على من يصل يوم التوقف من ${A.greg(st.active_from)}</span></div>
@@ -1021,20 +1020,7 @@ function examStages(box, P, stages, X) {
             <span class="opts"><button class="btn sm" type="button" data-exset="${st.id}">إعدادات الاختبار</button>${e.mode === 'online' ? `<button class="btn sm gold" type="button" data-exq="${e.id}">الأسئلة (${X.qCount[e.id] || 0})</button>` : ''}</span></div>`
           : `<div class="row"><span class="muted small">لا يوجد اختبار لهذه المرحلة.</span><button class="btn sm gold" type="button" data-exset="${st.id}">+ إنشاء اختبار المرحلة</button></div>`}</div>
       </div>`; }).join('') || '<div class="empty">لا توجد مراحل لهذه الخطة بعد.</div>'}
-    <div class="row" style="justify-content:flex-start;gap:6px;margin-top:6px"><button class="btn gold" type="button" id="addStage">+ مرحلة جديدة</button><span class="hint">${studs.length} طالبًا على هذه الخطة</span></div>`;
-  $$('[data-st]', box).forEach(card => {
-    const id = card.dataset.st;
-    $$('[data-sf]', card).forEach(inp => inp.addEventListener('change', async () => {
-      const k = inp.dataset.sf; let v = inp.value; if (k === 'end_value') v = v === '' ? null : +v; if (k.endsWith('_id')) v = v || null;
-      const { error } = await db.from('plan_stages').update({ [k]: v }).eq('id', id); if (error) return toast(error.message, true); toast('حُفظ'); route();
-    }));
-  });
-  $$('[data-sdel]', box).forEach(b => b.onclick = async () => { if (!await confirmBox('حذف المرحلة واختبارها ونتائجه؟ ويُلغى توقف الطلاب عليها.', 'حذف')) return; const { error } = await db.from('plan_stages').delete().eq('id', b.dataset.sdel); if (error) return toast(error.message, true); toast('حُذفت'); route(); });
-  $('#addStage').onclick = async () => {
-    const memo = P.cols.find(c => c.task === 'memo' && !c.detail_of && c.range_role === 'end') || numCols[0];
-    const { error } = await db.from('plan_stages').insert({ plan_id: P.id, seq: stages.length + 1, name: 'المرحلة ' + ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة', 'العاشرة'][stages.length] || 'مرحلة', end_column_id: memo?.id || null, end_value: null, stop_column_id: P.cols.find(c => c.task === 'memo' && !c.detail_of && c.range_role === 'start')?.id || null });
-    if (error) return toast(error.message, true); route();
-  };
+    <div class="row" style="justify-content:flex-start;gap:6px;margin-top:6px"><a class="btn gold" href="#plans">إضافة المراحل وتعديلها من «خطط البرامج» ← ٤. الاختبارات</a><span class="hint">${studs.length} طالبًا على هذه الخطة</span></div>`;
   $$('[data-exset]', box).forEach(b => b.onclick = () => examSettings(stages.find(s => s.id === b.dataset.exset), X.examByStage[b.dataset.exset]));
   $$('[data-exq]', box).forEach(b => b.onclick = () => examQuestions(X.exams.find(e => e.id === b.dataset.exq)));
 }
@@ -1356,7 +1342,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127l&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127m&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
@@ -1387,6 +1373,8 @@ SECTIONS.plans = async el => {
   $('#newPlan').onclick = () => { SECTIONS.plans.edit = 'new'; route(); };
 };
 window.addEventListener('message', async e => { if (e.origin === location.origin && e.data?.source === 'plans' && e.data.type === 'saved') { await loadCore(); toast('حُفظت الخطة'); } });
+// من محرر الخطة ← ٤. الاختبارات: فتح إعدادات اختبار المرحلة
+window.addEventListener('message', e => { if (e.origin !== location.origin || e.data?.sonnan !== 'open-exam') return; EX.plan = e.data.plan; EX.tab = 'stages'; EX.openStage = e.data.stage; if (location.hash === '#exams') route(); else location.hash = 'exams'; });
 
 // ============ المعلمون ============
 SECTIONS.teachers = async el => {

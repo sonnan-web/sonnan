@@ -176,11 +176,71 @@
   function stageBounds(P, st) {
     const days = Object.values(P.days || {}).sort((a, b) => a.day_number - b.day_number);
     const num = v => v != null && v !== '' && !isNaN(+v) ? +v : null;
-    const e = st.end_column_id ? days.find(d => num(d.vals?.[st.end_column_id]) != null && num(d.vals[st.end_column_id]) >= +st.end_value) : null;
+    const e = st.end_column_id && num(st.end_value) != null ? days.find(d => num(d.vals?.[st.end_column_id]) != null && num(d.vals[st.end_column_id]) >= +st.end_value) : null;
     if (!e) return { end_day: null, stop_day: null };
+    if (st.hold_enabled === false) return { end_day: e.day_number, stop_day: null };
     const sc = st.stop_column_id || st.end_column_id;
-    const s = days.find(d => d.day_number > e.day_number && d.vals?.[sc] != null && d.vals[sc] !== '' && d.vals[sc] !== false);
+    const s = st.stop_value != null && st.stop_value !== '' ? days.find(d => num(d.vals?.[sc]) != null && num(d.vals[sc]) >= +st.stop_value)
+      : days.find(d => d.day_number > e.day_number && d.vals?.[sc] != null && d.vals[sc] !== '' && d.vals[sc] !== false);
     return { end_day: e.day_number, stop_day: s ? s.day_number : null };
+  }
+  // حالة كل مرحلة لطالب: كم باقٍ لإنهائها (حسب أساسها: أيام الخطة، أو ما سمّعه، أو ما نفّذه)، وهل ينتظر الاختبار، ودرجته
+  // X = { P (cols, days), stages, exams (بالمرحلة), attempts, assign (holds), recs, progress: Set(plan_day_id|column_id) }
+  function stageStatus(X) {
+    const { P, assign } = X; if (!P || !assign || !(X.stages || []).length) return [];
+    const nDays = Object.keys(P.days || {}).length, dayN = planDayFor(assign, P, nDays, todayMakkah());
+    const days = Object.values(P.days || {}).sort((a, b) => a.day_number - b.day_number);
+    const num = v => v != null && v !== '' && !isNaN(+v) ? +v : null;
+    const out = []; let from = 0;
+    X.stages.forEach(st => {
+      const b = stageBounds(P, st), col = (P.cols || []).find(c => c.id === st.end_column_id);
+      if (!b.end_day || !col) return;
+      const pair = col.pair_column_id;
+      let cur = null;
+      if (st.basis === 'recitation') (X.recs || []).forEach(r => { if (!['present', 'makeup', 'review_only'].includes(r.status)) return; [col.id, pair].forEach(k => { const v = num(r.vals?.[k]); if (v != null && (cur == null || v > cur)) cur = v; }); });
+      else if (st.basis === 'execution') days.forEach(d => { if (d.day_number > dayN) return; if ([col.id, pair].some(k => X.progress?.has(d.id + '|' + k))) { const v = num(d.vals?.[col.id]); if (v != null && (cur == null || v > cur)) cur = v; } });
+      else for (let k = dayN; k >= 1 && cur == null; k--) cur = num(P.days[k]?.vals?.[col.id]);
+      const to = +st.end_value, c = cur ?? from;
+      const e = X.exams?.[st.id], mine = e ? (X.attempts || []).filter(a => a.exam_id === e.id) : [], best = mine.filter(a => a.status === 'graded').sort((a, b) => (+b.score || 0) - (+a.score || 0))[0];
+      const hold = (assign.holds || []).find(h => h.stage_id === st.id);
+      const passed = mine.some(a => a.passed);
+      const state = passed ? 'passed' : hold && !hold.hold_to ? (mine.some(a => a.status === 'submitted') ? 'grading' : 'hold') : c >= to ? 'done' : 'progress';
+      const unit = (String(col.header).match(/(?:من|إلى)\s+([^\s\d]+)/) || [])[1] || '';
+      out.push({ st, b, e, unit, from, to, cur: c, remaining: Math.max(0, to - c), pct: Math.min(100, Math.max(0, Math.round((c - from) / ((to - from) || 1) * 100))), state, best, tries: mine.length, hold });
+      from = to;
+    });
+    return out;
+  }
+  const BASIS = { plan: 'حسب أيام الخطة', recitation: 'حسب ما سمّعه للمعلم', execution: 'حسب ما نفّذه الطالب' };
+  // لوحة الطالب عند اختياره للرصد (المعلم والمشرف): الالتزام التراكمي والضبط ومراحل خطته
+  async function studentPanel(box, stu, assign, P) {
+    if (!box) return; box.innerHTML = '';
+    if (!assign || !P) return;
+    const [{ data: pc }, { data: st }, { data: rc }] = await Promise.all([
+      db.rpc('plan_commitment', { p_plan: assign.plan_id, p_from: null, p_to: null, p_student: stu.id }),
+      db.from('plan_stages').select('*').eq('plan_id', assign.plan_id).order('seq'),
+      db.from('plan_recitations').select('status, vals').eq('student_id', stu.id).is('superseded_by', null)]);
+    const stages = st || [];
+    let exams = {}, attempts = [], progress = new Set(), holds = assign.holds;
+    if (stages.length) {
+      const [{ data: ex }, { data: at }, { data: hs }, pr] = await Promise.all([
+        db.from('exams').select('*').in('stage_id', stages.map(x => x.id)),
+        db.from('exam_attempts').select('exam_id, status, score, passed').eq('student_id', stu.id),
+        db.from('stage_holds').select('*').eq('student_id', stu.id),
+        stages.some(x => x.basis === 'execution') ? db.from('plan_progress').select('plan_day_id, column_id').eq('student_id', stu.id) : Promise.resolve({ data: [] })]);
+      (ex || []).forEach(e => exams[e.stage_id] = e); attempts = at || []; holds = hs || holds; (pr.data || []).forEach(x => progress.add(x.plan_day_id + '|' + x.column_id));
+    }
+    if (!box.isConnected) return;
+    const list = stageStatus({ P, stages, exams, attempts, assign: { ...assign, holds }, recs: rc || [], progress });
+    box.innerHTML = stagePanelHtml(list, (pc || [])[0] || { iltizam: null, dabt: null });
+  }
+  // لوحة مراحل الطالب (للمعلم والمشرف عند اختياره للرصد)
+  function stagePanelHtml(list, commit) {
+    const S = { progress: ['', ''], done: ['أنهى المرحلة', 'info'], hold: ['بانتظار الاختبار', 'warn'], grading: ['بانتظار التصحيح', 'violet'], passed: ['اجتاز', 'ok'] };
+    return `<div class="card" style="--a:var(--gold);padding:10px 12px;margin-bottom:10px">
+      ${commit ? `<div class="row small" style="margin-bottom:${list.length ? 6 : 0}px"><span>الالتزام التراكمي <b style="font-size:15px">${commit.iltizam == null ? '—' : Math.round(+commit.iltizam) + '٪'}</b></span><span>الضبط <b style="font-size:15px">${commit.dabt == null ? '—' : Math.round(+commit.dabt) + '٪'}</b></span></div>` : ''}
+      ${list.map(x => `<div style="padding:5px 0;border-top:1px dashed var(--line,#e5e5e5)"><div class="row small"><b>${esc(x.st.name)}</b><span>${x.state === 'progress' ? `باقي <b>${fmtNum(x.remaining)}</b> ${esc(x.unit)}` : `<span class="pill ${S[x.state][1]}">${S[x.state][0]}</span>`}${x.best ? ` · الاختبار <b>${fmtNum(x.best.score, 1)}٪</b>${x.state !== 'passed' ? ` (${x.tries} من ${x.e.max_attempts})` : ''}` : ''}</span></div>
+        ${x.state === 'progress' ? `<div style="height:6px;border-radius:5px;background:#eef2f2;margin-top:4px;overflow:hidden"><div style="height:100%;width:${x.pct}%;background:linear-gradient(90deg,#CBB994,#0F2F33)"></div></div>` : ''}</div>`).join('')}</div>`;
   }
   const isRecitationDay = (plan, iso) => { if (!plan || plan.recitation_mode === 'none') return false; const d = new Date(iso + 'T12:00:00Z').getUTCDay(); return plan.recitation_mode === 'daily' ? plan.workdays.includes(d) : plan.recitation_days.includes(d); };
   const TASKS = { memo: 'حفظ', link: 'ربط', review: 'مراجعة', repeat: 'تكرار', explain: 'شرح', listen: 'سماع', custom: 'مهمة' };
@@ -657,5 +717,5 @@
 
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, holdOn, stageBounds, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
+    unionCount, planDayFor, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
 })();

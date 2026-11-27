@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127l">
+<link rel="stylesheet" href="app.css?v=20261127m">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127l"></script>
+<script src="app.js?v=20261127m"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -108,7 +108,7 @@ if (asg) {
   P = p.data; cols = c.data || []; d.forEach(x => days[x.day_number] = x);
 }
 // المراحل والاختبارات: التوقف للاختبار يوقف تقدّم الخطة
-let STG = [], EXM = {}, ATT = [];
+let STG = [], EXM = {}, ATT = [], PROG = new Set();
 if (asg) {
   await db.rpc('sync_stage_holds', { p_student: stu.id });
   const [h, sg, at] = await Promise.all([
@@ -116,6 +116,7 @@ if (asg) {
     db.from('plan_stages').select('*').eq('plan_id', asg.plan_id).order('seq').then(r => r.data || []),
     db.from('exam_attempts').select('id, exam_id, attempt_no, status, score, passed, started_at, submitted_at, deadline_at').eq('student_id', stu.id).order('started_at', { ascending: false }).then(r => r.data || [])]);
   asg.holds = h; STG = sg; ATT = at;
+  if (sg.some(x => x.basis === 'execution')) { const { data: pr } = await db.from('plan_progress').select('plan_day_id, column_id').eq('student_id', stu.id); (pr || []).forEach(x => PROG.add(x.plan_day_id + '|' + x.column_id)); }
   if (sg.length) { const { data: ex } = await db.from('exams').select('*').in('stage_id', sg.map(x => x.id)); (ex || []).forEach(e => EXM[e.stage_id] = e); }
 }
 const planLive = P && P.status === 'active';
@@ -167,19 +168,16 @@ function examCard(hold) {
     <div class="chipsm" style="margin:6px 0">${e.mode === 'online' ? `<span>${e.duration_min ? e.duration_min + ' دقيقة' : 'بلا وقت محدد'}</span>` : ''}<span>النجاح ${+e.pass_score}٪</span><span>المحاولات ${mine.length} من ${e.max_attempts}</span></div>
     ${action}${hist}</div>`;
 }
-// مؤشر المرحلة الحالية: كم باقٍ لإنهائها
+// مؤشر المراحل: كم باقٍ لإنهاء المرحلة الحالية (حسب أساسها في الخطة)، ونتائج ما سبقها
 function stageMeter() {
   if (!STG.length || !dayN) return '';
-  const PP = { ...P, cols, days };
-  const list = STG.map(st => ({ st, b: A.stageBounds(PP, st) })).filter(x => x.b.end_day);
-  const cur = list.find(x => x.b.end_day >= dayN); if (!cur) return '';
-  const col = cols.find(c => c.id === cur.st.end_column_id); if (!col) return '';
-  let v = null; for (let k = dayN; k >= 1 && v == null; k--) { const x = days[k]?.vals?.[col.id]; if (x != null && x !== '' && !isNaN(+x)) v = +x; }
-  const prev = list[list.indexOf(cur) - 1], from = prev ? +prev.st.end_value : 0, to = +cur.st.end_value;
-  const rem = Math.max(0, to - (v ?? from)), pct = Math.min(100, Math.max(0, Math.round(((v ?? from) - from) / ((to - from) || 1) * 100)));
-  const unit = (String(col.header).match(/(?:من|إلى)\s+([^\s\d]+)/) || [])[1] || '';
-  return `<div class="card" style="padding:10px 12px;margin-bottom:10px"><div class="row small"><b>${esc(cur.st.name)}</b><span>باقي <b>${fmtNum(rem)}</b> ${esc(unit)} لإنهائها</span></div>
-    <div style="height:8px;border-radius:6px;background:#eef2f2;margin-top:6px;overflow:hidden"><div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#CBB994,#0F2F33)"></div></div></div>`;
+  const list = A.stageStatus({ P: { ...P, cols, days }, stages: STG, exams: EXM, attempts: ATT, assign: asg, recs, progress: PROG });
+  if (!list.length) return '';
+  const cur = list.find(x => x.state === 'progress' || x.state === 'done');
+  const past = list.filter(x => x.state === 'passed');
+  return `<div class="card" style="padding:10px 12px;margin-bottom:10px">${cur ? `<div class="row small"><b>${esc(cur.st.name)}</b><span>${cur.state === 'done' ? 'أنهيتها، والاختبار قريب' : `باقي <b style="font-size:16px">${fmtNum(cur.remaining)}</b> ${esc(cur.unit)} لإنهائها`}</span></div>
+    <div style="height:8px;border-radius:6px;background:#eef2f2;margin-top:6px;overflow:hidden"><div style="height:100%;width:${cur.pct}%;background:linear-gradient(90deg,#CBB994,#0F2F33)"></div></div>` : ''}
+    ${past.length ? `<div class="chipsm" style="margin-top:${cur ? 8 : 0}px">${past.map(x => `<span>✓ ${esc(x.st.name)}${x.best ? ' · ' + fmtNum(x.best.score, 1) + '٪' : ''}</span>`).join('')}</div>` : ''}</div>`;
 }
 SECTIONS.exam = async el => {
   const hold = A.holdOn(asg, TODAY), e = hold && EXM[hold.stage_id];
@@ -246,7 +244,6 @@ SECTIONS.home = async el => {
     </div>
     ${A.isMobile && (ps === 'default' || ps === 'needs-install') ? `<div class="notice blue"><span>${ps === 'needs-install' ? 'ثبّت التطبيق على جوالك لتصلك الإشعارات.' : 'فعّل الإشعارات لتصلك رسائل المعلم والإدارة.'}</span><button class="btn sm" id="enableBtn">${ps === 'needs-install' ? 'تثبيت' : 'تفعيل'}</button></div>` : ''}
     ${hold ? '' : stageMeter()}
-    ${!hold && ATT.some(x => x.status === 'graded' && x.passed) ? `<div class="card" style="padding:8px 12px;margin-bottom:10px"><b class="small">اختباراتي</b>${ATT.filter(x => x.status === 'graded' && x.passed).map(x => { const st = STG.find(g => EXM[g.id]?.id === x.exam_id); return `<div class="row small" style="padding:4px 0"><span>${esc(EXM[st?.id]?.title || st?.name || 'اختبار')}</span><span><b>${fmtNum(x.score, 1)}٪</b> <span class="pill ok">مجتاز</span></span></div>`; }).join('')}</div>` : ''}
     <div class="h3row"><h3>مهام اليوم</h3><span>${!workToday || hold ? '' : `اليوم ${dayN} من ${nDays}${execN && canExec ? ` · أنجزت ${doneN} من ${execN}` : ''}`}</span></div>
     ${hold ? examCard(hold)
       : !P ? '<div class="empty">لم تُسند لك خطة بعد. تواصل مع إدارة البرنامج.</div>'
