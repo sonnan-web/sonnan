@@ -42,7 +42,7 @@
     none: { label: 'لم يُرصد', cls: 'plain', color: 'var(--slate)' }
   };
   const statusPill = s => { const x = STATUS[s] || STATUS.none; return `<span class="pill ${x.cls}">${x.label}</span>`; };
-  const STU_STATUS = { active: ['منتظم', 'ok'], paused: ['موقوف', 'warn'], graduated: ['خاتم', 'info'], withdrawn: ['منسحب', 'bad'] };
+  const STU_STATUS = { active: ['منتظم', 'ok'], paused: ['موقوف', 'warn'], graduated: ['خاتم', 'info'], withdrawn: ['منسحب', 'bad'], dismissed: ['مفصول', 'bad'] };
 
   let toastT;
   function toast(msg, bad) { let t = $('#toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); } t.textContent = msg; t.className = 'toast' + (bad ? ' bad' : ''); t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 3400); }

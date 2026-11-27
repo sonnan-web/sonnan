@@ -164,3 +164,6 @@ update public.plan_columns set graded = counts where graded = false and counts;
 -- والدوال stage_bounds, sync_stage_holds, close_stage_hold, start_exam, exam_paper, grade_attempt_auto, submit_exam, grade_attempt, oral_result
 -- وتحديث plan_commitment لاستبعاد أيام التوقف — انظر migration «stages_and_exams» في Supabase للنص الكامل
 -- وجدولة: select cron.schedule('sync-stage-holds', '7 * * * *', 'select public.sync_stage_holds()');
+
+-- إجراءات المشرف: حالة «مفصول»، وخاتمة الحالة، وسجل تواصل متعدد، وإنهاء التحاق الطالب وإعادته
+-- انظر migration «supervisor_actions» في Supabase (follow_up_contacts, end_student, reactivate_student)
