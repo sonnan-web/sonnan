@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127i">
+<link rel="stylesheet" href="app.css?v=20261127j">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127i"></script>
+<script src="app.js?v=20261127j"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -145,7 +145,9 @@ SECTIONS.home = async el => {
   const live = room && room.active && (room.days || []).includes(dn) && room.start_time && now >= room.start_time.slice(0, 5) && now <= (room.end_time || '23:59').slice(0, 5);
   const workToday = planLive && A.workdaysBetween(TODAY, TODAY, wd);
   const visTasks = tasks.filter(t => A.fmtTaskVal(t, today?.vals) != null);
-  const degToday = planLive && today ? A.dayDegrees({ ...P, cols }, today.vals) : {};
+  // درجة المهمة تظهر للطالب فقط إذا كان تعليمه يُحسب في الالتزام، وتظهر بنصيبه هو (درجة المهمة × نصيب الطالب)
+  const stuShare = planLive ? A.commitParties(P).s : 0;
+  const degToday = planLive && today && stuShare > 0 ? Object.fromEntries(Object.entries(A.dayDegrees({ ...P, cols }, today.vals)).map(([k, v]) => [k, Math.round(v * stuShare)])) : {};
   // الرابط والعمود «للعرض فقط» معلومة بلا علامة إنجاز
   const viewOnly = t => t.executor === 'info' || t.single?.value_type === 'url';
   const doneN = visTasks.filter(t => !viewOnly(t) && t.cols.some(c => progress.has(c.id))).length; // عدد ما علّم عليه اليوم
