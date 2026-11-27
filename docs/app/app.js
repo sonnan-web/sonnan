@@ -189,7 +189,7 @@
   }
   // قيم تفاصيل المهمة لعرضها داخل بطاقتها: [[اسم، قيمة]]
   const taskDetails = (t, vals) => (t.details || []).map(d => { const v = d.single ? vals?.[d.single.id] : null; const a = d.from ? vals?.[d.from.id] : null, b = d.to ? vals?.[d.to.id] : null;
-    const txt = d.single ? (v == null || v === '' ? null : String(v)) : (a == null && b == null ? null : (d.from.value_type === 'text' ? `${a ?? '؟'} ← ${b ?? '؟'}` : `من ${a ?? '؟'} إلى ${b ?? '؟'}`));
+    const txt = d.single ? (v == null || v === '' ? null : String(v)) : (a == null && b == null ? null : (d.from.value_type === 'text' ? `${a ?? '؟'} ← ${b ?? '؟'}` : fmtRange(d.from, a, b)));
     return txt == null ? null : [String((d.single || d.from).header).replace(/\s*(من|إلى)\s*$/, '').replace(/\s+(من|إلى)\s+/, ' ').trim(), txt]; }).filter(Boolean);
 
   // ===== الأوزان والتقييم =====
@@ -226,13 +226,16 @@
   function taskAmount(t, vals, cols) {
     const sc = t.single?.shows_column_id && cols?.find(c => c.id === t.single.shows_column_id); if (!sc) return null;
     const ec = cols.find(c => c.id === sc.pair_column_id); const a = vals?.[sc.id], b = ec ? vals?.[ec.id] : null;
-    return a == null && b == null ? null : `من ${a ?? '؟'} إلى ${b ?? '؟'}`;
+    return a == null && b == null ? null : fmtRange(sc, a, b);
   }
+  // وحدة النطاق من اسم العمود: «مراجعة من حديث» ← «حديث»، «حفظ من صفحة» ← «صفحة»
+  const rangeUnit = c => (String(c?.header || '').match(/من\s+([^\s\d]+)/) || [])[1] || '';
+  const fmtRange = (c, a, b) => { const u = c?.value_type === 'number' ? rangeUnit(c) : ''; return u ? `من ${u} ${a ?? '؟'} إلى ${u} ${b ?? '؟'}` : `من ${a ?? '؟'} إلى ${b ?? '؟'}`; };
   function fmtTaskVal(t, vals) {
     if (t.single) { const v = vals?.[t.single.id]; if (v == null || v === '') return null; if (t.single.value_type === 'bool') return v ? 'نعم' : null; if (t.single.value_type === 'url') return 'رابط'; return String(v); }
     const a = vals?.[t.from.id], b = vals?.[t.to.id];
     if (a == null && b == null) return null;
-    return `من ${a ?? '؟'} إلى ${b ?? '؟'}`;
+    return fmtRange(t.from, a, b);
   }
 
   const icon = name => ({

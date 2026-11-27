@@ -621,16 +621,18 @@ function groupTasks(filterFn) {
 function previewDetails(t, vals) {
   const ids = t.cols.map(c => c.id);
   return S.cols.filter(c => ids.includes(c.detail_of) && c.range_role !== 'end').map(c => { const e = c.pair_column_id && S.cols.find(x => x.id === c.pair_column_id); const a = vals[c.id], b = e ? vals[e.id] : null;
-    if (a == null && b == null) return ''; return `<span class="v" style="display:block;font-size:12px">${esc(c.header.replace(/\s*(من|إلى)\s*$/, '').trim())}: ${esc(e ? (c.value_type === 'text' ? `${a ?? '؟'} ← ${b ?? '؟'}` : `من ${a ?? '؟'} إلى ${b ?? '؟'}`) : String(a))}</span>`; }).join('');
+    if (a == null && b == null) return ''; return `<span class="v" style="display:block;font-size:12px">${esc(c.header.replace(/\s*(من|إلى)\s*$/, '').trim())}: ${esc(e ? (c.value_type === 'text' ? `${a ?? '؟'} ← ${b ?? '؟'}` : fmtRangeP(c, a, b)) : String(a))}</span>`; }).join('');
 }
 function fmtTask(t, vals) {
   if (t.single) { const v = vals[t.single.id]; if (v == null || v === '') return null;
-    if (t.single.value_type === 'bool') { if (!v) return null; const sc = S.cols.find(c => c.id === t.single.shows_column_id), ec = sc && S.cols.find(c => c.id === sc.pair_column_id); const a = sc && vals[sc.id], b = ec && vals[ec.id]; return t.single.header + (a != null || b != null ? `: من ${a ?? '؟'} إلى ${b ?? '؟'}` : ''); }
+    if (t.single.value_type === 'bool') { if (!v) return null; const sc = S.cols.find(c => c.id === t.single.shows_column_id), ec = sc && S.cols.find(c => c.id === sc.pair_column_id); const a = sc && vals[sc.id], b = ec && vals[ec.id]; return t.single.header + (a != null || b != null ? ': ' + fmtRangeP(sc, a, b) : ''); }
     return t.single.value_type === 'url' ? 'رابط' : `${t.single.header}: ${v}`; }
   const a = vals[t.from.id], b = vals[t.to.id];
   if (a == null && b == null) return null;
-  return `من ${a ?? '؟'} إلى ${b ?? '؟'}`;
+  return fmtRangeP(t.from, a, b);
 }
+// وحدة النطاق من اسم العمود: «مراجعة من حديث» ← «من حديث 1 إلى حديث 2»
+function fmtRangeP(c, a, b) { const u = c?.value_type === 'number' ? ((String(c.header || '').match(/من\s+([^\s\d]+)/) || [])[1] || '') : ''; return u ? `من ${u} ${a ?? '؟'} إلى ${u} ${b ?? '؟'}` : `من ${a ?? '؟'} إلى ${b ?? '؟'}`; }
 function tabPreview() {
   const P = S.plan;
   if (!S.days.length) { $('#tab').innerHTML = '<div class="empty">ارفع أيام الخطة أولًا لتظهر المعاينة.</div>'; return; }

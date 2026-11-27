@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127c">
+<link rel="stylesheet" href="app.css?v=20261127d">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127c"></script>
+<script src="app.js?v=20261127d"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -282,7 +282,7 @@ async function followSection(el, kind) {
       const r = rs[0];
       let k = !r ? (leaveOn(s.id, day) ? 'excused' : recD ? 'none' : 'off') : r.status === 'present' ? 'done' : r.status === 'makeup' ? 'makeup' : r.status === 'review_only' ? 'review' : r.status;
       const o = { ...base(s), r, k, state: ST[k], pday: A.planDayFor(s.assign, P, Object.keys(P.days).length, day), score: r?.score != null ? +r.score : null, notes: r?.notes || '' };
-      tasks.forEach(t => { const v = r ? A.fmtTaskVal(t, r.vals) : null; o['t_' + t.key] = v ? v.replace(/^من (.+) إلى (.+)$/, '$1–$2') : ''; });
+      tasks.forEach(t => { const v = r ? A.fmtTaskVal(t, r.vals) : null; o['t_' + t.key] = v ? v.replace(/^من (?:[^\d\s؟]+ )?(.+?) إلى (?:[^\d\s؟]+ )?(.+)$/, '$1–$2') : ''; });
       return o;
     });
     const n = k => rows.filter(r => r.k === k).length;
@@ -439,7 +439,7 @@ async function recsSection(el, kind) {
   $('#newRec') && ($('#newRec').onclick = pickStudentThenRecord);
   cardFull($('#rCard'));
   if (!P) { $('#rTbl').innerHTML = '<div class="empty">لا توجد خطط. أنشئ خطة من «خطط البرامج».</div>'; return; }
-  const cellVal = (t, vals) => { const v = A.fmtTaskVal(t, vals || {}); return v == null ? '' : (t.single?.value_type === 'url' ? vals[t.single.id] : v.replace(/^من (.+) إلى (.+)$/, '$1–$2')); };
+  const cellVal = (t, vals) => { const v = A.fmtTaskVal(t, vals || {}); return v == null ? '' : (t.single?.value_type === 'url' ? vals[t.single.id] : v.replace(/^من (?:[^\d\s؟]+ )?(.+?) إلى (?:[^\d\s؟]+ )?(.+)$/, '$1–$2')); };
 
   if (st.kind === 'teacher') {
     // أعمدة ما يرصده المعلم فعليًا في هذه الخطة
@@ -990,7 +990,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127c&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127d&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
