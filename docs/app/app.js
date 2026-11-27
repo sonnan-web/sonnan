@@ -171,14 +171,56 @@
   const TASKS = { memo: 'حفظ', link: 'ربط', review: 'مراجعة', repeat: 'تكرار', explain: 'شرح', listen: 'سماع', custom: 'مهمة' };
   const taskName = c => c.task === 'custom' ? (c.task_label || 'مهمة أخرى') : TASKS[c.task];
   // يجمع العمودين المرتبطين في مهمة واحدة
+  // عمود «تفاصيل لمهمة» (detail_of) لا يكون مهمة مستقلة: يُعرض داخل بطاقة مهمته
+  const detailOf = (c, cols) => c.detail_of || (c.pair_column_id && cols.find(x => x.id === c.pair_column_id)?.detail_of) || null;
+  function buildTask(c, cols, used) {
+    if (c.pair_column_id) { const o = cols.find(x => x.id === c.pair_column_id); if (o) { used[o.id] = 1; const [a, b] = c.range_role === 'start' ? [c, o] : [o, c]; return { key: a.id, name: taskName(a), from: a, to: b, cols: [a, b], task: a.task, executor: a.executor }; } }
+    return { key: c.id, name: taskName(c), single: c, cols: [c], task: c.task, executor: c.executor };
+  }
   function groupTasks(cols, filterFn) {
-    const out = [], used = {};
+    const out = [], used = {}, det = [], dUsed = {};
     cols.forEach(c => {
       if (used[c.id] || !filterFn(c)) return;
-      if (c.pair_column_id) { const o = cols.find(x => x.id === c.pair_column_id); if (o) { used[o.id] = 1; const [a, b] = c.range_role === 'start' ? [c, o] : [o, c]; out.push({ key: a.id, name: taskName(a), from: a, to: b, cols: [a, b], task: a.task, executor: a.executor }); return; } }
-      out.push({ key: c.id, name: taskName(c), single: c, cols: [c], task: c.task, executor: c.executor });
+      if (detailOf(c, cols)) { if (!dUsed[c.id]) det.push(buildTask(c, cols, dUsed)); return; }
+      out.push(buildTask(c, cols, used));
     });
+    det.forEach(d => { const parent = out.find(t => t.cols.some(c => c.id === detailOf(d.cols[0], cols))); if (parent) (parent.details ||= []).push(d); });
     return out;
+  }
+  // قيم تفاصيل المهمة لعرضها داخل بطاقتها: [[اسم، قيمة]]
+  const taskDetails = (t, vals) => (t.details || []).map(d => { const v = d.single ? vals?.[d.single.id] : null; const a = d.from ? vals?.[d.from.id] : null, b = d.to ? vals?.[d.to.id] : null;
+    const txt = d.single ? (v == null || v === '' ? null : String(v)) : (a == null && b == null ? null : (d.from.value_type === 'text' ? `${a ?? '؟'} ← ${b ?? '؟'}` : `من ${a ?? '؟'} إلى ${b ?? '؟'}`));
+    return txt == null ? null : [String((d.single || d.from).header).replace(/\s*(من|إلى)\s*$/, '').replace(/\s+(من|إلى)\s+/, ' ').trim(), txt]; }).filter(Boolean);
+
+  // ===== الأوزان والتقييم =====
+  // الوزن الفارغ يأخذ الباقي من 100 بالتساوي؛ والنتيجة نِسَب مجموعها 1
+  function normWeights(ws) {
+    const has = w => w != null && w !== '' && !isNaN(+w);
+    const given = ws.filter(has).reduce((a, w) => a + +w, 0), free = ws.filter(w => !has(w)).length, rest = Math.max(0, 100 - given);
+    const out = ws.map(w => has(w) ? +w : (free ? rest / free : 0)); const tot = out.reduce((a, b) => a + b, 0);
+    return tot ? out.map(w => w / tot) : ws.map(() => 1 / (ws.length || 1));
+  }
+  const taskWeight = t => { const c = t.cols.find(c => c.weight != null && c.weight !== ''); return c ? +c.weight : null; };
+  const isViewOnly = t => t.executor === 'info' || t.single?.value_type === 'url';
+  // المهام التي يقيّمها المعلم بالأخطاء (المعلّمة «في التقييم» وتظهر له)
+  const gradedTasks = P => groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both').filter(t => t.cols.some(c => c.counts));
+  // مهام الطالب التي يُحسب بها التزامه: المعلّمة «في التقييم»، وإن لم يُعلَّم شيء فكل مهامه
+  function execTasks(P) { const all = groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both').filter(t => !isViewOnly(t)); const g = all.filter(t => t.cols.some(c => c.counts)); return g.length ? g : all; }
+  // تنفيذ يوم: مجموع أوزان ما أنجزه ÷ مجموع أوزان المطلوب
+  function dayExec(tasks, dayVals, done) {
+    const req = tasks.filter(t => fmtTaskVal(t, dayVals) != null); if (!req.length) return null;
+    const w = normWeights(req.map(taskWeight)); let got = 0, n = 0;
+    req.forEach((t, i) => { if (t.cols.some(c => done.has(c.id))) { got += w[i]; n++; } });
+    return { need: req.length, done: n, ratio: got };
+  }
+  // درجة الجلسة من أخطاء المهام المقيّمة (أو من أخطاء الجلسة كلها في الخطط القديمة)
+  function sessionScore(P, ded) {
+    const R = P.score_rules || { max: 10, deductions: [] }, max = +(R.max || 0);
+    const one = d => Math.max(0, max - (R.deductions || []).reduce((x, k) => x + (+(d?.[k.key]) || 0) * (+k.value || 0), 0));
+    const g = gradedTasks(P);
+    if (!g.length || !ded?.tasks) return one(ded);
+    const w = normWeights(g.map(taskWeight));
+    return g.reduce((a, t, i) => a + w[i] * one(ded.tasks[t.key]), 0);
   }
   // مقدار النطاق الذي يعرضه عمود نعم/لا (مثل «من 10 إلى 11» لمقدار الحفظ)، يحتاج أعمدة الخطة
   function taskAmount(t, vals, cols) {
@@ -360,7 +402,10 @@
     }
     function startEdit(id) {
       const r = S.hist.find(x => x.id === id); if (!r) return;
-      S.editing = r; S.status = r.status; S.ded = { ...(r.deductions || {}) }; S.makeup = r.makes_up_date; S.draft = null; S.notes = null; S.teacherId = r.teacher_id || S.teacherId;
+      S.editing = r; S.status = r.status; S.ded = JSON.parse(JSON.stringify(r.deductions || {}));
+      // رصد قديم أخطاؤه للجلسة كلها: تُنسب لأول مهمة مقيّمة
+      const g0 = ctx.P ? gradedTasks(ctx.P) : []; if (g0.length && !S.ded.tasks) S.ded = { tasks: Object.keys(S.ded).length ? { [g0[0].key]: S.ded } : {} };
+      S.makeup = r.makes_up_date; S.draft = null; S.notes = null; S.teacherId = r.teacher_id || S.teacherId;
       drawForm(); fa.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     function drawForm() {
@@ -385,7 +430,15 @@
       const showFields = ['present', 'makeup', 'review_only'].includes(st);
       const reviewOnly = st === 'review_only';
       const R = P.score_rules || { max: 10, deductions: [] };
-      const score = Math.max(0, (R.max || 0) - (R.deductions || []).reduce((x, d) => x + (S.ded[d.key] || 0) * (+d.value || 0), 0));
+      // التقييم لكل مهمة معلّمة «في التقييم»؛ وإن لم تُعلَّم مهمة فالأخطاء للجلسة كلها
+      const graded = gradedTasks(P), perTask = graded.length > 0;
+      if (perTask) S.ded.tasks ||= {};
+      const gW = perTask ? normWeights(graded.map(taskWeight)) : [];
+      const tScore = key => Math.max(0, (R.max || 0) - (R.deductions || []).reduce((x, d) => x + ((S.ded.tasks?.[key] || {})[d.key] || 0) * (+d.value || 0), 0));
+      const score = sessionScore(P, S.ded);
+      const dedBox = (key, title) => `<div class="card" style="--a:var(--violet);margin-top:8px;padding:8px 12px"><b>${title}</b>
+          ${R.deductions.map(d => { const n = key ? ((S.ded.tasks[key] || {})[d.key] || 0) : (S.ded[d.key] || 0); return `<div class="ded"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ctl"><button type="button" data-d="${esc(d.key)}"${key ? ` data-t="${key}"` : ''} data-v="-1" aria-label="إنقاص">−</button><b>${n}</b><button type="button" data-d="${esc(d.key)}"${key ? ` data-t="${key}"` : ''} data-v="1" aria-label="زيادة">+</button></span></div>`; }).join('')}
+          ${key ? `<div class="row" style="margin-top:6px"><span>درجة المهمة</span><span class="score">${fmtNum(tScore(key), 2)} <span class="hint">من ${R.max}</span></span></div>` : ''}</div>`;
       const field = c => {
         const v = vals[c.id];
         if (c.value_type === 'bool') return `<label class="chips"><label><input type="checkbox" data-c="${c.id}"${v ? ' checked' : ''}>${esc(c.header)}</label></label>`;
@@ -399,12 +452,15 @@
         <div style="margin-top:10px"><b class="small">حالة الطالب</b><div class="seg" style="margin-top:6px">${['present', 'makeup', 'review_only', 'excused', 'absent'].map(k => `<button type="button" data-st="${k}" aria-pressed="${st === k}">${STATUS[k].label}</button>`).join('')}</div></div>
         ${st === 'makeup' ? `<label class="f" for="rwMk" style="margin-top:10px">تعويض عن يوم <span class="hint">أيام تسميع فاتته خلال ${mkWin} يومًا ولم تُعوَّض</span><select id="rwMk">${(ed?.makes_up_date && !missed.includes(ed.makes_up_date) ? [ed.makes_up_date] : []).concat(missed).map(d => `<option value="${d}"${S.makeup === d ? ' selected' : ''}>${dayName(d)} ${greg(d)}</option>`).join('') || '<option value="">لا توجد أيام فائتة</option>'}</select></label>` : ''}
         ${showFields ? `<div class="stack" style="margin-top:12px">
-          ${tTasks.filter(t => !reviewOnly || t.task !== 'memo').map(t => `<div class="task-f"><div class="row"><b>${esc(t.name)}</b><span class="hint">المقرر${st === 'makeup' ? ' ليوم التعويض' : ''}: ${esc(fmtTaskVal(t, day?.vals) ?? '—')}</span></div><div class="g2">${t.cols.map(field).join('')}</div></div>`).join('') || '<div class="hint">لا توجد أعمدة يرصدها المعلم في هذه الخطة.</div>'}
+          ${tTasks.filter(t => !reviewOnly || t.task !== 'memo').map(t => { const gi = graded.findIndex(g => g.key === t.key), det = taskDetails(t, day?.vals);
+            return `<div class="task-f"><div class="row"><b>${esc(t.name)}${perTask ? (gi >= 0 ? ` <span class="pill violet">تقييم${graded.length > 1 ? ' ' + Math.round(gW[gi] * 100) + '٪' : ''}</span>` : ' <span class="pill plain">رصد فقط</span>') : ''}</b><span class="hint">المقرر${st === 'makeup' ? ' ليوم التعويض' : ''}: ${esc(fmtTaskVal(t, day?.vals) ?? '—')}</span></div>
+              ${det.length ? `<div class="hint" style="margin:2px 0 4px">${det.map(([n, v]) => esc(n) + ': ' + esc(v)).join(' · ')}</div>` : ''}
+              <div class="g2">${t.cols.map(field).join('')}</div>${perTask && gi >= 0 && !reviewOnly && (R.deductions || []).length ? dedBox(t.key, 'أخطاء ' + esc(t.name)) : ''}</div>`; }).join('') || '<div class="hint">لا توجد أعمدة يرصدها المعلم في هذه الخطة.</div>'}
           ${refTasks.map(t => { const v = fmtTaskVal(t, day?.vals); return v == null ? '' : `<div class="task-f ref"><b>${esc(t.name)} <span class="hint">للعرض</span></b><span class="small">${t.cols[0].value_type === 'url' ? `<a href="${esc(day.vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(v)}</span></div>`; }).join('')}
         </div>
-        ${!reviewOnly && (R.deductions || []).length ? `<div class="card" style="--a:var(--violet);margin-top:12px;padding:8px 12px"><b>الأخطاء</b>
-          ${R.deductions.map(d => `<div class="ded"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ctl"><button type="button" data-d="${esc(d.key)}" data-v="-1" aria-label="إنقاص">−</button><b>${S.ded[d.key] || 0}</b><button type="button" data-d="${esc(d.key)}" data-v="1" aria-label="زيادة">+</button></span></div>`).join('')}
-          <div class="row" style="margin-top:6px"><span>الدرجة</span><span class="score">${fmtNum(score, 2)} <span class="hint">من ${R.max}</span></span></div></div>` : ''}`
+        ${!reviewOnly && (R.deductions || []).length ? (perTask
+          ? `<div class="card" style="--a:var(--violet);margin-top:12px;padding:8px 12px"><div class="row"><b>درجة الجلسة</b><span class="score">${fmtNum(score, 2)} <span class="hint">من ${R.max}</span></span></div>${graded.length > 1 ? `<div class="hint">متوسط درجات المهام المقيّمة حسب أوزانها.</div>` : ''}</div>`
+          : `${dedBox(null, 'الأخطاء')}<div class="row" style="margin-top:6px"><span>الدرجة</span><span class="score">${fmtNum(score, 2)} <span class="hint">من ${R.max}</span></span></div>`) : ''}`
         : `<div class="hintbox" style="margin-top:10px">${st === 'excused' ? 'يُسجَّل الطالب مستأذنًا لهذا اليوم، ولا يُحسب غيابًا.' : 'يُسجَّل الطالب غائبًا لهذا اليوم، ويدخل في حساب التنبيهات والإنذارات.'}</div>`}
         <label class="f" for="rwNotes" style="margin-top:10px">ملاحظات على الطالب <span class="hint">اختياري</span><textarea id="rwNotes">${esc(S.notes ?? ed?.notes ?? '')}</textarea></label>
         ${ed ? `<label class="f" for="rwReason" style="margin-top:8px">سبب التعديل<input id="rwReason" type="text"></label>` : ''}
@@ -413,7 +469,7 @@
       const keep = () => { S.draft = {}; $$('[data-c]', fa).forEach(i => { S.draft[i.dataset.c] = i.type === 'checkbox' ? i.checked : (i.value === '' ? null : (i.type === 'number' ? Number(i.value) : i.value)); }); S.notes = $('#rwNotes', fa).value; if ($('#rwT', fa)) S.teacherId = $('#rwT', fa).value; };
       $$('[data-st]', fa).forEach(b => b.onclick = () => { keep(); S.status = b.dataset.st; if (S.status === 'makeup' && !S.makeup) { S.makeup = missed[0] || null; S.draft = null; } drawForm(); });
       $('#rwMk', fa) && ($('#rwMk', fa).onchange = e => { S.makeup = e.target.value; S.draft = null; drawForm(); });
-      $$('[data-d]', fa).forEach(b => b.onclick = () => { keep(); const k = b.dataset.d; S.ded[k] = Math.max(0, (S.ded[k] || 0) + +b.dataset.v); drawForm(); });
+      $$('[data-d]', fa).forEach(b => b.onclick = () => { keep(); const k = b.dataset.d, t = b.dataset.t; const box = t ? (S.ded.tasks[t] ||= {}) : S.ded; box[k] = Math.max(0, (box[k] || 0) + +b.dataset.v); drawForm(); });
       $('#rwCancelEdit', fa) && ($('#rwCancelEdit', fa).onclick = () => { S.editing = null; S.ded = {}; S.status = 'present'; S.draft = null; S.notes = null; S.makeup = null; drawForm(); });
       $('#rwSave', fa).onclick = () => save(P, day, score);
     }
@@ -431,7 +487,7 @@
         student_id: ctx.stu.id, teacher_id: S.teacherId, plan_id: P.id, plan_day_id: day?.id || null,
         rec_date: ed ? ed.rec_date : TODAY, status: st, makes_up_date: st === 'makeup' ? S.makeup : null,
         vals: ['present', 'makeup', 'review_only'].includes(st) ? vals : {}, deductions: withScore ? S.ded : {},
-        score: withScore ? score : null, errors_total: withScore ? Object.values(S.ded).reduce((x, y) => x + y, 0) : null,
+        score: withScore ? score : null, errors_total: withScore ? (S.ded.tasks ? Object.values(S.ded.tasks).flatMap(o => Object.values(o)) : Object.values(S.ded)).reduce((x, y) => x + (+y || 0), 0) : null,
         memo_from: withScore && mF ? (vals[mF.id] ?? null) : null, memo_to: withScore && mT ? (vals[mT.id] ?? null) : null,
         notes: $('#rwNotes', fa).value.trim() || null, room_id: ctx.roomId || null, created_by: ctx.meId
       };
@@ -574,5 +630,5 @@
 
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, svg };
+    unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, isViewOnly, gradedTasks, execTasks, dayExec, sessionScore, svg };
 })();

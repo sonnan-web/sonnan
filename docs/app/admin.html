@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127b">
+<link rel="stylesheet" href="app.css?v=20261127c">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127b"></script>
+<script src="app.js?v=20261127c"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -259,7 +259,8 @@ async function followSection(el, kind) {
   cardFull($('#fCard'));
   if (!P) { $('#fTbl').innerHTML = '<div class="empty">لا توجد خطط.</div>'; $('#fKpi').hidden = true; return; }
   if (isR && P.recitation_mode === 'none') { $('#fKpi').hidden = true; $('#fTbl').innerHTML = '<div class="empty">هذه الخطة بلا تسميع. اختر خطة فيها تسميع، أو افتح «المتابعة اليومية للواجب».</div>'; return; }
-  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
+  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both').filter(t => !A.isViewOnly(t));
+  const eTasks = A.execTasks(P); // ما يُحسب به الالتزام (المعلّم «في التقييم» بأوزانه)
   if (!isR && (P.student_execution === 'none' || !tasksE.length)) { $('#fKpi').hidden = true; $('#fTbl').innerHTML = '<div class="empty">هذه الخطة بلا تنفيذ عند الطالب. اختر خطة فيها واجب يعلّم عليه الطالب.</div>'; return; }
   const studs = actives().filter(s => s.assign?.plan_id === P.id);
   if (FOL.mode === 'cal') return renderCal(el, P, isR ? 'rec' : 'exe', studs, title);
@@ -340,7 +341,7 @@ async function followSection(el, kind) {
       const o = { ...base(s), pday: dn };
       let need = 0, ok = 0;
       tasksE.forEach(t => { const req = A.fmtTaskVal(t, dv) != null; const d = t.cols.some(c => done.has(c.id)); o['t_' + t.key] = !req ? '' : d ? '✓' : '✗'; if (req) { need++; if (d) ok++; } });
-      o.pct = need ? Math.round(ok / need * 100) : null;
+      const wx = A.dayExec(eTasks, dv, done); o.pct = wx ? Math.round(wx.ratio * 100) : null; // النسبة بأوزان الأعمدة
       o.k = !work ? 'off' : leaveOn(s.id, day) ? 'excused' : !need ? 'off' : ok === need ? 'full' : ok ? 'part' : 'none';
       o.state = { off: 'لا واجب', excused: 'مستأذن', full: 'أنجز الواجب', part: 'أنجز جزءًا', none: 'لم ينفّذ' }[o.k];
       return o;
@@ -370,7 +371,7 @@ async function followSection(el, kind) {
         const dn = A.planDayFor(s.assign, P, nDays, d), dv = P.days[dn]?.vals || {}, done = prog[s.id]?.[dn] || new Set();
         let n = 0, k = 0; tasksE.forEach(t => { if (A.fmtTaskVal(t, dv) == null) return; n++; if (t.cols.some(c => done.has(c.id))) k++; });
         if (!n) return;
-        need += n; ok += k;
+        const wx = A.dayExec(eTasks, dv, done); if (wx) { need++; ok += wx.ratio; }
         if (k === n) { full++; cur = 0; } else { k ? part++ : none++; cur++; streak = Math.max(streak, cur); }
       });
       const days = full + part + none;
@@ -568,11 +569,11 @@ function execOf(s) {
   const P = s.planObj; if (!P || P.student_execution === 'none' || !D.planDays) return null;
   const days = D.planDays[P.id] || {}, n = Object.keys(days).length;
   const cur = A.planDayFor(s.assign, P, n, A.addDays(TODAY, -1));
-  const tasks = A.groupTasks(D.planCols[P.id] || [], c => c.executor === 'student' || c.executor === 'both');
+  const tasks = A.execTasks({ ...P, cols: D.planCols[P.id] || [] });
   const prog = D.progByStu[s.id] || new Set();
-  let exp = 0, done = 0;
-  for (let k = s.assign.start_day; k <= cur; k++) { const day = days[k]; if (!day) continue; tasks.forEach(t => { if (A.fmtTaskVal(t, day.vals) == null) return; exp++; if (t.cols.some(c => prog.has(day.id + '|' + c.id))) done++; }); }
-  return exp ? Math.round(done / exp * 100) : null;
+  let sum = 0, n2 = 0;
+  for (let k = s.assign.start_day; k <= cur; k++) { const day = days[k]; if (!day) continue; const done = new Set(tasks.flatMap(t => t.cols).filter(c => prog.has(day.id + '|' + c.id)).map(c => c.id)); const r = A.dayExec(tasks, day.vals, done); if (!r) continue; sum += r.ratio; n2++; }
+  return n2 ? Math.round(sum / n2 * 100) : null;
 }
 // التقييم المركب حسب أوزان الخطة
 function evalOf(s, st, ex) {
@@ -989,7 +990,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127b&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127c&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
@@ -1332,7 +1333,8 @@ SECTIONS.summary = async el => {
     const P = PL[s.assign.plan_id], nDays = Object.keys(P.days).length, prog = progs[P.id][s.id] || {};
     const hasExec = P.student_execution !== 'none' && P.cols.some(c => c.executor === 'student' || c.executor === 'both');
     const hasRec = P.recitation_mode !== 'none';
-    const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
+    const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both').filter(t => !A.isViewOnly(t));
+    const eTasksS = A.execTasks(P);
     const tasksT = A.groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both');
     // المهمة تُعدّ من واجب الطالب إذا حدّدتها الخطة في أيامها، وإلا (مثل مراجعة يحددها المعلم) من رصد المعلم
     const fromExec = new Set(hasExec ? tasksE.filter(t => Object.values(P.days).some(d => A.fmtTaskVal(t, d.vals) != null)).map(t => t.task) : []);
@@ -1345,7 +1347,8 @@ SECTIONS.summary = async el => {
       if (leaveOn(s.id, d)) { excE.add(d); return; }
       const dn = A.planDayFor(s.assign, P, nDays, d), dv = P.days[dn]?.vals || {}, done = prog[dn] || new Set();
       let any = false;
-      tasksE.forEach(t => { if (A.fmtTaskVal(t, dv) == null) return; need++; if (t.cols.some(c => done.has(c.id))) { ok++; any = true; add(t, dv); } });
+      tasksE.forEach(t => { if (A.fmtTaskVal(t, dv) == null || A.isViewOnly(t)) return; if (t.cols.some(c => done.has(c.id))) { any = true; add(t, dv); } });
+      const wx = A.dayExec(eTasksS, dv, done); if (wx) { need++; ok += wx.ratio; }
       if (any) execDays++;
     });
     // رصد المعلم
@@ -1552,7 +1555,7 @@ function dayState(s, P, d, ctx) {
 async function renderCal(el, P, view, studs, title) {
   const [y, m] = FOL.month.split('-').map(Number);
   const first = `${FOL.month}-01`, last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
+  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both').filter(t => !A.isViewOnly(t));
   const hasExec = view === 'exe';
   const K = view === 'rec' ? REC_K : EXE_K, key = view === 'rec' ? 'rec' : 'exe';
   $('#fTitle').textContent = `${A.greg(first)} – ${A.greg(last)}`;
@@ -1595,7 +1598,7 @@ function calDay(s, P, d, x) {
 async function studentMonth(s, P, month) {
   const [y, m] = month.split('-').map(Number);
   const first = `${month}-01`, last = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
-  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both');
+  const tasksE = A.groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both').filter(t => !A.isViewOnly(t));
   const hasExec = P.student_execution !== 'none' && tasksE.length > 0;
   const [{ data: lv }, prog] = await Promise.all([
     db.from('leave_requests').select('student_id, date_from, date_to').eq('student_id', s.id).eq('status', 'approved').lte('date_from', last).gte('date_to', first),

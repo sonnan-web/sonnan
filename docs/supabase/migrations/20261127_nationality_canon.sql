@@ -149,3 +149,6 @@ alter table public.plan_columns add column if not exists shows_column_id uuid re
 -- «لمن تظهر»: إضافة «لا أحد» (عمود للحساب فقط)
 alter table public.plan_columns drop constraint if exists plan_columns_executor_check;
 alter table public.plan_columns add constraint plan_columns_executor_check check (executor in ('student', 'teacher', 'both', 'info', 'none'));
+
+-- عمود «تفاصيل لمهمة»: يظهر داخل بطاقة مهمة أخرى بلا علامة إنجاز مستقلة
+alter table public.plan_columns add column if not exists detail_of uuid references public.plan_columns(id) on delete set null;
