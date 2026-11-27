@@ -256,16 +256,69 @@
     return { date: d, rate };
   }
   const finishText = f => !f ? '—' : f.done ? 'ختم الخطة' : f.never ? 'لم يبدأ الإنجاز' : greg(f.date);
-  // التعثر حسب قواعد الخطة: أيام التعثر داخل نافذة الاحتساب، وما يستحقه من تنبيه وإنذار وإحالة
-  function stumbleInfo(m, P, warnsIssued) {
-    const R = P?.discipline_rules || {}, wd = P?.workdays || [0, 1, 2, 3, 4];
-    let from = null;
-    if (R.window_days) { let n = 0, d = addDays(todayMakkah(), -1), g = 0; while (n < R.window_days && g++ < 400) { if (wd.includes(new Date(d + 'T12:00:00Z').getUTCDay())) n++; if (n < R.window_days) d = addDays(d, -1); } from = d; }
-    const inWin = (m?.stumble_dates || []).filter(x => !from || x >= from).length;
-    const alerts = R.alert_after ? Math.floor(inWin / R.alert_after) : 0, warns = R.warning_after ? Math.floor(inWin / R.warning_after) : 0;
-    const dismiss = R.escalate_after && (warnsIssued || 0) >= R.escalate_after;
-    const label = dismiss ? 'إحالة للفصل' : warns ? 'إنذار مستحق' : alerts ? 'تنبيه مستحق' : inWin ? 'متعثر' : 'منتظم';
-    return { inWin, total: m?.stumbles || 0, window: R.window_days || null, alerts, warns, dismiss, label, sev: dismiss ? 4 : warns ? 3 : alerts ? 2 : inWin ? 1 : 0, last: (m?.stumble_dates || [])[0] || null };
+  // ===== نظام التنبيهات والإنذارات =====
+  // لكل مسار (التسميع عند المعلم، التنفيذ عند الطالب إن كان يُحتسب) سُلّم: كل [n] تعثر ← تنبيه، كل [n] تنبيه ← إنذار، [n] إنذار ← فصل
+  // ويُعدّ في «مدة العدّ» (البرنامج كاملًا، أو كل شهر، أو كل عدد أيام) ويبدأ من جديد في كل مدة
+  const ORD = ['أول', 'ثانٍ', 'ثالث', 'رابع', 'خامس', 'سادس', 'سابع', 'ثامن', 'تاسع', 'عاشر'];
+  const ordinal = n => ORD[n - 1] || ('رقم ' + n);
+  function discRules(P) {
+    const R = P?.discipline_rules || {}, num = v => v == null || v === '' || isNaN(+v) ? null : +v, tracks = [];
+    if (P && P.recitation_mode !== 'none') tracks.push({ key: 'recitation', label: 'التسميع', who: 'المعلم', alert: num(R.rec_alert ?? R.alert_after), warn: num(R.rec_warn), dismiss: num(R.rec_dismiss ?? R.escalate_after) });
+    if (P && P.student_execution === 'counts') tracks.push({ key: 'execution', label: 'التنفيذ', who: 'الطالب', alert: num(R.exe_alert), warn: num(R.exe_warn), dismiss: num(R.exe_dismiss) });
+    return { period: R.period || 'month', days: num(R.period_days) || 7, start: R.period_start || null, leaveMax: num(R.leave_max ?? R.leave_max_month), makeup: num(R.makeup_within_days), tracks };
+  }
+  const MONTH_FMT = new Intl.DateTimeFormat('ar-SA-u-ca-gregory-nu-latn', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  // المدة التي يقع فيها اليوم d، أو مدة سابقة (offset سالب)
+  function periodFor(rules, start, d, offset) {
+    d = d || todayMakkah(); offset = offset || 0;
+    if (rules.period === 'program') return { key: 'all', from: start || '2000-01-01', to: d, label: 'البرنامج كاملًا', canPrev: false };
+    if (rules.period === 'days') {
+      const n = rules.days || 7, anchor = rules.start || start || d, idx = Math.floor(daysBetween(anchor, d) / n) + offset;
+      const from = addDays(anchor, idx * n), to = addDays(from, n - 1);
+      return { key: String(idx), from, to, label: `${greg(from)} – ${greg(to)}`, canPrev: idx > 0 };
+    }
+    const dt = new Date(d.slice(0, 7) + '-01T12:00:00Z'); dt.setUTCMonth(dt.getUTCMonth() + offset);
+    const from = dt.toISOString().slice(0, 10), e = new Date(dt); e.setUTCMonth(e.getUTCMonth() + 1); e.setUTCDate(0);
+    return { key: from.slice(0, 7), from, to: e.toISOString().slice(0, 10), label: MONTH_FMT.format(dt), canPrev: !start || from > start };
+  }
+  const periodName = r => r.period === 'program' ? 'البرنامج كاملًا' : r.period === 'days' ? `كل ${r.days} ${r.days > 2 && r.days < 11 ? 'أيام' : 'يومًا'}` : 'كل شهر';
+  function ladder(n, t) {
+    const alerts = t.alert ? Math.floor(n / t.alert) : 0, warns = t.warn ? Math.floor(alerts / t.warn) : 0, dismiss = !!(t.dismiss && warns >= t.dismiss);
+    const label = dismiss ? 'مستحق للفصل' : warns ? 'إنذار ' + ordinal(warns) : alerts ? 'تنبيه ' + ordinal(alerts) : n ? 'متعثر' : 'منتظم';
+    return { n, alerts, warns, dismiss, label, sev: dismiss ? 4 : warns ? 3 : alerts ? 2 : n ? 1 : 0 };
+  }
+  // حالة الطالب في مدة: لكل مسار أيام التعثر والمستحق وما صدر فعلًا وما ينتظر الاعتماد
+  function discStatus(P, start, byTrack, events, offset) {
+    const R = discRules(P), per = periodFor(R, start, todayMakkah(), offset), inP = x => x >= per.from && x <= per.to;
+    const all = new Set();
+    const tracks = R.tracks.map(t => {
+      const dates = (byTrack?.[t.key] || []).filter(inP); dates.forEach(x => all.add(x));
+      const l = ladder(dates.length, t), ev = (events || []).filter(e => (e.track || 'recitation') === t.key && e.status !== 'revoked' && inP(e.event_date));
+      const ia = Math.max(0, ...ev.filter(e => e.kind === 'alert').map(e => e.seq || 1)), iw = Math.max(0, ...ev.filter(e => e.kind === 'warning').map(e => e.seq || 1)), idis = ev.some(e => e.kind === 'dismissal');
+      const pending = [];
+      // يُصدر المشرف آخر ما بلغه الطالب مباشرة (مثل «تنبيه ثالث»)، لا التنبيهات واحدًا واحدًا
+      if (l.alerts > ia && l.warns <= iw) pending.push({ kind: 'alert', seq: l.alerts, label: 'تنبيه ' + ordinal(l.alerts) });
+      if (l.warns > iw) pending.push({ kind: 'warning', seq: l.warns, label: 'إنذار ' + ordinal(l.warns) });
+      if (l.dismiss && !idis) pending.push({ kind: 'dismissal', seq: 1, label: 'الفصل' });
+      const top = k => Math.max(0, ...ev.filter(e => e.kind === k).map(e => e.seq || 1));
+      const issued = [ia && 'تنبيه ' + ordinal(top('alert')), iw && 'إنذار ' + ordinal(top('warning')), idis && 'فصل'].filter(Boolean).join(' · ');
+      return { ...t, name: t.label, ...l, dates, ia, iw, issued, pending, configured: !!t.alert };
+    });
+    const sev = Math.max(0, ...tracks.map(t => t.sev)), hit = tracks.filter(t => t.n);
+    const label = !hit.length ? 'منتظم' : hit.map(t => t.label + (tracks.length > 1 ? ' (' + t.name + ')' : '')).join(' · ');
+    return { rules: R, per, tracks, inWin: all.size, sev, label, pending: tracks.flatMap(t => t.pending.map(x => ({ ...x, track: t.key }))) };
+  }
+  // للأقسام الأخرى: m من plan_metrics، وbyTrack (اختياري) من track_stumbles
+  function stumbleInfo(m, P, opts) {
+    opts = opts || {}; const R = discRules(P);
+    const byTrack = opts.byTrack || Object.fromEntries(R.tracks.map(t => [t.key, m?.stumble_dates || []]));
+    const st = discStatus(P, opts.start, byTrack, opts.events, 0);
+    return { ...st, total: m?.stumbles || 0, window: st.per.label, last: (m?.stumble_dates || [])[0] || null };
+  }
+  // الاستئذان في المدة: من أيام المسار (استئذان مقبول أو مستأذن عند المعلم)
+  function leaveInfo(assign, P, per) {
+    const R = discRules(P), used = (assign?.tl || []).filter(r => r.kind === 'leave' && r.dt >= per.from && r.dt <= per.to).length;
+    return { used, max: R.leaveMax, over: R.leaveMax != null ? Math.max(0, used - R.leaveMax) : 0 };
   }
   // لوحة الطالب عند اختياره للرصد (المعلم والمشرف): الالتزام التراكمي والضبط ومراحل خطته
   async function studentPanel(box, stu, assign, P) {
@@ -295,7 +348,7 @@
     const fin = P && commit?.ach_total ? finishDate(commit, P) : null, sb = P && commit ? stumbleInfo(commit, P) : null;
     const S = { progress: ['', ''], done: ['أنهى المرحلة', 'info'], hold: ['بانتظار الاختبار', 'warn'], grading: ['بانتظار التصحيح', 'violet'], passed: ['اجتاز', 'ok'] };
     return `<div class="card" style="--a:var(--gold);padding:10px 12px;margin-bottom:10px">
-      ${commit ? `<div class="row small" style="margin-bottom:${list.length ? 6 : 0}px;flex-wrap:wrap;gap:4px 12px"><span>الالتزام التراكمي <b style="font-size:15px">${commit.iltizam == null ? '—' : Math.round(+commit.iltizam) + '٪'}</b></span><span>الضبط <b style="font-size:15px">${commit.dabt == null ? '—' : Math.round(+commit.dabt) + '٪'}</b></span>${commit.ach != null ? `<span title="${commit.ach_days} من ${commit.ach_due} مستحق حتى أمس">الإنجاز <b style="font-size:15px">${Math.round(+commit.ach)}٪</b></span>` : ''}${fin ? `<span>الختم المتوقع <b>${finishText(fin)}</b></span>` : ''}${sb && sb.inWin ? `<span class="pill ${sb.sev >= 3 ? 'bad' : 'warn'}">${sb.label} · ${sb.inWin} يوم تعثر${sb.window ? ' في آخر ' + sb.window : ''}</span>` : ''}</div>` : ''}
+      ${commit ? `<div class="row small" style="margin-bottom:${list.length ? 6 : 0}px;flex-wrap:wrap;gap:4px 12px"><span>الالتزام التراكمي <b style="font-size:15px">${commit.iltizam == null ? '—' : Math.round(+commit.iltizam) + '٪'}</b></span><span>الضبط <b style="font-size:15px">${commit.dabt == null ? '—' : Math.round(+commit.dabt) + '٪'}</b></span>${commit.ach != null ? `<span title="${commit.ach_days} من ${commit.ach_due} مستحق حتى أمس">الإنجاز <b style="font-size:15px">${Math.round(+commit.ach)}٪</b></span>` : ''}${fin ? `<span>الختم المتوقع <b>${finishText(fin)}</b></span>` : ''}${sb && sb.inWin ? `<span class="pill ${sb.sev >= 3 ? 'bad' : 'warn'}">${sb.label} · ${sb.inWin} يوم تعثر${sb.window ? ' في ' + sb.window : ''}</span>` : ''}</div>` : ''}
       ${list.map(x => `<div style="padding:5px 0;border-top:1px dashed var(--line,#e5e5e5)"><div class="row small"><b>${esc(x.st.name)}</b><span>${x.state === 'progress' ? `باقي <b>${fmtNum(x.remaining)}</b> ${esc(x.unit)}` : `<span class="pill ${S[x.state][1]}">${S[x.state][0]}</span>`}${x.best ? ` · الاختبار <b>${fmtNum(x.best.score, 1)}٪</b>${x.state !== 'passed' ? ` (${x.tries} من ${x.e.max_attempts})` : ''}` : ''}</span></div>
         ${x.state === 'progress' ? `<div style="height:6px;border-radius:5px;background:#eef2f2;margin-top:4px;overflow:hidden"><div style="height:100%;width:${x.pct}%;background:linear-gradient(90deg,#CBB994,#0F2F33)"></div></div>` : ''}</div>`).join('')}</div>`;
   }
@@ -782,5 +835,5 @@
 
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, loadTimeline, tlAt, dueRange, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, finishDate, finishText, stumbleInfo, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
+    unionCount, planDayFor, loadTimeline, tlAt, dueRange, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, finishDate, finishText, stumbleInfo, discRules, periodFor, periodName, ladder, discStatus, leaveInfo, ordinal, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
 })();

@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127t">
+<link rel="stylesheet" href="app.css?v=20261127u">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127t"></script>
+<script src="app.js?v=20261127u"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -248,7 +248,7 @@ SECTIONS.home = async el => {
     ${M.ach != null ? `<div class="stats3">
       <div class="st" style="--c:var(--teal)" title="ما سمّعته من المهمة الأساسية مقارنة بالمستحق حسب خطتك حتى أمس"><b>${M.ach}٪</b><span>مستوى الإنجاز</span></div>
       <div class="st" style="--c:var(--gold)" title="بسرعتك الحالية"><b style="font-size:14px">${A.finishText(M.fin)}</b><span>الختم المتوقع</span></div>
-      <div class="st" style="--c:var(--red)" title="أيام لم تُسمِّع فيها شيئًا من واجبك الأساسي${M.sb?.window ? ' في آخر ' + M.sb.window + ' يوم' : ''}"><b>${M.sb?.inWin ?? 0}</b><span>أيام التعثر</span></div>
+      <div class="st" style="--c:var(--red)" title="أيام لم تُسمِّع فيها شيئًا من واجبك الأساسي${M.sb?.window ? ' في ' + M.sb.window : ''}"><b>${M.sb?.inWin ?? 0}</b><span>أيام التعثر</span></div>
     </div>` : ''}
     ${A.isMobile && (ps === 'default' || ps === 'needs-install') ? `<div class="notice blue"><span>${ps === 'needs-install' ? 'ثبّت التطبيق على جوالك لتصلك الإشعارات.' : 'فعّل الإشعارات لتصلك رسائل المعلم والإدارة.'}</span><button class="btn sm" id="enableBtn">${ps === 'needs-install' ? 'تثبيت' : 'تفعيل'}</button></div>` : ''}
     ${hold ? '' : stageMeter()}
@@ -312,15 +312,14 @@ SECTIONS.honor = async el => {
 };
 SECTIONS.leave = async el => {
   const { data } = await db.from('leave_requests').select('*').eq('student_id', stu.id).order('created_at', { ascending: false });
-  const lim = P?.discipline_rules?.leave_max_month;
-  const month = TODAY.slice(0, 7);
-  const used = (data || []).filter(l => l.status === 'approved' && l.date_from.slice(0, 7) === month).reduce((a, l) => a + A.daysBetween(l.date_from, l.date_to) + 1, 0);
-  el.innerHTML = `<div class="h3row" style="margin-top:2px"><h3>طلب استئذان</h3>${lim != null ? `<span>استخدمت ${used} من ${lim} أيام هذا الشهر</span>` : ''}</div>
+  const DR = P ? A.discRules(P) : null, per = DR ? A.periodFor(DR, asg?.start_date, TODAY) : null, LI = per ? A.leaveInfo(asg, P, per) : null;
+  const lim = LI?.max, used = LI?.used || 0;
+  el.innerHTML = `<div class="h3row" style="margin-top:2px"><h3>طلب استئذان</h3>${lim != null ? `<span>استخدمت ${used} من ${lim} ${per.label === 'البرنامج كاملًا' ? 'في البرنامج' : 'في ' + esc(per.label)}${used > lim ? ' · الزائد يُحسب تعثرًا' : ''}</span>` : ''}</div>
     <form class="card c-violet stack" id="lf">
       <div class="g2"><label class="f" for="lF">من<input id="lF" type="date" value="${TODAY}" min="${TODAY}" required></label><label class="f" for="lT">إلى<input id="lT" type="date" value="${TODAY}" min="${TODAY}" required></label></div>
       <label class="f" for="lR">السبب<select id="lR"><option>سفر</option><option>مرض</option><option>اختبارات دراسية</option><option>ظرف عائلي</option><option>أخرى</option></select></label>
       <label class="f" for="lD">تفاصيل <span class="hint">اختياري</span><textarea id="lD"></textarea></label>
-      <p class="hint">يصل طلبك لإدارة البرنامج، ويصلك إشعار بالقرار. الاستئذان المقبول لا يُحسب غيابًا.</p>
+      <p class="hint">يصل طلبك لإدارة البرنامج، ويصلك إشعار بالقرار. الاستئذان المقبول لا يُحسب تعثرًا ما دام ضمن الحد.</p>
       <button class="btn" type="submit">إرسال الطلب</button></form>
     <div class="section"><div class="card"><h3>طلباتي</h3>${(data || []).map(l => `<div class="row" style="border-bottom:1px dashed var(--soft-line);padding:7px 0"><span>${A.greg(l.date_from)}${l.date_to !== l.date_from ? ' – ' + A.greg(l.date_to) : ''} · ${esc(l.reason)}</span><span class="pill ${{ pending: 'warn', approved: 'ok', rejected: 'bad', cancelled: 'plain' }[l.status]}">${{ pending: 'قيد المراجعة', approved: 'مقبول', rejected: 'مرفوض', cancelled: 'ملغى' }[l.status]}</span></div>`).join('') || '<p class="muted small" style="margin-top:6px">لا توجد طلبات</p>'}</div></div>`;
   $('#lf').onsubmit = async e => {

@@ -182,3 +182,7 @@ update public.plan_columns set graded = counts where graded = false and counts;
 -- plan_timeline_core: الحساب الداخلي بلا قيود (لا يُستدعى من المتصفح)، و plan_timeline للعرض مع قيد الطالب على نفسه.
 -- plan_metrics و sync_stage_holds تستخدمان النسخة الداخلية حتى تظهر لوحة الشرف كاملة للطالب.
 -- نسخة أسرع تحمّل سجلات كل طالب مرة واحدة — انظر migrations: plan_timeline_core_split, plan_timeline_core_fast
+
+-- نظام التنبيهات والإنذارات: discipline_events.track (recitation/execution) و seq و plan_id، وفهرس فريد (student_id, kind, track, event_date)
+-- track_stumbles_core / track_stumbles: أيام التعثر لكل مسار (يوم لم يُرصد فيه شيء نهائيًا)، والاستئذان الزائد على الحد في كل مدة يُحسب تعثرًا
+-- disc_period_key: مفتاح مدة العدّ. plan_metrics.stumbles = أيام التعثر في أي مسار — انظر migrations: discipline_tracks, track_stumbles_leave_over_limit

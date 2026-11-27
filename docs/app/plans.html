@@ -183,7 +183,7 @@ function blankPlan() {
     workdays: [0, 1, 2, 3, 4], recitation_mode: 'days', recitation_days: [0, 2],
     student_execution: 'counts', execution_weight: null, recitation_weight: null,
     score_rules: { max: 10, deductions: [{ key: 'full', label: 'خطأ كامل', value: 1 }, { key: 'half', label: 'نصف خطأ', value: 0.5 }, { key: 'quarter', label: 'ربع خطأ', value: 0.25 }] },
-    discipline_rules: { absence_is: 'no_recitation', window_days: null, alert_after: null, warning_after: null, escalate_after: null, leave_max_month: null, makeup_within_days: null }
+    discipline_rules: { period: 'month' }
   };
 }
 function newCol(over) { return Object.assign({ id: uid(), header: '', task: 'memo', task_label: '', value_type: 'number', range_role: 'single', pair_column_id: null, shows_column_id: null, detail_of: null, executor: 'both', counts: true, weight: null, required: false, _new: true }, over || {}); }
@@ -362,18 +362,8 @@ function tabRules() {
       <p class="hint" style="margin-top:6px">من يُعتبر منفّذها يُؤخذ تلقائيًا من «لمن تظهر» في المهمة ومن «تنفيذ الطالب» أعلاه. خطة الطالب تتقدّم بما نُفّذ منها فعلًا: إذا غاب يبقى على واجبه، وإذا نقص يُضاف الباقي لواجبه التالي، والمراحل والاختبارات تُحسب بما بلغه فعلًا. مستوى الإنجاز = ما رُصد منها ÷ المستحق حسب الخطة. الختم المتوقع = الباقي بسرعة الطالب الفعلية على «أيام تقدّم الخطة». يوم التعثر = يوم لم يُنفَّذ فيه شيء منها.</p>
     </fieldset>
 
-    <fieldset class="c-red"><legend>الانضباط</legend>
-      <p class="hint">كل القيم تحددها أنت، ولا توجد قيمة افتراضية. الحقل الفارغ يعني أن القاعدة غير مفعّلة. الاستئذان المقبول لا يُحسب غيابًا، والتعويض في المهلة يلغي غياب اليوم الفائت.</p>
-      <div class="note"><b>يوم التعثر:</b> يوم فيه مهمة «عليها درجة» لم ينفّذها من عليه التنفيذ حسب «الالتزام»: ${(() => { const pr = parties(P); return pr.s && pr.t ? 'الطالب (لم يعلّم عليها) أو المعلم (لم يرصدها)' : pr.t ? 'المعلم (لم يرصدها)' : 'الطالب (لم يعلّم عليها)'; })()}. أيام الاستئذان والتوقف للاختبار لا تُحسب. أيام التعثر هي التي تُبنى عليها التنبيهات والإنذارات، وتظهر في التقارير.</div>
-      <div class="g3">
-        <label class="f" for="dWin">نافذة الاحتساب <span class="hint">آخر كم يوم خطة تُعدّ فيها أيام التعثر، والفارغ = منذ بداية الطالب</span><input id="dWin" type="number" min="1" value="${D.window_days ?? ''}"></label>
-        <label class="f" for="dAlert">أيام تعثر تُنشئ تنبيهًا <span class="hint">داخل النافذة</span><input id="dAlert" type="number" min="1" value="${D.alert_after ?? ''}"></label>
-        <label class="f" for="dWarn">أيام تعثر تُنشئ إنذارًا <span class="hint">داخل النافذة</span><input id="dWarn" type="number" min="1" value="${D.warning_after ?? ''}"></label>
-        <label class="f" for="dEsc">إنذارات قبل الإحالة للفصل<input id="dEsc" type="number" min="1" value="${D.escalate_after ?? ''}"></label>
-        <label class="f" for="dLeave">أقصى استئذان في الشهر <span class="hint">أيام؛ ما زاد يُعرض على المشرف</span><input id="dLeave" type="number" min="0" value="${D.leave_max_month ?? ''}"></label>
-        <label class="f" for="dMk">مهلة التعويض <span class="hint">أيام بعد الغياب</span><input id="dMk" type="number" min="0" value="${D.makeup_within_days ?? ''}"></label>
-      </div>
-      <div id="discWarn"></div>
+    <fieldset class="c-red"><legend>الانضباط والاستئذان</legend>
+      <p class="small">ضوابط التنبيهات والإنذارات والفصل والاستئذان والتعويض لهذه الخطة صارت في قسم <b>«الانضباط والمتابعة»</b> في لوحة التحكم، ومعها حالة كل طالب.</p>
     </fieldset>
   </div>`;
 
@@ -400,10 +390,6 @@ function tabRules() {
   $$('[data-dd]').forEach(b => b.onclick = () => { R.deductions.splice(+b.dataset.dd, 1); markDirty(); tabRules(); });
   $('#addDed') && ($('#addDed').onclick = () => { R.deductions.push({ key: 'd' + Date.now(), label: '', value: 0 }); markDirty(); tabRules(); });
   $$('[name=absIs]').forEach(r => r.onchange = () => { D.absence_is = r.value; markDirty(); tabRules(); });
-  const discWarn = () => { const w = ruleWarnings().filter(x => /تنبيه|إنذار|المهمة الأساسية/.test(x)); $('#discWarn') && ($('#discWarn').innerHTML = w.length ? `<div class="warnbox" style="margin-top:8px">${w.map(esc).join('<br>')}</div>` : ''); };
-  discWarn(); $$('#dWin, #dAlert, #dWarn').forEach(i => i.addEventListener('input', () => setTimeout(discWarn)));
-  [['dWin', 'window_days'], ['dAlert', 'alert_after'], ['dWarn', 'warning_after'], ['dEsc', 'escalate_after'], ['dLeave', 'leave_max_month'], ['dMk', 'makeup_within_days']]
-    .forEach(([id, k]) => $('#' + id).oninput = e => { D[k] = numOrNull(e.target.value); markDirty(); });
   weightMsg();
 }
 function weightMsg() {
@@ -553,12 +539,7 @@ function ruleWarnings() {
     if (pr.t > 0 && !sees(T, 'teacher')) out.push(`«${taskTitle(T)}» عليها درجة لكنها لا تظهر للمعلم، فلن يأخذ الطالب نصيب المعلم منها (${Math.round(pr.t * 100)}٪) أبدًا. اجعلها «${pr.s > 0 ? 'للمعلم والطالب' : 'للمعلم'}».`);
     if (pr.s > 0 && !sees(T, 'student')) out.push(`«${taskTitle(T)}» عليها درجة لكنها لا تظهر للطالب، فلن يأخذ نصيب الطالب منها (${Math.round(pr.s * 100)}٪) أبدًا. اجعلها «${pr.t > 0 ? 'للمعلم والطالب' : 'للطالب'}».`);
   });
-  // قواعد الانضباط المتعارضة
-  const DR = P.discipline_rules || {}, W = DR.window_days;
   if (!(S.tasks || (tasksFromCols(), S.tasks) || []).some(T => T.is_progress)) out.push('لم تُحدَّد «المهمة الأساسية»، فلن يُحسب مستوى الإنجاز ولا الختم المتوقع ولا أيام التعثر، ولن تتقدّم خطة الطالب بتنفيذه.');
-  if (W && DR.alert_after && DR.alert_after > W) out.push(`التنبيه بعد ${DR.alert_after} أيام تعثر، لكن نافذة الاحتساب ${W} ${W > 2 && W < 11 ? 'أيام' : 'يوم'} فقط، فلن يُستحق تنبيه أبدًا. وسّع النافذة أو قلّل العدد.`);
-  if (W && DR.warning_after && DR.warning_after > W) out.push(`الإنذار بعد ${DR.warning_after} أيام تعثر، لكن نافذة الاحتساب ${W} ${W > 2 && W < 11 ? 'أيام' : 'يوم'} فقط، فلن يُستحق إنذار أبدًا. وسّع النافذة أو قلّل العدد.`);
-  if (DR.alert_after && DR.warning_after && DR.warning_after < DR.alert_after) out.push('عدد أيام الإنذار أقل من عدد أيام التنبيه، فيُستحق الإنذار قبل التنبيه.');
   (S.tasks || []).filter(T => T.graded && !sees(T, 'teacher')).forEach(T => out.push(`«${taskTitle(T)}» عليها تقييم الضبط لكنها لا تظهر للمعلم، فلن يرصد أخطاءها.`));
   if (P.recitation_mode !== 'none' && !(S.tasks || []).some(T => T.graded)) out.push('لا توجد مهمة عليها «تقييم الضبط»، فيرصد المعلم الأخطاء على الجلسة كلها.');
   return out;
