@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127g">
+<link rel="stylesheet" href="app.css?v=20261127h">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127g"></script>
+<script src="app.js?v=20261127h"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -125,31 +125,11 @@ const scores = recs.filter(r => r.score != null).map(r => +r.score);
 const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
 const memorized = +memR.data || 0;
 
-// الضبط والالتزام والتقييم (تُحسب من إعدادات الخطة وأوزان أعمدتها)
-const M = { dabt: null, iltizam: null, total: null, iltizamBasis: '' };
-if (P) {
-  const max = +(P.score_rules?.max || 10);
-  if (P.recitation_mode !== 'none' && avg != null) M.dabt = Math.round(avg / max * 100);
-  const PP = { ...P, cols };
-  const eTasks = A.execTasks(PP);
-  if (P.student_execution !== 'none' && eTasks.length && nDays) {
-    const [{ data: prog }, { data: lv }] = await Promise.all([
-      db.from('plan_progress').select('plan_day_id, column_id').eq('student_id', stu.id),
-      db.from('leave_requests').select('date_from, date_to').eq('student_id', stu.id).eq('status', 'approved')]);
-    const byDay = {}; (prog || []).forEach(x => (byDay[x.plan_day_id] ||= new Set()).add(x.column_id));
-    const onLeave = d => (lv || []).some(l => l.date_from <= d && l.date_to >= d);
-    let sum = 0, n = 0;
-    for (let d = startD; d && d < TODAY; d = A.addDays(d, 1)) {
-      if (!wd.includes(new Date(d + 'T12:00:00Z').getUTCDay()) || onLeave(d)) continue;
-      const day = days[A.planDayFor(asg, P, nDays, d)]; if (!day) continue;
-      const r = A.dayExec(eTasks, day.vals, byDay[day.id] || new Set()); if (!r) continue;
-      sum += r.ratio; n++;
-    }
-    if (n) { M.iltizam = Math.round(sum / n * 100); M.iltizamBasis = 'تنفيذ الواجب'; }
-  } else if (pct != null) { M.iltizam = pct; M.iltizamBasis = 'حضور التسميع'; }
-  if (P.student_execution === 'counts' && P.recitation_mode !== 'none' && M.dabt != null && M.iltizam != null) {
-    const rw = P.recitation_weight ?? 50, ew = P.execution_weight ?? 50; M.total = Math.round((M.dabt * rw + M.iltizam * ew) / ((rw + ew) || 1));
-  } else M.total = P.student_execution === 'counts' && P.recitation_mode === 'none' ? M.iltizam : (M.dabt ?? M.iltizam);
+// الالتزام والضبط: من قاعدة البيانات بنفس حساب لوحة الشرف (حسب قواعد الخطة ودرجات المهام)
+const M = { dabt: null, iltizam: null, days: 0 };
+if (P && asg) {
+  const { data: pc } = await db.rpc('plan_commitment', { p_plan: asg.plan_id, p_from: null, p_to: null, p_student: stu.id });
+  const r = (pc || [])[0]; if (r) { M.iltizam = r.iltizam == null ? null : Math.round(+r.iltizam); M.dabt = r.dabt == null ? null : Math.round(+r.dabt); M.days = r.days; }
 }
 
 const TABS = [["home", "الرئيسية", "home"], ["log", "سجلّي", "book"], ["honor", "لوحة الشرف", "star"], ["leave", "الاستئذان", "leave"]];
@@ -165,6 +145,7 @@ SECTIONS.home = async el => {
   const live = room && room.active && (room.days || []).includes(dn) && room.start_time && now >= room.start_time.slice(0, 5) && now <= (room.end_time || '23:59').slice(0, 5);
   const workToday = planLive && A.workdaysBetween(TODAY, TODAY, wd);
   const visTasks = tasks.filter(t => A.fmtTaskVal(t, today?.vals) != null);
+  const degToday = planLive && today ? A.dayDegrees({ ...P, cols }, today.vals) : {};
   // الرابط والعمود «للعرض فقط» معلومة بلا علامة إنجاز
   const viewOnly = t => t.executor === 'info' || t.single?.value_type === 'url';
   const doneN = visTasks.filter(t => !viewOnly(t) && t.cols.some(c => progress.has(c.id))).length; // عدد ما علّم عليه اليوم
@@ -176,12 +157,12 @@ SECTIONS.home = async el => {
         <h2>السلام عليكم، ${esc(me.name.split(' ')[0])}</h2>
         <div class="chipsm"><span title="الخطة">${ico('plan')}${esc(P?.name || 'لم تُسند خطة')}</span><span title="المعلم">${ico('teacher')}${esc(teacherName)}</span>${room ? `<span title="الفترة">${ico('room')}${esc(room.name)} · ${(room.start_time || '').slice(0, 5)}</span>` : ''}</div>
       </div>
-      <div class="ring" style="--p:${M.total || 0}" aria-label="التقييم"><div><span><b>${M.total == null ? '—' : M.total + '٪'}</b><br><small>التقييم</small></span></div></div>
+      <div class="ring" style="--p:${M.iltizam || 0}" aria-label="الالتزام"><div><span><b>${M.iltizam == null ? '—' : M.iltizam + '٪'}</b><br><small>الالتزام</small></span></div></div>
     </section>
     <div class="stats3">
       <div class="st" style="--c:var(--green)"><b>${fmtNum(memorized, 1)}</b><span>حديثًا محفوظًا</span></div>
       <div class="st" style="--c:var(--blue)" title="متوسط درجات التسميع${avg == null ? '' : ': ' + fmtNum(avg, 2)}"><b>${M.dabt == null ? '—' : M.dabt + '٪'}</b><span>الضبط</span></div>
-      <div class="st" style="--c:var(--violet)" title="${esc(M.iltizamBasis)}"><b>${M.iltizam == null ? '—' : M.iltizam + '٪'}</b><span>الالتزام</span></div>
+      <div class="st" style="--c:var(--violet)"><b>${fmtNum(recs.filter(r => ['present', 'makeup'].includes(r.status)).length)}</b><span>جلسة تسميع</span></div>
     </div>
     ${A.isMobile && (ps === 'default' || ps === 'needs-install') ? `<div class="notice blue"><span>${ps === 'needs-install' ? 'ثبّت التطبيق على جوالك لتصلك الإشعارات.' : 'فعّل الإشعارات لتصلك رسائل المعلم والإدارة.'}</span><button class="btn sm" id="enableBtn">${ps === 'needs-install' ? 'تثبيت' : 'تفعيل'}</button></div>` : ''}
     <div class="h3row"><h3>مهام اليوم</h3><span>${!workToday ? '' : `اليوم ${dayN} من ${nDays}${execN && canExec ? ` · أنجزت ${doneN} من ${execN}` : ''}`}</span></div>
@@ -190,7 +171,7 @@ SECTIONS.home = async el => {
       : !workToday ? '<div class="empty">اليوم ليس من أيام الخطة. استرح وراجع ما حفظت.</div>'
       : `${visTasks.map(t => { const v = A.fmtTaskVal(t, today?.vals); const info = viewOnly(t); const can = canExec && !info; const on = t.cols.some(c => progress.has(c.id)); const isUrl = t.single?.value_type === 'url';
           return `<div class="task${on ? ' done' : ''}"><button type="button" class="tick ${can ? (on ? 'on' : '') : 'none'}" ${can ? `data-tick="${t.key}" aria-pressed="${on}" aria-label="${on ? 'إلغاء الإنجاز' : 'تم الإنجاز'}: ${esc(t.name)}"` : 'disabled aria-hidden="true"'}>${on ? '✓' : ''}</button>
-            <div><b>${esc(t.single?.value_type === 'bool' ? (t.single.header || t.name).trim() : t.name)}</b><span class="v">${isUrl ? `<a href="${esc(today.vals[t.single.id])}" target="_blank" rel="noopener">فتح الرابط</a>` : t.single?.value_type === 'bool' ? esc(A.taskAmount(t, today?.vals, cols) || 'مطلوب اليوم') : t.task === 'repeat' ? esc(v) + ' مرة' : esc(v)}</span>${A.taskDetails(t, today?.vals).map(([n, x]) => `<span class="v" style="display:block;font-size:12px">${esc(n)}: ${esc(x)}</span>`).join('')}</div></div>`; }).join('') || '<div class="empty">لا مهام في هذا اليوم.</div>'}
+            <div><b>${esc(t.single?.value_type === 'bool' ? (t.single.header || t.name).trim() : t.name)}${degToday[t.key] != null ? ` <span class="pill gold" style="font-size:10px">${degToday[t.key]} درجة</span>` : ''}</b><span class="v">${isUrl ? `<a href="${esc(today.vals[t.single.id])}" target="_blank" rel="noopener">فتح الرابط</a>` : t.single?.value_type === 'bool' ? esc(A.taskAmount(t, today?.vals, cols) || 'مطلوب اليوم') : t.task === 'repeat' ? esc(v) + ' مرة' : esc(v)}</span>${A.taskDetails(t, today?.vals).map(([n, x]) => `<span class="v" style="display:block;font-size:12px">${esc(n)}: ${esc(x)}</span>`).join('')}</div></div>`; }).join('') || '<div class="empty">لا مهام في هذا اليوم.</div>'}
       ${canExec && execN ? `<p class="hint" style="margin:2px 4px 0">${P.student_execution === 'counts' ? 'علّم على المهمة بعد إنجازها، ويدخل تنفيذك في تقييمك.' : 'علّم على المهمة بعد إنجازها لمتابعة نفسك.'}</p>` : ''}
       ${A.isRecitationDay(P, TODAY) ? `<div class="notice gold">اليوم يوم تسميع${room ? ' في ' + esc(room.name) + ' الساعة ' + (room.start_time || '').slice(0, 5) + ' بتوقيت مكة' : ''}.</div>` : ''}`}
     <div class="h3row"><h3>روابط</h3></div>
@@ -233,12 +214,13 @@ SECTIONS.honor = async el => {
   const from = st.period === 'month' ? TODAY.slice(0, 8) + '01' : null;
   const { data, error } = await db.rpc('honor_board', { p_plan: asg?.plan_id || null, p_from: from, p_to: null });
   if (error) { el.innerHTML = `<div class="error">${esc(error.message)}</div>`; return; }
-  const list = (data || []).filter(x => +x.memorized > 0);
+  const list = (data || []).filter(x => x.iltizam != null);
   const myRank = list.findIndex(x => x.student_id === stu.id);
   const shown = st.more ? list : list.slice(0, 10);
   el.innerHTML = `<div class="seg" style="margin-bottom:10px"><button type="button" data-p="month" aria-pressed="${st.period === 'month'}">هذا الشهر</button><button type="button" data-p="all" aria-pressed="${st.period === 'all'}">منذ البداية</button></div>
     ${myRank >= 0 ? `<div class="myrank"><span>ترتيبك في ${esc(P?.name || 'الخطة')}</span><span><b>${myRank + 1}</b> <span class="muted">من ${list.length}</span></span></div>` : ''}
-    <div class="card" style="padding:4px 8px">${shown.map((x, i) => `<div class="rank${x.student_id === stu.id ? ' me' : ''}"><span class="r">${i + 1}</span><span class="nm">${esc(x.name)}${x.student_id === stu.id ? ' <span class="pill gold">أنت</span>' : ''}</span><span class="val"><b>${fmtNum(x.memorized, 1)}</b>حديث</span></div>`).join('') || '<div class="empty">لا توجد بيانات بعد</div>'}</div>
+    <p class="hint" style="margin:0 4px 6px">الترتيب حسب الالتزام، وبجانبه مستوى الضبط.</p>
+    <div class="card" style="padding:4px 8px">${shown.map((x, i) => `<div class="rank${x.student_id === stu.id ? ' me' : ''}"><span class="r">${i + 1}</span><span class="nm">${esc(x.name)}${x.student_id === stu.id ? ' <span class="pill gold">أنت</span>' : ''}</span><span class="val"><b>${Math.round(+x.iltizam)}٪</b>التزام${x.dabt != null ? `<small style="display:block;font-size:10px;color:var(--muted)">الضبط ${Math.round(+x.dabt)}٪</small>` : ''}</span></div>`).join('') || '<div class="empty">لا توجد بيانات بعد</div>'}</div>
     ${list.length > 10 ? `<button class="btn ghost block" id="more" style="margin-top:8px">${st.more ? 'عرض أول 10 فقط' : 'عرض المزيد'}</button>` : ''}`;
   $$('[data-p]', el).forEach(b => b.onclick = () => { st.period = b.dataset.p; st.more = false; route(true); });
   $('#more', el) && ($('#more', el).onclick = () => { st.more = !st.more; route(true); });

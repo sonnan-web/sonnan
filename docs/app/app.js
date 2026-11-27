@@ -202,8 +202,15 @@
   }
   const taskWeight = t => { const c = t.cols.find(c => c.weight != null && c.weight !== ''); return c ? +c.weight : null; };
   const isViewOnly = t => t.executor === 'info' || t.single?.value_type === 'url';
-  // المهام التي يقيّمها المعلم بالأخطاء (المعلّمة «في التقييم» وتظهر له)
-  const gradedTasks = P => groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both').filter(t => t.cols.some(c => c.counts));
+  // المهام التي يقيّمها المعلم بالأخطاء: المعلّمة «تقييم الضبط» وتظهر له، ونسبتها grade_weight
+  const gradedTasks = P => groupTasks(P.cols, c => c.executor === 'teacher' || c.executor === 'both').filter(t => t.cols.some(c => c.graded));
+  const gradeWeight = t => { const c = t.cols.find(c => c.grade_weight != null && c.grade_weight !== ''); return c ? +c.grade_weight : null; };
+  // نصيب الطالب والمعلم من الالتزام حسب «القواعد»
+  const commitParties = P => P.recitation_mode === 'none' ? { s: 1, t: 0 } : P.student_execution === 'counts' ? (() => { const e = +(P.execution_weight ?? 50), r = +(P.recitation_weight ?? 50); return { s: e / ((e + r) || 1), t: r / ((e + r) || 1) }; })() : { s: 0, t: 1 };
+  // مهام الالتزام: المعلّمة «عليها درجة» فقط، ودرجتها weight
+  const commitTasks = P => groupTasks(P.cols, c => !['none', 'info'].includes(c.executor)).filter(t => t.cols.some(c => c.counts) && !isViewOnly(t));
+  // درجات مهام الالتزام المطلوبة في يوم (من 100)
+  const dayDegrees = (P, vals) => { const req = commitTasks(P).filter(t => fmtTaskVal(t, vals) != null); const w = normWeights(req.map(taskWeight)); return Object.fromEntries(req.map((t, i) => [t.key, Math.round(w[i] * 100)])); };
   // مهام الطالب التي يُحسب بها التزامه: المعلّمة «في التقييم»، وإن لم يُعلَّم شيء فكل مهامه
   function execTasks(P) { const all = groupTasks(P.cols, c => c.executor === 'student' || c.executor === 'both').filter(t => !isViewOnly(t)); const g = all.filter(t => t.cols.some(c => c.counts)); return g.length ? g : all; }
   // تنفيذ يوم: مجموع أوزان ما أنجزه ÷ مجموع أوزان المطلوب
@@ -219,7 +226,7 @@
     const one = d => Math.max(0, max - (R.deductions || []).reduce((x, k) => x + (+(d?.[k.key]) || 0) * (+k.value || 0), 0));
     const g = gradedTasks(P);
     if (!g.length || !ded?.tasks) return one(ded);
-    const w = normWeights(g.map(taskWeight));
+    const w = normWeights(g.map(gradeWeight));
     return g.reduce((a, t, i) => a + w[i] * one(ded.tasks[t.key]), 0);
   }
   // مقدار النطاق الذي يعرضه عمود نعم/لا (مثل «من 10 إلى 11» لمقدار الحفظ)، يحتاج أعمدة الخطة
@@ -436,7 +443,7 @@
       // التقييم لكل مهمة معلّمة «في التقييم»؛ وإن لم تُعلَّم مهمة فالأخطاء للجلسة كلها
       const graded = gradedTasks(P), perTask = graded.length > 0;
       if (perTask) S.ded.tasks ||= {};
-      const gW = perTask ? normWeights(graded.map(taskWeight)) : [];
+      const gW = perTask ? normWeights(graded.map(gradeWeight)) : [];
       const tScore = key => Math.max(0, (R.max || 0) - (R.deductions || []).reduce((x, d) => x + ((S.ded.tasks?.[key] || {})[d.key] || 0) * (+d.value || 0), 0));
       const score = sessionScore(P, S.ded);
       const dedBox = (key, title) => `<div class="card" style="--a:var(--violet);margin-top:8px;padding:8px 12px"><b>${title}</b>
@@ -455,8 +462,9 @@
         <div style="margin-top:10px"><b class="small">حالة الطالب</b><div class="seg" style="margin-top:6px">${['present', 'makeup', 'review_only', 'excused', 'absent'].map(k => `<button type="button" data-st="${k}" aria-pressed="${st === k}">${STATUS[k].label}</button>`).join('')}</div></div>
         ${st === 'makeup' ? `<label class="f" for="rwMk" style="margin-top:10px">تعويض عن يوم <span class="hint">أيام تسميع فاتته خلال ${mkWin} يومًا ولم تُعوَّض</span><select id="rwMk">${(ed?.makes_up_date && !missed.includes(ed.makes_up_date) ? [ed.makes_up_date] : []).concat(missed).map(d => `<option value="${d}"${S.makeup === d ? ' selected' : ''}>${dayName(d)} ${greg(d)}</option>`).join('') || '<option value="">لا توجد أيام فائتة</option>'}</select></label>` : ''}
         ${showFields ? `<div class="stack" style="margin-top:12px">
-          ${tTasks.filter(t => !reviewOnly || t.task !== 'memo').map(t => { const gi = graded.findIndex(g => g.key === t.key), det = taskDetails(t, day?.vals);
-            return `<div class="task-f"><div class="row"><b>${esc(t.name)}${perTask ? (gi >= 0 ? ` <span class="pill violet">تقييم${graded.length > 1 ? ' ' + Math.round(gW[gi] * 100) + '٪' : ''}</span>` : ' <span class="pill plain">رصد فقط</span>') : ''}</b><span class="hint">المقرر${st === 'makeup' ? ' ليوم التعويض' : ''}: ${esc(fmtTaskVal(t, day?.vals) ?? '—')}</span></div>
+          ${tTasks.filter(t => !reviewOnly || t.task !== 'memo').map(t => { const gi = graded.findIndex(g => g.key === t.key), det = taskDetails(t, day?.vals), dDeg = dayDegrees(P, day?.vals);
+            const deg = dDeg[t.key], tParty = commitParties(P).t;
+            return `<div class="task-f"><div class="row"><b>${esc(t.name)}${perTask ? (gi >= 0 ? ` <span class="pill violet">تقييم الضبط${graded.length > 1 ? ' ' + Math.round(gW[gi] * 100) + '٪' : ''}</span>` : '') : ''}${deg != null && tParty ? ` <span class="pill gold" title="رصدك لهذه المهمة يحسب للطالب في الالتزام">${deg} درجة</span>` : ''}${gi < 0 && deg == null ? ' <span class="pill plain">رصد فقط</span>' : ''}</b><span class="hint">المقرر${st === 'makeup' ? ' ليوم التعويض' : ''}: ${esc(fmtTaskVal(t, day?.vals) ?? '—')}</span></div>
               ${det.length ? `<div class="hint" style="margin:2px 0 4px">${det.map(([n, v]) => esc(n) + ': ' + esc(v)).join(' · ')}</div>` : ''}
               <div class="g2">${t.cols.map(field).join('')}</div>${perTask && gi >= 0 && !reviewOnly && (R.deductions || []).length ? dedBox(t.key, 'أخطاء ' + esc(t.name)) : ''}</div>`; }).join('') || '<div class="hint">لا توجد أعمدة يرصدها المعلم في هذه الخطة.</div>'}
           ${refTasks.map(t => { const v = fmtTaskVal(t, day?.vals); return v == null ? '' : `<div class="task-f ref"><b>${esc(t.name)} <span class="hint">للعرض</span></b><span class="small">${t.cols[0].value_type === 'url' ? `<a href="${esc(day.vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(v)}</span></div>`; }).join('')}
@@ -633,5 +641,5 @@
 
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, isViewOnly, gradedTasks, execTasks, dayExec, sessionScore, svg };
+    unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
 })();

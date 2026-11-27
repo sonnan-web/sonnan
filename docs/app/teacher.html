@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127g">
+<link rel="stylesheet" href="app.css?v=20261127h">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127g"></script>
+<script src="app.js?v=20261127h"></script>
 <style>
 .wrap{max-width:1200px;margin:0 auto;padding:12px max(14px,env(safe-area-inset-left,0px)) 90px}
 .room-card{border:1px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
@@ -145,14 +145,14 @@ async function honor(box) {
   const from = HB.period === 'month' ? TODAY.slice(0, 8) + '01' : null;
   const { data, error } = await db.rpc('honor_board', { p_plan: HB.plan || null, p_from: from, p_to: null });
   if (error) { box.innerHTML = `<div class="error">${esc(error.message)}</div>`; return; }
-  let list = (data || []).filter(x => +x.memorized > 0);
+  let list = (data || []).filter(x => x.iltizam != null);
   let rows;
   if (HB.scope === 'teachers') {
-    const g = {}; list.forEach(x => { const k = x.teacher_id || '—'; (g[k] ||= { name: x.teacher_name || 'بلا معلم', n: 0, sum: 0, id: x.teacher_id }); g[k].n++; g[k].sum += +x.memorized; });
-    rows = Object.values(g).map(t => ({ name: t.name, val: t.sum / t.n, sub: `${t.n} طالب · مجموع ${fmtNum(t.sum, 1)}`, mine: t.id === T.id })).sort((a, b) => b.val - a.val);
+    const g = {}; list.forEach(x => { const k = x.teacher_id || '—'; (g[k] ||= { name: x.teacher_name || 'بلا معلم', n: 0, sum: 0, d: 0, dn: 0, id: x.teacher_id }); g[k].n++; g[k].sum += +x.iltizam; if (x.dabt != null) { g[k].d += +x.dabt; g[k].dn++; } });
+    rows = Object.values(g).map(t => ({ name: t.name, val: t.sum / t.n, sub: `${t.n} طالب · متوسط الضبط ${t.dn ? Math.round(t.d / t.dn) + '٪' : '—'}`, mine: t.id === T.id })).sort((a, b) => b.val - a.val);
   } else {
     if (HB.scope === 'mine') list = list.filter(x => x.teacher_id === T.id);
-    rows = list.map(x => ({ name: x.name, val: +x.memorized, sub: `${x.sessions} جلسة · ${x.avg_score != null ? fmtNum(x.avg_score, 2) : '—'}${HB.scope === 'plan' && x.teacher_name ? ' · ' + x.teacher_name : ''}`, mine: HB.scope === 'plan' && x.teacher_id === T.id }));
+    rows = list.map(x => ({ name: x.name, val: +x.iltizam, sub: `الضبط ${x.dabt != null ? Math.round(+x.dabt) + '٪' : '—'} · ${fmtNum(x.memorized, 1)} حديث${HB.scope === 'plan' && x.teacher_name ? ' · ' + x.teacher_name : ''}`, mine: HB.scope === 'plan' && x.teacher_id === T.id }));
   }
   const shown = HB.more ? rows : rows.slice(0, 10);
   const seg = (k, v, l) => `<button type="button" data-hb="${k}" data-v="${v}" aria-pressed="${HB[k] === v}">${l}</button>`;
@@ -160,9 +160,9 @@ async function honor(box) {
       <div class="seg">${seg('scope', 'mine', 'طلابي')}${seg('scope', 'plan', 'كل طلاب الخطة')}${seg('scope', 'teachers', 'المعلمون')}</div>
       <div class="row" style="justify-content:flex-start;gap:6px"><div class="seg">${seg('period', 'month', 'هذا الشهر')}${seg('period', 'all', 'منذ البداية')}</div>
         ${myPlans.length > 1 ? `<select id="hbPlan" style="width:auto">${myPlans.map(id => `<option value="${id}"${id === HB.plan ? ' selected' : ''}>${esc(PLANS[id]?.name || '')}</option>`).join('')}</select>` : ''}</div>
-      <div>${shown.map((r, i) => `<div class="hb-row${r.mine ? ' mine' : ''}"><span class="r">${i + 1}</span><div><b>${esc(r.name)}</b><div class="hint">${esc(r.sub)}</div></div><b class="num" style="color:var(--teal)">${fmtNum(r.val, 1)}<span class="hint"> ${HB.scope === 'teachers' ? 'حديث/طالب' : 'حديث'}</span></b></div>`).join('') || '<div class="empty">لا توجد بيانات في هذه الفترة</div>'}</div>
+      <div>${shown.map((r, i) => `<div class="hb-row${r.mine ? ' mine' : ''}"><span class="r">${i + 1}</span><div><b>${esc(r.name)}</b><div class="hint">${esc(r.sub)}</div></div><b class="num" style="color:var(--teal)">${Math.round(r.val)}٪<span class="hint"> التزام</span></b></div>`).join('') || '<div class="empty">لا توجد بيانات في هذه الفترة</div>'}</div>
       ${rows.length > 10 ? `<button class="btn ghost block" id="hbMore">${HB.more ? 'عرض أول 10 فقط' : 'عرض المزيد'}</button>` : ''}
-      <p class="hint">الترتيب بعدد الأحاديث المحفوظة في ${HB.period === 'month' ? 'هذا الشهر' : 'كل الفترة'}${HB.scope === 'teachers' ? '، والمعلمون بمتوسط ما حفظه طلاب كل معلم' : ''}.</p></div>`;
+      <p class="hint">الترتيب حسب الالتزام في ${HB.period === 'month' ? 'هذا الشهر' : 'كل الفترة'}، وبجانبه مستوى الضبط${HB.scope === 'teachers' ? '. والمعلمون بمتوسط التزام طلاب كل معلم' : ''}.</p></div>`;
   $$('[data-hb]', box).forEach(b => b.onclick = () => { HB[b.dataset.hb] = b.dataset.v; HB.more = false; honor(box); });
   $('#hbPlan', box) && ($('#hbPlan', box).onchange = e => { HB.plan = e.target.value; honor(box); });
   $('#hbMore', box) && ($('#hbMore', box).onclick = () => { HB.more = !HB.more; honor(box); });

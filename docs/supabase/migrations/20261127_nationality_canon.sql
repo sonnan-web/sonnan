@@ -152,3 +152,10 @@ alter table public.plan_columns add constraint plan_columns_executor_check check
 
 -- عمود «تفاصيل لمهمة»: يظهر داخل بطاقة مهمة أخرى بلا علامة إنجاز مستقلة
 alter table public.plan_columns add column if not exists detail_of uuid references public.plan_columns(id) on delete set null;
+
+-- «تقييم الضبط» منفصل عن «عليها درجة» (الالتزام)، ودالة الالتزام والضبط، ولوحة الشرف بالالتزام
+-- (النص الكامل لدالتي plan_commitment و honor_board كما طُبّق في المشروع)
+alter table public.plan_columns add column if not exists graded boolean not null default false;
+alter table public.plan_columns add column if not exists grade_weight numeric;
+update public.plan_columns set graded = counts where graded = false and counts;
+-- انظر migration «commitment_and_precision» في Supabase للنص الكامل لـ plan_commitment و honor_board

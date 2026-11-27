@@ -89,6 +89,7 @@ td.err{background:#FFF4F4;color:#8F2530}
 .tcard .thead{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:end}
 .tcard .thead .f{margin:0;min-width:130px}
 .tcard .tnum{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#0F2F33;color:#CBB994;font-weight:700;align-self:center}
+.tcard .tgrade{display:inline-flex;gap:6px;align-items:end;padding:2px 8px;border-radius:8px;background:#f6f8f8}
 .tcard .tchk{display:inline-flex;gap:6px;align-items:center;font-size:13px;padding-bottom:8px;white-space:nowrap}
 .tcard .tact{margin-inline-start:auto;display:inline-flex;gap:4px;padding-bottom:2px}
 .tcard table.tcols td,.tcard table.tcols th{padding:5px 6px}
@@ -322,21 +323,22 @@ function tabRules() {
       ${!rec ? '<div class="note">بلا تسميع: لا يظهر للمعلم نموذج رصد لهذه الخطة، وتُخفى درجة التسميع وكل ما يتعلق به.</div>' : ''}
     </fieldset>
 
-    <fieldset class="c-blue"><legend>تنفيذ الطالب والتقييم</legend>
+    <fieldset class="c-blue"><legend>الالتزام</legend>
+      <p class="hint">الالتزام يُحسب من المهام المعلّمة «عليها درجة» في «المهام والأعمدة»: نصيب الطالب إذا علّم عليها، ونصيب المعلم إذا رصد فيها قيمة. الأيام التي ليس فيها مهام عليها درجة لا تُحسب.</p>
       <div><b class="small">تنفيذ الطالب</b> <span class="hint">هل يعلّم الطالب بنفسه على مهام يومه (حفظت، كررت، راجعت)؟</span>
-      <div class="choices" style="margin-top:6px">${[['none', 'لا يوجد تنفيذ عند الطالب'], ['record_only', 'ينفّذ للمتابعة فقط، ولا يدخل في التقييم'], ['counts', 'ينفّذ، وتنفيذه يدخل في التقييم']].map(o => `<label><input type="radio" name="exec" value="${o[0]}"${P.student_execution === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div></div>
+      <div class="choices" style="margin-top:6px">${[['none', 'لا يوجد تنفيذ عند الطالب'], ['record_only', 'الطالب ينفّذ للمتابعة فقط، ولا يُحسب في الالتزام'], ['counts', 'الطالب ينفّذ، وتنفيذه يُحسب في الالتزام']].map(o => `<label><input type="radio" name="exec" value="${o[0]}"${P.student_execution === o[0] ? ' checked' : ''}>${o[1]}</label>`).join('')}</div></div>
       ${(P.student_execution === 'counts' && rec) ? `<div class="g2">
-        <label class="f" for="wExec">وزن تنفيذ الطالب <span class="hint">نسبة مئوية من التقييم النهائي</span><input id="wExec" type="number" min="0" max="100" step="1" value="${P.execution_weight ?? ''}" placeholder="مثال: 30"></label>
-        <label class="f" for="wRec">وزن التسميع <span class="hint">والمجموع يجب أن يكون 100</span><input id="wRec" type="number" min="0" max="100" step="1" value="${P.recitation_weight ?? ''}" placeholder="مثال: 70"></label>
+        <label class="f" for="wExec">نصيب الطالب من الالتزام <span class="hint">٪ عندما يعلّم على المهمة</span><input id="wExec" type="number" min="0" max="100" step="1" value="${P.execution_weight ?? ''}" placeholder="مثال: 20"></label>
+        <label class="f" for="wRec">نصيب المعلم من الالتزام <span class="hint">٪ عندما يرصد المهمة، والمجموع 100</span><input id="wRec" type="number" min="0" max="100" step="1" value="${P.recitation_weight ?? ''}" placeholder="مثال: 80"></label>
       </div><div id="wMsg"></div>` : ''}
-      ${(P.student_execution === 'counts' && !rec) ? '<div class="note">التقييم كله من تنفيذ الطالب (100٪) لأن الخطة بلا تسميع.</div>' : ''}
-      ${(P.student_execution !== 'counts' && rec) ? '<div class="note">التقييم كله من درجة التسميع (100٪).</div>' : ''}
-      ${(!ex && !rec) ? '<div class="errbox">الخطة بلا تسميع وبلا تنفيذ عند الطالب، فلا يوجد ما يُقيَّم. اختر أحدهما على الأقل.</div>' : ''}
+      ${(P.student_execution === 'counts' && !rec) ? '<div class="note">الالتزام كله من تعليم الطالب (100٪) لأن الخطة بلا تسميع.</div>' : ''}
+      ${(P.student_execution !== 'counts' && rec) ? '<div class="note">الالتزام كله من رصد المعلم (100٪): المهمة التي يرصد فيها المعلم قيمة تُحسب للطالب. تعليم الطالب ${P.student_execution === \'none\' ? \'غير موجود\' : \'للمتابعة فقط\'}.</div>' : ''}
+      ${(!ex && !rec) ? '<div class="errbox">الخطة بلا تسميع وبلا تنفيذ عند الطالب، فلا يوجد ما يُحسب به الالتزام. اختر أحدهما على الأقل.</div>' : ''}
     </fieldset>
 
     ${rec ? `<fieldset class="c-violet"><legend>درجة التسميع</legend>
       <p class="hint">الدرجة = الدرجة الكاملة − (عدد كل نوع خطأ × قيمة خصمه). يرى المعلم هذه الأنواع في نموذج الرصد ويضغط + لكل خطأ.</p>
-      ${(() => { const g = gradedP(); if (!g.length) return '<div class="note"><b>تُطبَّق على:</b> الجلسة كلها، لأنه لا توجد مهمة معلّمة «في التقييم» في «أعمدة الخطة». علّم المهمة التي تريد تقييمها ليرصد المعلم أخطاءها هي فقط.</div>'; const w = normW(g.map(tW)); return `<div class="note"><b>تُطبَّق على:</b> ${g.map((t, i) => esc(t.name) + (g.length > 1 ? ` (${Math.round(w[i] * 100)}٪)` : '')).join('، ')} فقط، وهي المعلّمة «في التقييم» في «أعمدة الخطة». يرصد المعلم الأخطاء عليها، وباقي المهام رصد فقط.${g.length > 1 ? ' درجة الجلسة متوسطها حسب الأوزان.' : ''}</div>`; })()}
+      ${(() => { const g = gradedP(); if (!g.length) return '<div class="note"><b>تُطبَّق على:</b> الجلسة كلها، لأنه لا توجد مهمة معلّمة «تقييم الضبط» في «المهام والأعمدة». علّم المهمة التي تريد تقييمها ليرصد المعلم أخطاءها هي فقط.</div>'; const w = normW(g.map(gW)); return `<div class="note"><b>تُطبَّق على:</b> ${g.map((t, i) => esc(t.name) + (g.length > 1 ? ` (${Math.round(w[i] * 100)}٪)` : '')).join('، ')} فقط، وهي المعلّمة «تقييم الضبط» في «المهام والأعمدة». يرصد المعلم الأخطاء عليها، ومنها «الضبط».${g.length > 1 ? ' درجة الجلسة متوسطها حسب الأوزان.' : ''}</div>`; })()}
       <label class="f" for="sMax" style="max-width:220px">الدرجة الكاملة<input id="sMax" type="number" min="1" step="0.5" value="${R.max ?? ''}"></label>
       <div class="table-wrap"><table><thead><tr><th>نوع الخطأ (كما يراه المعلم)</th><th>يُخصم لكل خطأ</th><th></th></tr></thead><tbody>
         ${R.deductions.map((d, i) => `<tr><td><input type="text" data-dl="${i}" value="${esc(d.label)}"></td><td><input type="number" step="0.05" min="0" data-dv="${i}" value="${d.value}"></td><td><button class="btn sm danger" type="button" data-dd="${i}">حذف</button></td></tr>`).join('')}
@@ -403,7 +405,8 @@ const COL_HELP = `
   <ul style="margin:6px 0 0;padding-inline-start:18px;line-height:1.9">
     <li><b>المهمة:</b> نوع العمل: حفظ، ربط، مراجعة، تكرار، شرح، سماع، أو «مهمة أخرى» تكتب اسمها. مهمة «حفظ» منها يُحسب عدد الأحاديث المحفوظة.</li>
     <li><b>لمن تظهر:</b> «للطالب» في صفحته فقط، «للمعلم» في نموذج الرصد فقط، «للمعلم والطالب» للاثنين، «لا أحد» للحساب فقط. هل يعلّم الطالب على ما يظهر له؟ تحدده «القواعد» ← تنفيذ الطالب.</li>
-    <li><b>في التقييم والوزن:</b> للمعلم: المهمة المعلّمة يرصد عليها الأخطاء وتُحسب منها درجة الجلسة (الضبط)، وغيرها رصد فقط. للطالب: المهام المعلّمة يُحسب بها التزامه، وإن لم تُعلَّم مهمة فكل مهامه. الوزن الفارغ يأخذ الباقي من 100 بالتساوي.</li>
+    <li><b>تقييم الضبط ونسبتها:</b> المهمة يرصد المعلم أخطاءها، ومنها درجة الجلسة («الضبط»). إذا عُلّمت أكثر من مهمة، فالنسبة حصة كل مهمة من الضبط.</li>
+    <li><b>عليها درجة والدرجة:</b> المهمة يُحسب بها «الالتزام»، ويرى الطالب درجتها على بطاقتها. نصيب الطالب (إذا علّم عليها) ونصيب المعلم (إذا رصد فيها قيمة) تحددهما «القواعد ← الالتزام». الفارغ يأخذ الباقي من 100 بالتساوي، وإذا كُتبت كلها فمجموعها 100.</li>
     <li><b>إلزامي:</b> عند رفع الإكسل تظهر خانات المهمة الفارغة بالأحمر الفاتح مع تنبيه، ويُقبل الرفع. الخانة الفارغة تعني أنه لا واجب في ذلك اليوم.</li>
     <li><b>أعمدة المهمة:</b> «اسم العمود في الإكسل» يجب أن يطابق رأس العمود في الملف حرفيًا. أول عمود أو أول نطاق هو قيمة المهمة، وباقي الأعمدة تفاصيل تظهر داخل بطاقتها (مثل صفحة الحفظ ونص الحديث).</li>
     <li><b>نوع القيمة:</b> رقم، نص، رابط، أو نعم/لا (علامة صح: إذا علّم الطالب فهي نعم). في الإكسل تكتب «نعم» في الأيام التي فيها المهمة وتتركها فارغة في غيرها.</li>
@@ -411,7 +414,7 @@ const COL_HELP = `
     <li><b>يعرض مقدار (لعمود نعم/لا):</b> يربطه بنطاق مهمة أخرى، فيرى الطالب مثلًا «هل قرأت مقدار الشرح: من حديث 10 إلى حديث 11».</li>
     <li><b>التكرار:</b> عمود رقم مفرد دائمًا (عدد مرات التكرار المطلوبة).</li>
   </ul></details>`;
-function newTask(over) { return Object.assign({ _id: uid(), task: 'custom', task_label: '', executor: 'both', counts: false, weight: null, required: false, cols: [] }, over || {}); }
+function newTask(over) { return Object.assign({ _id: uid(), task: 'custom', task_label: '', executor: 'both', graded: false, grade_weight: null, counts: false, weight: null, required: false, cols: [] }, over || {}); }
 // بناء المهام من الأعمدة المحفوظة
 function tasksFromCols() {
   const cols = S.cols, byId = Object.fromEntries(cols.map(c => [c.id, c]));
@@ -422,7 +425,7 @@ function tasksFromCols() {
     const m = byId[mid], ordered = [], seen = new Set();
     const put = c => { if (!c || seen.has(c.id)) return; seen.add(c.id); ordered.push(c); if (c.range_role === 'start' && c.pair_column_id && byId[c.pair_column_id]) { seen.add(c.pair_column_id); ordered.push(byId[c.pair_column_id]); } };
     put(m); cs.forEach(c => { if (c.range_role !== 'end' || !c.pair_column_id) put(c); }); cs.forEach(put);
-    return newTask({ task: m.task, task_label: m.task_label || '', executor: m.executor, counts: !!m.counts, weight: m.weight ?? null, required: !!m.required, cols: ordered });
+    return newTask({ task: m.task, task_label: m.task_label || '', executor: m.executor, graded: !!m.graded, grade_weight: m.grade_weight ?? null, counts: !!m.counts, weight: m.weight ?? null, required: !!m.required, cols: ordered });
   });
 }
 // كتابة المهام إلى الأعمدة: خصائص المهمة، والترتيب، وربط النطاقات، والتفاصيل
@@ -431,7 +434,7 @@ function syncCols() {
   S.tasks.forEach(T => {
     let open = null;
     T.cols.forEach(c => {
-      Object.assign(c, { task: T.task, task_label: T.task === 'custom' ? T.task_label : '', executor: T.executor, counts: !!T.counts, weight: T.weight, required: !!T.required, pair_column_id: null, detail_of: null });
+      Object.assign(c, { task: T.task, task_label: T.task === 'custom' ? T.task_label : '', executor: T.executor, graded: !!T.graded, grade_weight: T.graded ? T.grade_weight : null, counts: !!T.counts, weight: T.counts ? T.weight : null, required: !!T.required, pair_column_id: null, detail_of: null });
       if (T.task === 'repeat') { c.value_type = 'number'; c.range_role = 'single'; }
       if (c.value_type !== 'bool') c.shows_column_id = null;
     });
@@ -451,14 +454,17 @@ function tabColumns() {
   $('#tab').innerHTML = `<div class="grid">
     ${P.recitation_mode === 'none' && tasks.some(T => T.executor === 'teacher' || T.executor === 'both') ? '<div class="errbox">الخطة بلا تسميع، فالمهام التي تظهر «للمعلم» لن يراها أحد. غيّر «لمن تظهر» أو فعّل التسميع.</div>' : ''}
     ${P.student_execution === 'none' && tasks.some(T => T.executor === 'student') ? '<div class="errbox">الخطة بلا تنفيذ عند الطالب، فالمهام التي تظهر «للطالب» يراها للاطلاع فقط دون تعليم.</div>' : ''}
+    ${(() => { const w = ruleWarnings(); return w.length ? `<div class="warnbox"><b>تنبيه حسب «القواعد»:</b><br>${w.map(esc).join('<br>')}</div>` : ''; })()}
     ${tasks.map((T, ti) => { const rep = T.task === 'repeat', off = ['info', 'none'].includes(T.executor); return `<div class="tcard" data-ti="${ti}">
       <div class="thead">
         <span class="tnum">${ti + 1}</span>
         <label class="f small">المهمة<select data-tk="task">${Object.entries(TASKS).map(([k, v]) => `<option value="${k}"${T.task === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
         ${T.task === 'custom' ? `<label class="f small">اسم المهمة<input type="text" data-tk="task_label" value="${esc(T.task_label)}" placeholder="مثال: قراءة التلخيص"></label>` : ''}
         <label class="f small">لمن تظهر<select data-tk="executor">${Object.entries({ ...EXEC, ...(EXEC_OLD[T.executor] ? { [T.executor]: EXEC_OLD[T.executor] } : {}) }).map(([k, v]) => `<option value="${k}"${T.executor === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
-        <label class="tchk"><input type="checkbox" data-tk="counts"${T.counts ? ' checked' : ''}${off ? ' disabled' : ''}> في التقييم</label>
-        <label class="f small" style="width:90px">الوزن<input type="number" data-tk="weight" min="0" step="1" value="${T.weight ?? ''}" placeholder="بالتساوي" title="يُستخدم للمهام المعلّمة «في التقييم». الفارغ يأخذ الباقي من 100 بالتساوي"${off ? ' disabled' : ''}></label>
+        <span class="tgrade"><label class="tchk"><input type="checkbox" data-tk="graded"${T.graded ? ' checked' : ''}${off || T.executor === 'student' ? ' disabled' : ''}> تقييم الضبط</label>
+          ${T.graded ? `<label class="f small" style="width:96px">نسبتها من الضبط<input type="number" data-tk="grade_weight" min="0" max="100" step="1" value="${T.grade_weight ?? ''}" placeholder="بالتساوي"></label>` : ''}</span>
+        <span class="tgrade"><label class="tchk"><input type="checkbox" data-tk="counts"${T.counts ? ' checked' : ''}${off ? ' disabled' : ''}> عليها درجة</label>
+          ${T.counts ? `<label class="f small" style="width:96px">الدرجة<input type="number" data-tk="weight" min="0" max="100" step="1" value="${T.weight ?? ''}" placeholder="بالتساوي"></label>` : ''}</span>
         <label class="tchk"><input type="checkbox" data-tk="required"${T.required ? ' checked' : ''}> إلزامي</label>
         <span class="tact"><button class="btn sm ghost" type="button" data-tup="${ti}" ${ti ? '' : 'disabled'} aria-label="نقل المهمة لأعلى">↑</button><button class="btn sm ghost" type="button" data-tdown="${ti}" ${ti < tasks.length - 1 ? '' : 'disabled'} aria-label="نقل المهمة لأسفل">↓</button><button class="btn sm danger" type="button" data-tdel="${ti}">حذف المهمة</button></span>
       </div>
@@ -486,9 +492,10 @@ function tabColumns() {
         let v = el.type === 'checkbox' ? el.checked : el.value;
         if (k === 'weight') v = numOrNull(v);
         T[k] = v;
-        if (k === 'weight' && v != null && !T.counts) { T.counts = true; const cb = $('[data-tk="counts"]', card); if (cb) cb.checked = true; }
+
         if (k === 'task' && v === 'repeat') T.cols = T.cols.slice(0, 1);
-        if (k === 'executor' && ['info', 'none'].includes(v)) T.counts = false;
+        if (k === 'executor' && ['info', 'none'].includes(v)) { T.counts = false; T.graded = false; }
+        if (k === 'executor' && v === 'student') T.graded = false;
         if (typing) { syncCols(); markDirty(); refreshIssues(); } else redraw();
       });
     });
@@ -517,6 +524,19 @@ function tabColumns() {
   $$('[data-tdown]').forEach(b => b.onclick = () => { const i = +b.dataset.tdown; [tasks[i + 1], tasks[i]] = [tasks[i], tasks[i + 1]]; redraw(); });
   $('#addTask').onclick = () => { tasks.push(newTask({ task: 'memo', counts: false })); redraw(); window.scrollTo(0, document.body.scrollHeight); };
 }
+// تنبيهات لا تمنع الحفظ: مهمة عليها درجة لا تظهر لمن يُحسب له الالتزام، أو تقييم ضبط لا يراه المعلم
+function ruleWarnings() {
+  const P = S.plan, out = [], pr = parties(P), sees = (T, who) => T.executor === 'both' || T.executor === who;
+  const ct = (S.tasks || []).filter(T => T.counts);
+  if (!ct.length) out.push('لا توجد مهمة «عليها درجة»، فلن يُحسب للطالب التزام. علّم المهام التي يُحسب بها.');
+  ct.forEach(T => {
+    if (pr.t > 0 && !sees(T, 'teacher')) out.push(`«${taskTitle(T)}» عليها درجة لكنها لا تظهر للمعلم، فلن يأخذ الطالب نصيب المعلم منها (${Math.round(pr.t * 100)}٪) أبدًا. اجعلها «${pr.s > 0 ? 'للمعلم والطالب' : 'للمعلم'}».`);
+    if (pr.s > 0 && !sees(T, 'student')) out.push(`«${taskTitle(T)}» عليها درجة لكنها لا تظهر للطالب، فلن يأخذ نصيب الطالب منها (${Math.round(pr.s * 100)}٪) أبدًا. اجعلها «${pr.t > 0 ? 'للمعلم والطالب' : 'للطالب'}».`);
+  });
+  (S.tasks || []).filter(T => T.graded && !sees(T, 'teacher')).forEach(T => out.push(`«${taskTitle(T)}» عليها تقييم الضبط لكنها لا تظهر للمعلم، فلن يرصد أخطاءها.`));
+  if (P.recitation_mode !== 'none' && !(S.tasks || []).some(T => T.graded)) out.push('لا توجد مهمة عليها «تقييم الضبط»، فيرصد المعلم الأخطاء على الجلسة كلها.');
+  return out;
+}
 function columnIssues() {
   const out = [], seen = {};
   if (!S.tasks) tasksFromCols();
@@ -537,6 +557,11 @@ function columnIssues() {
     if (open) out.push(n + ': «' + open.header + '» بداية نطاق بلا نهاية بعدها.');
     if (T.task === 'repeat' && T.cols.length > 1) out.push(n + ': التكرار عمود رقم واحد فقط.');
   });
+  const sumCheck = (list, key, what) => { const has = list.filter(T => T[key] != null && T[key] !== ''); const sum = has.reduce((a, T) => a + +T[key], 0);
+    if (has.length && has.length === list.length && Math.round(sum) !== 100) out.push(`مجموع ${what} ${sum}، ويجب أن يكون 100 (أو اترك بعضها فارغًا ليأخذ الباقي بالتساوي).`);
+    else if (sum > 100) out.push(`مجموع ${what} ${sum}، أكثر من 100.`); };
+  sumCheck(S.tasks.filter(T => T.counts), 'weight', 'درجات المهام (الالتزام)');
+  sumCheck(S.tasks.filter(T => T.graded), 'grade_weight', 'نسب تقييم الضبط');
   return out;
 }
 function refreshIssues() { const is = columnIssues(); const html = is.length ? `<div class="errbox"><b>قبل الحفظ:</b><br>${is.map(esc).join('<br>')}</div>` : '<div class="okbox">المهام والأعمدة سليمة. أي تعديل هنا يظهر فورًا في تبويب «أيام الخطة والإكسل» وفي نموذج الإكسل الذي تنزّله.</div>'; const holder = $$('#tab > .grid > div').filter(d => d.classList.contains('errbox') || d.classList.contains('okbox')).pop(); if (holder) holder.outerHTML = html; }
@@ -671,7 +696,10 @@ function parseSheet(fileName, aoa) {
 // الوزن الفارغ يأخذ الباقي من 100 بالتساوي
 function normW(ws) { const has = w => w != null && w !== '' && !isNaN(+w); const g = ws.filter(has).reduce((a, w) => a + +w, 0), f = ws.filter(w => !has(w)).length, rest = Math.max(0, 100 - g); const o = ws.map(w => has(w) ? +w : (f ? rest / f : 0)); const t = o.reduce((a, b) => a + b, 0); return t ? o.map(w => w / t) : ws.map(() => 1 / (ws.length || 1)); }
 const tW = t => { const c = t.cols.find(c => c.weight != null && c.weight !== ''); return c ? +c.weight : null; };
-const gradedP = () => groupTasks(c => c.executor === 'teacher' || c.executor === 'both').filter(t => t.cols.some(c => c.counts));
+const gradedP = () => groupTasks(c => c.executor === 'teacher' || c.executor === 'both').filter(t => t.cols.some(c => c.graded));
+const gW = t => { const c = t.cols.find(c => c.grade_weight != null && c.grade_weight !== ''); return c ? +c.grade_weight : null; };
+const parties = P => P.recitation_mode === 'none' ? { s: 1, t: 0 } : P.student_execution === 'counts' ? (() => { const e = +(P.execution_weight ?? 50), r = +(P.recitation_weight ?? 50); return { s: e / ((e + r) || 1), t: r / ((e + r) || 1) }; })() : { s: 0, t: 1 };
+const commitP = () => groupTasks(c => !['none', 'info'].includes(c.executor)).filter(t => t.cols.some(c => c.counts) && t.single?.value_type !== 'url');
 const execP = () => { const all = groupTasks(c => c.executor === 'student' || c.executor === 'both').filter(t => t.single?.value_type !== 'url'); const g = all.filter(t => t.cols.some(c => c.counts)); return g.length ? g : all; };
 function groupTasks(filterFn) {
   // يجمع كل عمودين مرتبطين في مهمة واحدة؛ وعمود «تفاصيل لـ» يُعرض داخل مهمته
@@ -710,10 +738,11 @@ function tabPreview() {
   const teacherTasks = groupTasks(c => c.executor === 'teacher' || c.executor === 'both');
   const canExec = P.student_execution !== 'none';
   const R = P.score_rules;
-  const graded = gradedP(), perTask = graded.length > 0, gW = normW(graded.map(tW));
-  const eKeys = new Set(execP().map(t => t.key));
+  const graded = gradedP(), perTask = graded.length > 0, gWs = normW(graded.map(gW));
+  // درجات مهام الالتزام المطلوبة في هذا اليوم، ونصيبا الطالب والمعلم
+  const dReq = commitP().filter(t => fmtTask(t, vals) != null), dW = normW(dReq.map(tW)), deg = Object.fromEntries(dReq.map((t, i) => [t.key, Math.round(dW[i] * 100)])), pr = parties(P);
   const tScore = k => Math.max(0, (R.max || 0) - R.deductions.reduce((s, d) => s + ((S.previewDed[k] || {})[d.key] || 0) * (Number(d.value) || 0), 0));
-  const score = perTask ? graded.reduce((a, t, i) => a + gW[i] * tScore(t.key), 0) : tScore('_all');
+  const score = perTask ? graded.reduce((a, t, i) => a + gWs[i] * tScore(t.key), 0) : tScore('_all');
   const dedRows = k => R.deductions.map(d => `<div class="row"><span>${esc(d.label || 'خطأ')} <span class="hint">(−${d.value})</span></span><span class="ded"><button type="button" data-ded="${esc(d.key)}" data-tk="${k}" data-dir="-1">−</button><b>${(S.previewDed[k] || {})[d.key] || 0}</b><button type="button" data-ded="${esc(d.key)}" data-tk="${k}" data-dir="1">+</button></span></div>`).join('');
   const recDays = P.recitation_mode === 'daily' ? P.workdays : P.recitation_mode === 'days' ? P.recitation_days : [];
   $('#tab').innerHTML = `<div class="grid">
@@ -723,14 +752,14 @@ function tabPreview() {
       <div><h3 style="margin-bottom:8px">شاشة الطالب</h3><div class="phone">
         <div class="row"><b>اليوم ${day.day_number}</b><span class="pill ${canExec ? 'gold' : 'plain'}">${P.student_execution === 'none' ? 'لا تنفيذ على الطالب' : P.student_execution === 'counts' ? 'تنفيذك يدخل في تقييمك' : 'تنفيذك للمتابعة'}</span></div>
         ${studentTasks.map(t => { const txt = fmtTask(t, vals); if (txt == null) return ''; const info = t.cols[0].executor === 'info'; const exec = canExec && !info; const on = S.previewTicks[t.key];
-          return `<div class="task"><button type="button" class="tick ${exec ? (on ? 'on' : '') : 'none'}" data-tick="${t.key}" ${exec ? '' : 'tabindex="-1" aria-hidden="true"'}>${on ? '✓' : ''}</button><div><b>${esc(t.name)}</b>${exec && eKeys.has(t.key) ? (P.student_execution === 'counts' ? ' <span class="pill gold" style="font-size:10px">يدخل في التقييم</span>' : ' <span class="pill plain" style="font-size:10px">في نسبة الالتزام فقط</span>') : ''}<span class="small muted" style="display:block">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span>${previewDetails(t, vals)}</div></div>`; }).join('') || '<p class="muted small">لا توجد مهام للطالب في هذا اليوم.</p>'}
-        ${canExec ? `<p class="hint" style="margin:4px 0">${P.student_execution === 'counts' ? 'إنجاز الطالب للمهام المعلَّمة يدخل في تقييمه النهائي حسب وزن التنفيذ في «القواعد».' : '«للمتابعة»: إنجاز الطالب يُحسب في نسبة «الالتزام» (لصفحته والشهادة ولوحة الشرف) ولا يدخل في التقييم النهائي.'}</p>` : ''}
+          return `<div class="task"><button type="button" class="tick ${exec ? (on ? 'on' : '') : 'none'}" data-tick="${t.key}" ${exec ? '' : 'tabindex="-1" aria-hidden="true"'}>${on ? '✓' : ''}</button><div><b>${esc(t.name)}</b>${deg[t.key] != null ? ` <span class="pill gold" style="font-size:10px" title="${pr.s ? 'إذا علّم عليها الطالب يأخذ ' + Math.round(deg[t.key] * pr.s) + ' من 100 في الالتزام' : 'تعليم الطالب للمتابعة، والدرجة تُحسب برصد المعلم'}">${deg[t.key]} درجة</span>` : ''}<span class="small muted" style="display:block">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span>${previewDetails(t, vals)}</div></div>`; }).join('') || '<p class="muted small">لا توجد مهام للطالب في هذا اليوم.</p>'}
+        ${dReq.length ? `<p class="hint" style="margin:4px 0">الالتزام في هذا اليوم: ${pr.s && pr.t ? `الطالب ${Math.round(pr.s * 100)}٪ عند تعليمه، والمعلم ${Math.round(pr.t * 100)}٪ عند رصده` : pr.t ? 'كله من رصد المعلم، وتعليم الطالب للمتابعة' : 'كله من تعليم الطالب'}.</p>` : '<p class="hint" style="margin:4px 0">لا مهام عليها درجة في هذا اليوم، فلا يؤثر على التزام الطالب.</p>'}
         <p class="muted small">التسميع: ${P.recitation_mode === 'none' ? 'لا يوجد' : recDays.map(i => DAYS[i]).join('، ') || 'لم تُحدد أيام'}</p>
       </div></div>
       <div><h3 style="margin-bottom:8px">رصد المعلم</h3><div class="phone" style="--c:var(--blue)">
         ${P.recitation_mode === 'none' ? '<p class="muted">هذه الخطة بلا تسميع، فلا يظهر للمعلم نموذج رصد.</p>' : `
         <p class="small muted">يظهر النموذج في أيام التسميع: ${recDays.map(i => DAYS[i]).join('، ') || 'لم تُحدد'}</p>
-        ${teacherTasks.map(t => { const gi = graded.findIndex(g => g.key === t.key); return `<div class="task" style="grid-template-columns:1fr"><div><b>${esc(t.name)}</b> ${perTask ? (gi >= 0 ? `<span class="pill violet" style="font-size:10px">تقييم${graded.length > 1 ? ' ' + Math.round(gW[gi] * 100) + '٪' : ''}</span>` : '<span class="pill plain" style="font-size:10px">رصد فقط</span>') : ''}<span class="small muted"> المقرر: ${esc(fmtTask(t, vals) ?? '—')}</span>${previewDetails(t, vals)}
+        ${teacherTasks.map(t => { const gi = graded.findIndex(g => g.key === t.key); return `<div class="task" style="grid-template-columns:1fr"><div><b>${esc(t.name)}</b> ${perTask && gi >= 0 ? `<span class="pill violet" style="font-size:10px">تقييم الضبط${graded.length > 1 ? ' ' + Math.round(gWs[gi] * 100) + '٪' : ''}</span> ` : ''}${deg[t.key] != null && pr.t ? `<span class="pill gold" style="font-size:10px" title="رصد المعلم لهذه المهمة يعطي الطالب ${Math.round(deg[t.key] * pr.t)} من 100 في الالتزام">${deg[t.key]} درجة</span>` : ''}${gi < 0 && (deg[t.key] == null || !pr.t) ? '<span class="pill plain" style="font-size:10px">رصد فقط</span>' : ''}<span class="small muted"> المقرر: ${esc(fmtTask(t, vals) ?? '—')}</span>${previewDetails(t, vals)}
           <div class="g2" style="margin-top:6px">${t.cols.map(c => `<label class="f small">${esc(c.header)}<input type="${c.value_type === 'number' ? 'number' : 'text'}" value="${esc(vals[c.id] ?? '')}" step="0.5"></label>`).join('')}</div>
           ${perTask && gi >= 0 ? `<div style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px"><b class="small">أخطاء ${esc(t.name)}</b>${dedRows(t.key)}<div class="row"><span>درجة المهمة</span><span class="score">${tScore(t.key).toFixed(2)} <span class="hint">من ${R.max}</span></span></div></div>` : ''}</div></div>`; }).join('') || '<p class="muted small">لا توجد أعمدة يرصدها المعلم.</p>'}
         ${groupTasks(c => c.executor === 'info').map(t => { const txt = fmtTask(t, vals); return txt == null ? '' : `<div class="task" style="grid-template-columns:1fr;--teal:var(--slate)"><div><b>${esc(t.name)} <span class="hint">للعرض فقط</span></b><span class="small muted">${t.cols[0].value_type === 'url' ? `<a href="${esc(vals[t.cols[0].id])}" target="_blank" rel="noopener">فتح الرابط</a>` : esc(txt)}</span></div></div>`; }).join('')}
@@ -828,7 +857,7 @@ async function savePlan() {
     else { row.created_by = S.user.id; const r = await db.from('program_plans').insert(row).select('id').single(); if (r.error) throw r.error; planId = r.data.id; }
     if (S.removedCols.length) { const r = await db.from('plan_columns').delete().in('id', S.removedCols); if (r.error) throw r.error; }
     // الأعمدة بطلب واحد: الترتيب والاسم والارتباط معًا (قيود التفرد مؤجلة لنهاية الطلب)
-    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, shows_column_id: c.value_type === 'bool' && c.range_role === 'single' ? (c.shows_column_id || null) : null, detail_of: c.range_role === 'end' ? null : (c.detail_of || null), executor: c.executor, counts: ['info', 'none'].includes(c.executor) ? false : !!c.counts, weight: c.weight, required: !!c.required }));
+    const colRows = S.cols.map((c, i) => ({ id: c.id, plan_id: planId, seq: i + 1, header: c.header.trim(), task: c.task, task_label: c.task === 'custom' ? c.task_label : null, value_type: c.value_type, range_role: c.range_role, pair_column_id: c.pair_column_id || null, shows_column_id: c.value_type === 'bool' && c.range_role === 'single' ? (c.shows_column_id || null) : null, graded: ['info', 'none', 'student'].includes(c.executor) ? false : !!c.graded, grade_weight: c.graded ? (c.grade_weight ?? null) : null, detail_of: c.range_role === 'end' ? null : (c.detail_of || null), executor: c.executor, counts: ['info', 'none'].includes(c.executor) ? false : !!c.counts, weight: c.weight, required: !!c.required }));
     let r = await db.from('plan_columns').upsert(colRows); if (r.error) throw r.error;
     // الأيام: تُستبدل بالكامل عند تغييرها
     const ids = new Set(S.cols.map(c => c.id));
