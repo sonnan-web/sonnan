@@ -159,3 +159,8 @@ alter table public.plan_columns add column if not exists graded boolean not null
 alter table public.plan_columns add column if not exists grade_weight numeric;
 update public.plan_columns set graded = counts where graded = false and counts;
 -- انظر migration «commitment_and_precision» في Supabase للنص الكامل لـ plan_commitment و honor_board
+
+-- المراحل والاختبارات: الجداول plan_stages, exams, exam_questions, exam_attempts, stage_holds
+-- والدوال stage_bounds, sync_stage_holds, close_stage_hold, start_exam, exam_paper, grade_attempt_auto, submit_exam, grade_attempt, oral_result
+-- وتحديث plan_commitment لاستبعاد أيام التوقف — انظر migration «stages_and_exams» في Supabase للنص الكامل
+-- وجدولة: select cron.schedule('sync-stage-holds', '7 * * * *', 'select public.sync_stage_holds()');

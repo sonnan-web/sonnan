@@ -162,10 +162,25 @@
   }
 
   // يوم الخطة الحالي للطالب
+  // أيام التوقف للاختبار (assign.holds) لا تُقدّم الخطة
   function planDayFor(assign, plan, daysCount, onDate) {
     if (!assign || !plan) return null;
-    const n = workdaysBetween(assign.start_date, onDate || todayMakkah(), plan.workdays || [0, 1, 2, 3, 4]);
+    const d = onDate || todayMakkah(), wd = plan.workdays || [0, 1, 2, 3, 4];
+    let n = workdaysBetween(assign.start_date, d, wd);
+    (assign.holds || []).forEach(h => { const a = h.hold_from > assign.start_date ? h.hold_from : assign.start_date; const e = h.hold_to ? addDays(h.hold_to, -1) : d; const b = e < d ? e : d; if (a <= b) n -= workdaysBetween(a, b, wd); });
     return Math.min(Math.max(1, (assign.start_day || 1) + n - 1), daysCount || 1);
+  }
+  // هل الطالب متوقف للاختبار في هذا اليوم؟
+  const holdOn = (assign, d) => (assign?.holds || []).find(h => d >= h.hold_from && (!h.hold_to || d < h.hold_to)) || null;
+  // يوم نهاية المرحلة ويوم التوقف من أيام الخطة (P.days بالرقم)
+  function stageBounds(P, st) {
+    const days = Object.values(P.days || {}).sort((a, b) => a.day_number - b.day_number);
+    const num = v => v != null && v !== '' && !isNaN(+v) ? +v : null;
+    const e = st.end_column_id ? days.find(d => num(d.vals?.[st.end_column_id]) != null && num(d.vals[st.end_column_id]) >= +st.end_value) : null;
+    if (!e) return { end_day: null, stop_day: null };
+    const sc = st.stop_column_id || st.end_column_id;
+    const s = days.find(d => d.day_number > e.day_number && d.vals?.[sc] != null && d.vals[sc] !== '' && d.vals[sc] !== false);
+    return { end_day: e.day_number, stop_day: s ? s.day_number : null };
   }
   const isRecitationDay = (plan, iso) => { if (!plan || plan.recitation_mode === 'none') return false; const d = new Date(iso + 'T12:00:00Z').getUTCDay(); return plan.recitation_mode === 'daily' ? plan.workdays.includes(d) : plan.recitation_days.includes(d); };
   const TASKS = { memo: 'حفظ', link: 'ربط', review: 'مراجعة', repeat: 'تكرار', explain: 'شرح', listen: 'سماع', custom: 'مهمة' };
@@ -457,6 +472,7 @@
       fa.innerHTML = `<div class="card c-teal">
         <div class="row"><div><h2>${esc(stu.name)}</h2><p class="small muted">${esc(P.name)}${ctx.roomName ? ' · الفترة: ' + esc(ctx.roomName) : ''}</p></div>
           <div style="text-align:left"><span class="pill gold">اليوم ${dayN} من الخطة</span><div class="hint" style="margin-top:3px">${recDay ? 'اليوم يوم تسميع' : 'اليوم ليس من أيام التسميع (' + recDays.map(i => DAYS[i]).join('، ') + ')'}</div></div></div>
+        ${holdOn(a, TODAY) ? '<div class="hintbox" style="margin-top:8px">الطالب متوقف بانتظار اختبار المرحلة، فلا يتقدّم في الخطة حتى يجتازه. يمكنك رصد المراجعة.</div>' : ''}
         ${ed ? `<div class="hintbox" style="margin-top:8px">تعدّل رصد يوم ${greg(ed.rec_date)}. يُحفظ التعديل سجلًا جديدًا ويبقى القديم في التاريخ. <button class="btn ghost sm" id="rwCancelEdit" type="button">إلغاء التعديل</button></div>` : ''}
         ${ctx.teachers ? `<label class="f" for="rwT" style="margin-top:10px">المعلم الذي سمّع<select id="rwT">${ctx.teachers.map(t => `<option value="${t.id}"${t.id === S.teacherId ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></label>` : ''}
         <div style="margin-top:10px"><b class="small">حالة الطالب</b><div class="seg" style="margin-top:6px">${['present', 'makeup', 'review_only', 'excused', 'absent'].map(k => `<button type="button" data-st="${k}" aria-pressed="${st === k}">${STATUS[k].label}</button>`).join('')}</div></div>
@@ -641,5 +657,5 @@
 
   window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
+    unionCount, planDayFor, holdOn, stageBounds, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
 })();

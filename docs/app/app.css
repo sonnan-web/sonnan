@@ -252,3 +252,12 @@ input:disabled,select:disabled{background:var(--track);color:var(--muted)}
 .ilegend .ibtn{cursor:default;width:28px;height:28px}
 .ilegend .ibtn:hover{background:#fff;color:#173F43}
 .ilegend .ibtn.danger:hover{background:#fff;color:#C8423B}.ilegend .ibtn.ok:hover{background:#fff;color:#1E8E5A}
+/* خيارات أسئلة الاختبار */
+.opt{display:flex;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line,#dde3e5);border-radius:10px;margin-top:6px;cursor:pointer}
+.opt:has(input:checked){border-color:#0F2F33;background:#f3f7f7}
+/* بطاقات المراحل (مثل بطاقات المهام في الخطط) */
+.tcard{border:1px solid var(--line,#dde3e5);border-inline-start:4px solid #CBB994;border-radius:12px;padding:10px 12px;background:#fff;display:grid;gap:8px}
+.tcard .thead{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:end}
+.tcard .thead .f{margin:0;min-width:140px}
+.tcard .tnum{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#0F2F33;color:#CBB994;font-weight:700;align-self:center}
+.tcard .tact{margin-inline-start:auto;display:inline-flex;gap:4px;padding-bottom:2px}

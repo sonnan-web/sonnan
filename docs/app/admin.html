@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127j">
+<link rel="stylesheet" href="app.css?v=20261127k">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127j"></script>
+<script src="app.js?v=20261127k"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -73,7 +73,7 @@ function drawNav(cur) {
 // ============ البيانات ============
 const D = { loaded: false };
 async function loadCore() {
-  const [users, students, teachers, rooms, ra, plans, pa, leaves, programs] = await Promise.all([
+  const [users, students, teachers, rooms, ra, plans, pa, leaves, programs, holds] = await Promise.all([
     fetchAll(() => db.from('users').select('id, name, email, role, phone, created_at')),
     fetchAll(() => db.from('students').select('*')),
     db.from('teachers').select('*').then(r => r.data || []),
@@ -82,7 +82,8 @@ async function loadCore() {
     db.from('program_plans').select('*').order('created_at').then(r => r.data || []),
     fetchAll(() => db.from('plan_assignments').select('*').is('ended_at', null)),
     db.from('leave_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    db.from('programs').select('*').order('name').then(r => r.data || [])
+    db.from('programs').select('*').order('name').then(r => r.data || []),
+    fetchAll(() => db.from('stage_holds').select('*'))
   ]);
   D.programs = programs; D.programById = Object.fromEntries(programs.map(p => [p.id, p]));
   D.users = users; D.userById = Object.fromEntries(users.map(u => [u.id, u]));
@@ -91,6 +92,8 @@ async function loadCore() {
   D.rooms = rooms; D.roomById = Object.fromEntries(rooms.map(r => [r.id, r]));
   D.ra = ra;
   D.plans = plans; D.planById = Object.fromEntries(plans.map(p => [p.id, p]));
+  D.holds = holds;
+  pa.forEach(a => a.holds = holds.filter(h => h.student_id === a.student_id));
   D.assignByStudent = Object.fromEntries(pa.map(a => [a.student_id, a]));
   D.roomOfStudent = {}; D.roomsOfTeacher = {};
   ra.forEach(a => { if (a.assignee_type === 'student') D.roomOfStudent[a.assignee_id] = a.room_id; else (D.roomsOfTeacher[a.assignee_id] ||= []).push(a.room_id); });
@@ -265,7 +268,7 @@ async function followSection(el, kind) {
   const studs = actives().filter(s => s.assign?.plan_id === P.id);
   if (FOL.mode === 'cal') return renderCal(el, P, isR ? 'rec' : 'exe', studs, title);
   const { data: lv } = await db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').lte('date_from', FOL.mode === 'day' ? day : to).gte('date_to', FOL.mode === 'day' ? day : from);
-  const leaveOn = (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d);
+  const leaveOn = (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d) || !!A.holdOn(D.studentById[sid]?.assign, d);
   const base = s => ({ s, name: s.name, email: s.email || '', teacher: s.teacher, room: s.room });
   const kpi = items => { $('#fKpi').innerHTML = `<div class="minis">${items.map(([l, v, c]) => mini(l, fmtNum(v), c)).join('')}</div>`; };
   const pctColor = v => v == null ? '' : v >= 90 ? 'var(--green)' : v >= 70 ? 'var(--teal)' : v >= 50 ? '#9A6A08' : 'var(--red)';
@@ -953,20 +956,236 @@ function issueEvent(studentId, kind, row) {
 }
 
 // ============ الاختبارات ============
+// ============ الاختبارات المرحلية ============
+// ثلاثة أجزاء: مراحل كل خطة، ونموذج اختبار لكل مرحلة (الإعدادات وبنك الأسئلة)، والنتائج والتصحيح
+const EX = { tab: 'stages', plan: '', status: '' };
+const QKIND = { mcq: 'اختيار من متعدد', tf: 'صح / خطأ', short: 'إجابة قصيرة', essay: 'إجابة مقالية' };
+const ATT_ST = { in_progress: ['يختبر الآن', 'info'], submitted: ['بانتظار التصحيح', 'warn'], graded: ['مصحَّح', 'ok'] };
+async function examData() {
+  const [st, ex, att, qc] = await Promise.all([
+    db.from('plan_stages').select('*').order('seq').then(r => r.data || []),
+    db.from('exams').select('*').then(r => r.data || []),
+    fetchAll(() => db.from('exam_attempts').select('id, exam_id, student_id, attempt_no, started_at, submitted_at, status, score, passed, notes, graded_at').order('started_at', { ascending: false })),
+    fetchAll(() => db.from('exam_questions').select('exam_id'))
+  ]);
+  const qCount = {}; qc.forEach(q => qCount[q.exam_id] = (qCount[q.exam_id] || 0) + 1);
+  return { stages: st, exams: ex, examByStage: Object.fromEntries(ex.map(e => [e.stage_id, e])), attempts: att, qCount };
+}
 SECTIONS.exams = async el => {
-  const { data, error } = await db.from('periodic_exams').select('*').order('date', { ascending: false }); if (error) throw error;
-  const rows = data.map(x => ({ x, name: D.studentById[x.student_id]?.name || '—', teacher: D.studentById[x.student_id]?.teacher || '—', exam: x.exam_name, volume: x.volume || '', stage: x.stage, score: x.score != null ? +x.score : null, date: x.date, notes: x.notes || '' }));
-  el.innerHTML = `${secHead('الاختبارات المرحلية', fmtNum(rows.length) + ' نتيجة', 'amber', `<button class="btn gold sm" id="addEx">+ رصد نتيجة</button>`)}
-    <div class="card c-amber" id="eCard"><div class="head"><h3>النتائج</h3></div><div id="eTbl"></div></div>`;
-  dataTable($('#eTbl'), { rows, sortKey: 'date', dir: -1, cols: [{ key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'exam', label: 'الاختبار', filter: true }, { key: 'volume', label: 'المجلد', filter: true }, { key: 'stage', label: 'المرحلة', num: true }, { key: 'score', label: 'الدرجة', num: true, html: r => r.score == null ? '—' : `<b style="color:${r.score >= 70 ? 'var(--green)' : 'var(--red)'}">${fmtNum(r.score, 2)}</b>` }, { key: 'date', label: 'التاريخ', html: r => A.greg(r.date) }, { key: 'notes', label: 'ملاحظات' }] });
-  cardFull($('#eCard'));
-  $('#addEx').onclick = () => drawer('رصد نتيجة اختبار', `<label class="f" for="xS">الطالب<select id="xS">${actives().sort((a, b) => a.name.localeCompare(b.name, 'ar')).map(s => opt(s.id, s.name)).join('')}</select></label>
-    <div class="g2"><label class="f" for="xN">اسم الاختبار<input id="xN" type="text" value="اختبار المرحلة الأولى"></label><label class="f" for="xV">المجلد<input id="xV" type="text" value="المجلد الأول"></label>
-    <label class="f" for="xSt">المرحلة<input id="xSt" type="number" min="1" value="1"></label><label class="f" for="xSc">الدرجة من 100<input id="xSc" type="number" min="0" max="100" step="0.5"></label>
-    <label class="f" for="xD">التاريخ<input id="xD" type="date" value="${TODAY}"></label></div><label class="f" for="xNo">ملاحظات<textarea id="xNo"></textarea></label><button class="btn" id="xGo">حفظ</button>`, root => {
-    $('#xGo', root).onclick = async () => { const { error } = await db.from('periodic_exams').insert({ student_id: $('#xS', root).value, exam_name: $('#xN', root).value, volume: $('#xV', root).value, stage: +$('#xSt', root).value || null, score: $('#xSc', root).value === '' ? null : +$('#xSc', root).value, date: $('#xD', root).value, notes: $('#xNo', root).value || null, created_by: me.id }); if (error) return toast(error.message, true); toast('حُفظت النتيجة'); closeDrawer(); route(); };
-  });
+  await db.rpc('sync_stage_holds', { p_student: null });
+  await loadCore();
+  const PL = await plansFull();
+  const X = await examData();
+  const usable = D.plans.filter(p => p.status !== 'archived');
+  if (!EX.plan || !PL[EX.plan]) EX.plan = (usable.find(p => p.status === 'active') || usable[0])?.id || '';
+  const P = PL[EX.plan];
+  const stages = X.stages.filter(s => s.plan_id === EX.plan);
+  const exOf = st => X.examByStage[st.id];
+  const holds = D.holds || [];
+  const att = X.attempts.filter(a => X.exams.some(e => e.id === a.exam_id && stages.some(s => s.id === e.stage_id)));
+  const graded = att.filter(a => a.status === 'graded');
+  const waiting = holds.filter(h => !h.hold_to && stages.some(s => s.id === h.stage_id) && D.studentById[h.student_id]);
+  const referred = waiting.filter(h => { const e = exOf(stages.find(s => s.id === h.stage_id)); if (!e) return false; const mine = att.filter(a => a.exam_id === e.id && a.student_id === h.student_id); return mine.length >= e.max_attempts && !mine.some(a => a.passed) && !mine.some(a => a.status !== 'graded'); });
+  el.innerHTML = `${secHead('الاختبارات المرحلية', P ? esc(P.name) : '', 'amber', '')}
+    <div class="card" style="--a:var(--amber);margin-bottom:10px"><div class="tbl-tools" style="margin:0">
+      <label class="small">الخطة <select id="exPlan" style="width:auto">${usable.map(p => opt(p.id, p.name, p.id === EX.plan)).join('')}</select></label>
+      <div class="seg"><button type="button" data-et="stages" aria-pressed="${EX.tab === 'stages'}">المراحل ونماذج الاختبار</button><button type="button" data-et="results" aria-pressed="${EX.tab === 'results'}">النتائج والتصحيح</button></div>
+    </div></div>
+    <div class="card" style="--a:var(--amber);margin-bottom:10px"><div class="minis">
+      ${mini('مراحل الخطة', fmtNum(stages.length), 'slate')}${mini('بانتظار الاختبار', fmtNum(waiting.length), 'amber')}${mini('بانتظار التصحيح', fmtNum(att.filter(a => a.status === 'submitted').length), 'violet')}
+      ${mini('اختبارات مصحّحة', fmtNum(graded.length), 'blue')}${mini('نسبة الاجتياز', graded.length ? Math.round(graded.filter(a => a.passed).length / graded.length * 100) + '٪' : '—', 'green')}${mini('محالون للمشرف', fmtNum(referred.length), 'red', 'استنفدوا المحاولات')}
+    </div></div>
+    <div id="exBody"></div>`;
+  $('#exPlan').onchange = e => { EX.plan = e.target.value; route(); };
+  $$('[data-et]', el).forEach(b => b.onclick = () => { EX.tab = b.dataset.et; route(); });
+  if (!P) { $('#exBody').innerHTML = '<div class="empty">لا توجد خطط.</div>'; return; }
+  return EX.tab === 'stages' ? examStages($('#exBody'), P, stages, X) : examResults($('#exBody'), P, stages, X, att, waiting, referred);
 };
+function examStages(box, P, stages, X) {
+  const numCols = P.cols.filter(c => c.value_type === 'number' && !c.detail_of && c.range_role !== 'start');
+  const mainCols = P.cols.filter(c => !c.detail_of && c.range_role !== 'end' && c.value_type !== 'url');
+  const colName = c => { const t = A.groupTasks(P.cols, () => true).find(t => t.cols.some(x => x.id === c.id)); return (t ? t.name + ' · ' : '') + String(c.header).trim(); };
+  const studs = actives().filter(s => s.assign?.plan_id === P.id);
+  box.innerHTML = `<div class="hintbox" style="margin-bottom:10px">قسّم الخطة إلى مراحل. تنتهي المرحلة عند أول يوم في الخطة يبلغ فيه «عمود النهاية» القيمة المحددة، ويستمر الطالب بعدها (مثل أيام المراجعة) حتى أول يوم فيه واجب جديد في «عمود التوقف»، فتتوقف خطته هناك حتى يجتاز اختبار المرحلة. أيام التوقف لا تُحسب غيابًا ولا تقدّمًا في الخطة.</div>
+    ${stages.map((st, i) => { const b = A.stageBounds(P, st), e = X.examByStage[st.id];
+      const onHold = (D.holds || []).filter(h => h.stage_id === st.id && !h.hold_to && D.studentById[h.student_id]).length, passed = (D.holds || []).filter(h => h.stage_id === st.id && h.hold_to).length;
+      return `<div class="tcard" style="margin-bottom:10px" data-st="${st.id}">
+        <div class="thead"><span class="tnum">${i + 1}</span>
+          <label class="f small">اسم المرحلة<input type="text" data-sf="name" value="${esc(st.name)}"></label>
+          <label class="f small">عمود النهاية<select data-sf="end_column_id"><option value="">—</option>${numCols.map(c => opt(c.id, colName(c), c.id === st.end_column_id)).join('')}</select></label>
+          <label class="f small" style="width:110px">تنتهي عند القيمة<input type="number" data-sf="end_value" value="${st.end_value ?? ''}"></label>
+          <label class="f small">عمود التوقف (أول واجب جديد)<select data-sf="stop_column_id"><option value="">نفس عمود النهاية</option>${mainCols.map(c => opt(c.id, colName(c), c.id === st.stop_column_id)).join('')}</select></label>
+          <span class="tact"><button class="btn sm danger" type="button" data-sdel="${st.id}">حذف المرحلة</button></span></div>
+        <div class="small" style="padding:0 4px">${b.end_day ? `تنتهي المرحلة في <b>اليوم ${b.end_day}</b> من الخطة، ${b.stop_day ? `ويتوقف الطالب قبل <b>اليوم ${b.stop_day}</b> حتى يجتاز الاختبار.` : 'ولا يوجد بعدها واجب جديد في عمود التوقف، فلا يتوقف الطالب.'}` : '<span style="color:var(--red)">لم أجد يومًا في الخطة يبلغ فيه عمود النهاية هذه القيمة. راجع العمود والقيمة.</span>'}
+          ${onHold || passed ? ` · <span class="pill warn">${onHold} بانتظار الاختبار</span> <span class="pill ok">${passed} اجتاز</span>` : ''}
+          <span class="hint"> · يُطبَّق التوقف على من يصل يوم التوقف من ${A.greg(st.active_from)}</span></div>
+        <div class="card" style="margin:6px 0 0;padding:8px 10px;--a:var(--amber)">${e ? `<div class="row"><b>${esc(e.title)}</b><span class="small">${e.mode === 'oral' ? 'شفهي يرصده المعلم/المشرف' : 'إلكتروني من صفحة الطالب'} · النجاح ${+e.pass_score}٪ · ${e.max_attempts} محاولة · ${e.duration_min ? e.duration_min + ' دقيقة' : 'بلا وقت'}${e.mode === 'online' ? ' · ' + (X.qCount[e.id] || 0) + ' سؤال' + (e.question_count ? ' (يُسحب ' + e.question_count + ')' : '') : ''}${e.active ? '' : ' · <span class="pill bad">موقوف</span>'}</span>
+            <span class="opts"><button class="btn sm" type="button" data-exset="${st.id}">إعدادات الاختبار</button>${e.mode === 'online' ? `<button class="btn sm gold" type="button" data-exq="${e.id}">الأسئلة (${X.qCount[e.id] || 0})</button>` : ''}</span></div>`
+          : `<div class="row"><span class="muted small">لا يوجد اختبار لهذه المرحلة.</span><button class="btn sm gold" type="button" data-exset="${st.id}">+ إنشاء اختبار المرحلة</button></div>`}</div>
+      </div>`; }).join('') || '<div class="empty">لا توجد مراحل لهذه الخطة بعد.</div>'}
+    <div class="row" style="justify-content:flex-start;gap:6px;margin-top:6px"><button class="btn gold" type="button" id="addStage">+ مرحلة جديدة</button><span class="hint">${studs.length} طالبًا على هذه الخطة</span></div>`;
+  $$('[data-st]', box).forEach(card => {
+    const id = card.dataset.st;
+    $$('[data-sf]', card).forEach(inp => inp.addEventListener('change', async () => {
+      const k = inp.dataset.sf; let v = inp.value; if (k === 'end_value') v = v === '' ? null : +v; if (k.endsWith('_id')) v = v || null;
+      const { error } = await db.from('plan_stages').update({ [k]: v }).eq('id', id); if (error) return toast(error.message, true); toast('حُفظ'); route();
+    }));
+  });
+  $$('[data-sdel]', box).forEach(b => b.onclick = async () => { if (!await confirmBox('حذف المرحلة واختبارها ونتائجه؟ ويُلغى توقف الطلاب عليها.', 'حذف')) return; const { error } = await db.from('plan_stages').delete().eq('id', b.dataset.sdel); if (error) return toast(error.message, true); toast('حُذفت'); route(); });
+  $('#addStage').onclick = async () => {
+    const memo = P.cols.find(c => c.task === 'memo' && !c.detail_of && c.range_role === 'end') || numCols[0];
+    const { error } = await db.from('plan_stages').insert({ plan_id: P.id, seq: stages.length + 1, name: 'المرحلة ' + ['الأولى', 'الثانية', 'الثالثة', 'الرابعة', 'الخامسة', 'السادسة', 'السابعة', 'الثامنة', 'التاسعة', 'العاشرة'][stages.length] || 'مرحلة', end_column_id: memo?.id || null, end_value: null, stop_column_id: P.cols.find(c => c.task === 'memo' && !c.detail_of && c.range_role === 'start')?.id || null });
+    if (error) return toast(error.message, true); route();
+  };
+  $$('[data-exset]', box).forEach(b => b.onclick = () => examSettings(stages.find(s => s.id === b.dataset.exset), X.examByStage[b.dataset.exset]));
+  $$('[data-exq]', box).forEach(b => b.onclick = () => examQuestions(X.exams.find(e => e.id === b.dataset.exq)));
+}
+function examSettings(st, e) {
+  const v = e || { title: 'اختبار ' + st.name, mode: 'online', duration_min: 30, pass_score: 60, max_attempts: 2, retry_wait_days: 1, question_count: null, shuffle: true, instructions: '', active: true };
+  drawer((e ? 'إعدادات ' : 'إنشاء ') + 'اختبار ' + st.name, `<div class="stack">
+    <label class="f">عنوان الاختبار<input id="eT" type="text" value="${esc(v.title)}"></label>
+    <div><b class="small">نوع الاختبار</b><div class="seg" style="margin-top:6px"><button type="button" data-m="online" aria-pressed="${v.mode === 'online'}">إلكتروني من صفحة الطالب</button><button type="button" data-m="oral" aria-pressed="${v.mode === 'oral'}">شفهي يرصد نتيجته المعلم/المشرف</button></div></div>
+    <div class="g3"><label class="f">درجة النجاح ٪<input id="eP" type="number" min="0" max="100" value="${v.pass_score}"></label>
+      <label class="f">عدد المحاولات<input id="eA" type="number" min="1" value="${v.max_attempts}"></label>
+      <label class="f">الإعادة بعد (أيام)<input id="eW" type="number" min="0" value="${v.retry_wait_days}"></label></div>
+    <div class="g3 eOnline"${v.mode === 'oral' ? ' hidden' : ''}><label class="f">المدة بالدقائق <span class="hint">فارغ = بلا وقت</span><input id="eD" type="number" min="1" value="${v.duration_min ?? ''}"></label>
+      <label class="f">عدد الأسئلة <span class="hint">فارغ = كل البنك</span><input id="eN" type="number" min="1" value="${v.question_count ?? ''}"></label>
+      <label class="chips" style="align-self:end"><label><input type="checkbox" id="eS"${v.shuffle ? ' checked' : ''}> ترتيب عشوائي</label></label></div>
+    <label class="f">تعليمات تظهر للطالب قبل البدء<textarea id="eI">${esc(v.instructions || '')}</textarea></label>
+    <label class="chips"><label><input type="checkbox" id="eOn"${v.active ? ' checked' : ''}> الاختبار مفعّل</label></label>
+    <div class="hintbox">إذا لم يجتز الطالب بعد آخر محاولة، يُحال للمشرف في «النتائج والتصحيح»، ويستطيع منحه محاولة جديدة.</div>
+    <button class="btn" id="eSave">حفظ</button></div>`, root => {
+    let mode = v.mode;
+    $$('[data-m]', root).forEach(b => b.onclick = () => { mode = b.dataset.m; $$('[data-m]', root).forEach(x => x.setAttribute('aria-pressed', x === b)); $('.eOnline', root).hidden = mode === 'oral'; });
+    $('#eSave', root).onclick = async () => {
+      const n = id => { const x = $(id, root).value; return x === '' ? null : +x; };
+      const row = { stage_id: st.id, title: $('#eT', root).value.trim() || 'اختبار ' + st.name, mode, pass_score: n('#eP') ?? 60, max_attempts: n('#eA') || 1, retry_wait_days: n('#eW') ?? 0,
+        duration_min: mode === 'online' ? n('#eD') : null, question_count: mode === 'online' ? n('#eN') : null, shuffle: $('#eS', root).checked, instructions: $('#eI', root).value.trim() || null, active: $('#eOn', root).checked };
+      const { error } = e ? await db.from('exams').update(row).eq('id', e.id) : await db.from('exams').insert(row);
+      if (error) return toast(error.message, true); toast('حُفظ'); closeDrawer(); route();
+    };
+  });
+}
+// بنك الأسئلة: إضافة وتعديل وحذف، واستيراد وتصدير إكسل
+async function examQuestions(e) {
+  const { data } = await db.from('exam_questions').select('*').eq('exam_id', e.id).order('seq');
+  const Q = data || [];
+  const ansText = q => q.kind === 'mcq' ? (q.options[q.answer] ?? '—') : q.kind === 'tf' ? (q.answer === true ? 'صح' : q.answer === false ? 'خطأ' : '—') : q.kind === 'short' ? (q.answer || 'يصححه المعلم') : 'يصححه المعلم';
+  drawer('أسئلة ' + e.title, `<div class="row" style="gap:6px;justify-content:flex-start;margin-bottom:8px"><button class="btn sm gold" id="qAdd">+ سؤال</button><label class="btn sm ghost" for="qImp" style="cursor:pointer">استيراد من إكسل</label><input type="file" id="qImp" accept=".xlsx,.xls,.csv" hidden><button class="btn sm ghost" id="qTpl">نموذج الإكسل</button><button class="btn sm ghost" id="qExp">تصدير</button><span class="hint">${Q.length} سؤال · مجموع الدرجات ${Q.reduce((a, q) => a + +q.points, 0)}</span></div>
+    <div class="stack">${Q.map((q, i) => `<div class="hist"><div class="row"><b>${i + 1}. ${esc(q.text)}</b><span class="pill plain">${QKIND[q.kind]} · ${+q.points} درجة</span></div>
+      ${q.kind === 'mcq' ? `<div class="small">${q.options.map((o, k) => `<span style="${k === q.answer ? 'color:var(--green);font-weight:700' : ''}">${k === q.answer ? '✓ ' : ''}${esc(o)}</span>`).join(' · ')}</div>` : `<div class="small muted">الإجابة: ${esc(ansText(q))}</div>`}
+      <div class="row" style="justify-content:flex-start;gap:6px"><button class="btn ghost sm" data-qe="${q.id}">تعديل</button><button class="btn danger sm" data-qd="${q.id}">حذف</button></div></div>`).join('') || '<div class="empty">لا توجد أسئلة. أضف سؤالًا أو استورد من إكسل.</div>'}</div>`, root => {
+    $('#qAdd', root).onclick = () => questionForm(e, null, Q.length + 1);
+    $$('[data-qe]', root).forEach(b => b.onclick = () => questionForm(e, Q.find(q => q.id === b.dataset.qe)));
+    $$('[data-qd]', root).forEach(b => b.onclick = async () => { if (!await confirmBox('حذف السؤال؟', 'حذف')) return; await db.from('exam_questions').delete().eq('id', b.dataset.qd); examQuestions(e); });
+    const HDR = ['نوع السؤال', 'السؤال', 'الخيار 1', 'الخيار 2', 'الخيار 3', 'الخيار 4', 'الإجابة الصحيحة', 'الدرجة'];
+    $('#qTpl', root).onclick = () => A.exportXlsx('نموذج أسئلة - ' + e.title, 'الأسئلة', HDR.map((h, k) => [h, r => r[k]]),
+      [['اختيار من متعدد', 'من راوي حديث «إنما الأعمال بالنيات»؟', 'أبو هريرة', 'عمر بن الخطاب', 'ابن عباس', 'عائشة', '2', 1], ['صح / خطأ', 'حديث «إنما الأعمال بالنيات» في الصحيحين.', '', '', '', '', 'صح', 1], ['إجابة قصيرة', 'أكمل: إنما الأعمال ...', '', '', '', '', 'بالنيات', 1], ['إجابة مقالية', 'اذكر فائدتين من الحديث.', '', '', '', '', '', 2]]);
+    $('#qExp', root).onclick = () => A.exportXlsx('أسئلة - ' + e.title, 'الأسئلة', HDR.map((h, k) => [h, q => [QKIND[q.kind], q.text, q.options[0], q.options[1], q.options[2], q.options[3], q.kind === 'mcq' ? (q.answer ?? 0) + 1 : q.kind === 'tf' ? (q.answer ? 'صح' : 'خطأ') : (q.answer || ''), +q.points][k]]), Q);
+    $('#qImp', root).onchange = ev => { const f = ev.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = async () => {
+      try {
+        const wb = XLSX.read(r.result, { type: 'array' }); const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '' }).slice(1).filter(x => String(x[1]).trim());
+        const kindOf = t => { const s = norm(t); return /متعدد|اختيار/.test(s) ? 'mcq' : /صح|خطا/.test(s) ? 'tf' : /قصير/.test(s) ? 'short' : 'essay'; };
+        const ins = rows.map((x, k) => { const kind = kindOf(x[0]), opts = [x[2], x[3], x[4], x[5]].map(v => String(v).trim()).filter(Boolean), a = String(x[6]).trim();
+          return { exam_id: e.id, seq: Q.length + k + 1, kind, text: String(x[1]).trim(), options: kind === 'mcq' ? opts : [], points: +x[7] || 1,
+            answer: kind === 'mcq' ? Math.max(0, (+toWestern(a) || 1) - 1) : kind === 'tf' ? /صح|نعم|true|1/i.test(a) : kind === 'short' ? (a || null) : null }; });
+        if (!ins.length) return toast('لم أجد أسئلة في الملف', true);
+        const { error } = await db.from('exam_questions').insert(ins); if (error) return toast(error.message, true);
+        toast('استُورد ' + ins.length + ' سؤال'); examQuestions(e);
+      } catch (err) { toast('تعذّرت قراءة الملف: ' + err.message, true); } }; r.readAsArrayBuffer(f); };
+  });
+}
+function questionForm(e, q, seq) {
+  const v = q || { kind: 'mcq', text: '', options: ['', '', '', ''], answer: 0, points: 1 };
+  drawer(q ? 'تعديل سؤال' : 'سؤال جديد', `<div class="stack">
+    <div class="seg">${Object.entries(QKIND).map(([k, l]) => `<button type="button" data-k="${k}" aria-pressed="${v.kind === k}">${l}</button>`).join('')}</div>
+    <label class="f">نص السؤال<textarea id="qT">${esc(v.text)}</textarea></label>
+    <div id="qBody"></div>
+    <label class="f" style="max-width:160px">الدرجة<input id="qP" type="number" min="0" step="0.5" value="${+v.points}"></label>
+    <button class="btn" id="qSave">حفظ السؤال</button>
+    <button class="btn ghost" id="qBack" type="button">رجوع للأسئلة</button></div>`, root => {
+    let kind = v.kind;
+    const body = () => { $('#qBody', root).innerHTML = kind === 'mcq' ? `<b class="small">الخيارات <span class="hint">اختر الإجابة الصحيحة بالدائرة</span></b>${[0, 1, 2, 3, 4, 5].map(k => `<div class="row" style="gap:6px;margin-top:4px"><input type="radio" name="qA" value="${k}"${v.answer === k ? ' checked' : ''} aria-label="الإجابة الصحيحة ${k + 1}"><input type="text" data-o="${k}" value="${esc(v.options[k] || '')}" placeholder="الخيار ${k + 1}${k > 1 ? ' (اختياري)' : ''}"></div>`).join('')}`
+      : kind === 'tf' ? `<div class="seg"><button type="button" data-tf="1" aria-pressed="${v.answer === true}">الإجابة: صح</button><button type="button" data-tf="0" aria-pressed="${v.answer === false}">الإجابة: خطأ</button></div>`
+      : kind === 'short' ? `<label class="f">الإجابة الصحيحة <span class="hint">إن كتبتها تُصحَّح تلقائيًا إذا طابقت (بتجاهل الهمزات والمسافات). اتركها فارغة ليصححها المعلم</span><input id="qS" type="text" value="${esc(typeof v.answer === 'string' ? v.answer : '')}"></label>`
+      : '<div class="hintbox">يكتب الطالب إجابته، ويصححها المعلم أو المشرف من «النتائج والتصحيح».</div>';
+      $$('[data-tf]', root).forEach(b => b.onclick = () => { v.answer = b.dataset.tf === '1'; $$('[data-tf]', root).forEach(x => x.setAttribute('aria-pressed', x === b)); }); };
+    body();
+    $$('[data-k]', root).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', root).forEach(x => x.setAttribute('aria-pressed', x === b)); body(); });
+    $('#qBack', root).onclick = () => examQuestions(e);
+    $('#qSave', root).onclick = async () => {
+      const text = $('#qT', root).value.trim(); if (!text) return toast('اكتب نص السؤال', true);
+      let options = [], answer = null;
+      if (kind === 'mcq') { const all = $$('[data-o]', root).map(i => i.value.trim()); const chosen = +($('[name=qA]:checked', root)?.value ?? -1); if (!all[chosen]) return toast('اختر الإجابة الصحيحة من خيار مكتوب', true); options = all.filter(Boolean); answer = options.indexOf(all[chosen]); if (options.length < 2) return toast('اكتب خيارين على الأقل', true); }
+      else if (kind === 'tf') { if (v.answer !== true && v.answer !== false) return toast('اختر الإجابة: صح أو خطأ', true); answer = v.answer; }
+      else if (kind === 'short') answer = $('#qS', root).value.trim() || null;
+      const row = { exam_id: e.id, kind, text, options, answer, points: +$('#qP', root).value || 1, ...(q ? {} : { seq }) };
+      const { error } = q ? await db.from('exam_questions').update(row).eq('id', q.id) : await db.from('exam_questions').insert(row);
+      if (error) return toast(error.message, true); toast('حُفظ السؤال'); examQuestions(e);
+    };
+  });
+}
+function examResults(box, P, stages, X, att, waiting, referred) {
+  const exById = Object.fromEntries(X.exams.map(e => [e.id, e])), stById = Object.fromEntries(stages.map(s => [s.id, s]));
+  const wRows = waiting.map(h => { const s = D.studentById[h.student_id], st = stById[h.stage_id], e = X.examByStage[h.stage_id], mine = e ? att.filter(a => a.exam_id === e.id && a.student_id === h.student_id) : [];
+    return { h, s, st, e, name: s.name, teacher: s.teacher, stage: st?.name || '—', since: h.hold_from, days: A.daysBetween(h.hold_from, TODAY), tries: mine.length, ref: referred.includes(h), pend: mine.some(a => a.status !== 'graded') }; });
+  const aRows = att.map(a => { const e = exById[a.exam_id], s = D.studentById[a.student_id] || {}; return { a, e, name: s.name || '—', teacher: s.teacher || '—', exam: e?.title || '—', no: a.attempt_no, date: (a.submitted_at || a.started_at || '').slice(0, 10), status: ATT_ST[a.status][0], score: a.score == null ? null : +a.score, res: a.status !== 'graded' ? '—' : a.passed ? 'مجتاز' : 'غير مجتاز' }; })
+    .filter(r => !EX.status || r.a.status === EX.status);
+  box.innerHTML = `<div class="card c-amber" style="margin-bottom:10px"><div class="head"><h3>بانتظار الاختبار</h3><span class="hint">طلاب توقفت خطتهم حتى يجتازوا اختبار المرحلة</span></div><div id="wTbl"></div></div>
+    <div class="card c-blue" id="aCard"><div class="head"><h3>المحاولات</h3><div class="row" style="gap:6px"><select id="aSt" style="width:auto"><option value="">كل الحالات</option>${Object.entries(ATT_ST).map(([k, v]) => opt(k, v[0], EX.status === k)).join('')}</select><button class="btn ghost sm" id="aExp">تصدير</button></div></div><div id="aTbl"></div></div>`;
+  dataTable($('#wTbl'), { rows: wRows, sortKey: 'days', dir: -1, pageSize: 100, cols: [
+    { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'stage', label: 'المرحلة', filter: true }, { key: 'since', label: 'منذ', html: r => A.greg(r.since) }, { key: 'days', label: 'أيام', num: true },
+    { key: 'tries', label: 'المحاولات', num: true, html: r => `${r.tries}${r.e ? ' من ' + r.e.max_attempts : ''}` },
+    { key: 'ref', label: 'الحالة', html: r => !r.e ? '<span class="pill bad">لا يوجد اختبار للمرحلة</span>' : r.ref ? '<span class="pill bad">محال للمشرف</span>' : r.pend ? '<span class="pill warn">بانتظار التصحيح</span>' : r.e.mode === 'oral' ? '<span class="pill info">ينتظر الاختبار الشفهي</span>' : '<span class="pill info">ينتظر أن يختبر</span>' },
+    { key: 'act', label: '', html: r => r.e ? `<span class="opts">${r.e.mode === 'oral' || r.ref ? `<button class="btn sm" data-oral="${r.h.student_id}|${r.e.id}">رصد نتيجة</button>` : ''}${r.ref ? `<button class="btn sm gold" data-grant="${r.h.student_id}|${r.e.id}">منح محاولة</button>` : ''}</span>` : '' }],
+    after: root => {
+      $$('[data-oral]', root).forEach(b => b.onclick = () => { const [sid, eid] = b.dataset.oral.split('|'); oralForm(D.studentById[sid], exById[eid]); });
+      $$('[data-grant]', root).forEach(b => b.onclick = async () => { const [sid, eid] = b.dataset.grant.split('|'); if (!await confirmBox('منح الطالب محاولة جديدة؟ تُحذف آخر محاولة غير مجتازة له، ويبقى أثرها في التصدير السابق فقط.', 'منح')) return;
+        const last = att.filter(a => a.exam_id === eid && a.student_id === sid).sort((x, y) => (y.started_at || '').localeCompare(x.started_at || ''))[0];
+        const { error } = await db.from('exam_attempts').delete().eq('id', last.id); if (error) return toast(error.message, true); toast('مُنح محاولة جديدة'); route(); });
+    } });
+  const tbl = dataTable($('#aTbl'), { rows: aRows, sortKey: 'date', dir: -1, pageSize: 200, cols: [
+    { key: 'date', label: 'التاريخ', html: r => r.date ? A.greg(r.date) : '—' }, { key: 'name', label: 'الطالب' }, { key: 'teacher', label: 'المعلم', filter: true }, { key: 'exam', label: 'الاختبار', filter: true }, { key: 'no', label: 'المحاولة', num: true },
+    { key: 'status', label: 'الحالة', filter: true, html: r => `<span class="pill ${ATT_ST[r.a.status][1]}">${r.status}</span>` }, { key: 'score', label: 'الدرجة ٪', num: true, html: r => r.score == null ? '—' : fmtNum(r.score, 1) },
+    { key: 'res', label: 'النتيجة', filter: true, html: r => r.res === 'مجتاز' ? '<span class="pill ok">مجتاز</span>' : r.res === 'غير مجتاز' ? '<span class="pill bad">غير مجتاز</span>' : '—' },
+    { key: 'act', label: '', html: r => r.a.status !== 'in_progress' && r.e?.mode === 'online' ? `<button class="btn sm${r.a.status === 'submitted' ? '' : ' ghost'}" data-grade="${r.a.id}">${r.a.status === 'submitted' ? 'تصحيح' : 'عرض'}</button>` : '' }],
+    after: root => $$('[data-grade]', root).forEach(b => b.onclick = () => gradeForm(b.dataset.grade)) });
+  $('#aSt').onchange = ev => { EX.status = ev.target.value; route(); };
+  $('#aExp').onclick = () => A.exportXlsx('نتائج الاختبارات - ' + P.name, 'النتائج', [['التاريخ', r => r.date], ['الطالب', r => r.name], ['المعلم', r => r.teacher], ['الاختبار', r => r.exam], ['المحاولة', r => r.no], ['الحالة', r => r.status], ['الدرجة ٪', r => r.score], ['النتيجة', r => r.res]], tbl.getRows());
+  cardFull($('#aCard'));
+}
+function oralForm(s, e) {
+  drawer(`رصد نتيجة ${e.title}: ${s.name}`, `<div class="stack"><label class="f">الدرجة ٪ <span class="hint">النجاح من ${+e.pass_score}٪</span><input id="oS" type="number" min="0" max="100" step="0.5"></label>
+    <label class="f">ملاحظات<textarea id="oN"></textarea></label><button class="btn" id="oGo">حفظ النتيجة</button></div>`, root => {
+    $('#oGo', root).onclick = async () => { const v = $('#oS', root).value; if (v === '') return toast('اكتب الدرجة', true);
+      const { error } = await db.rpc('oral_result', { p_exam: e.id, p_student: s.id, p_score: +v, p_notes: $('#oN', root).value.trim() || null }); if (error) return toast(error.message, true);
+      const ok = +v >= +e.pass_score; notify([s.user_id], 'exam', ok ? 'اجتزت ' + e.title : 'نتيجة ' + e.title, `درجتك ${v}٪. ${ok ? 'استُؤنفت خطتك، وتظهر مهامك من جديد.' : 'لم تجتز هذه المرة، وراجع إدارة البرنامج.'}`, ['inbox', 'push']).catch(() => {});
+      toast(ok ? 'اجتاز، واستُؤنفت خطته' : 'سُجّلت النتيجة: غير مجتاز'); closeDrawer(); route(); };
+  });
+}
+async function gradeForm(id) {
+  const [{ data: a }, { data: paper }] = await Promise.all([db.from('exam_attempts').select('*').eq('id', id).single(), db.rpc('exam_paper', { p_attempt: id })]);
+  const { data: qs } = await db.from('exam_questions').select('*').in('id', (a.questions || []));
+  const qById = Object.fromEntries((qs || []).map(q => [q.id, q])), s = D.studentById[a.student_id] || {};
+  const order = (paper?.questions || []).map(q => qById[q.id]).filter(Boolean);
+  const show = (q, ans) => ans == null || ans === '' ? '<span class="muted">لم يُجب</span>' : q.kind === 'mcq' ? esc(q.options[ans] ?? '') : q.kind === 'tf' ? (ans ? 'صح' : 'خطأ') : esc(ans);
+  drawer(`${paper?.title || 'اختبار'}: ${s.name || ''} · المحاولة ${a.attempt_no}`, `<div class="stack">
+    ${a.notes ? `<div class="hintbox">${esc(a.notes)}</div>` : ''}
+    ${order.map((q, i) => { const mk = a.marks?.[q.id], manual = q.kind === 'essay' || (q.kind === 'short' && !q.answer); return `<div class="hist"><b>${i + 1}. ${esc(q.text)}</b> <span class="hint">(${+q.points} درجة)</span>
+      <div class="small">إجابة الطالب: ${show(q, a.answers?.[q.id])}</div>${!manual ? `<div class="small muted">الصحيح: ${q.kind === 'mcq' ? esc(q.options[q.answer] ?? '') : q.kind === 'tf' ? (q.answer ? 'صح' : 'خطأ') : esc(q.answer)}</div>` : ''}
+      <label class="f small" style="max-width:180px">الدرجة الممنوحة <input type="number" min="0" max="${+q.points}" step="0.25" data-mk="${q.id}" value="${mk ?? ''}" ${manual ? '' : ''}></label></div>`; }).join('')}
+    <label class="f">ملاحظات<textarea id="gN">${esc(a.notes || '')}</textarea></label>
+    <button class="btn" id="gGo">${a.status === 'graded' ? 'حفظ التعديل' : 'اعتماد التصحيح'}</button></div>`, root => {
+    $('#gGo', root).onclick = async () => {
+      const marks = {}; let miss = false; $$('[data-mk]', root).forEach(i => { if (i.value === '') miss = true; else marks[i.dataset.mk] = Math.min(+i.max, Math.max(0, +i.value)); });
+      if (miss) return toast('أعطِ درجة لكل سؤال (صفر إن كانت خاطئة)', true);
+      const { error } = await db.rpc('grade_attempt', { p_attempt: id, p_marks: marks, p_notes: $('#gN', root).value.trim() || null }); if (error) return toast(error.message, true);
+      const { data: r2 } = await db.from('exam_attempts').select('score, passed').eq('id', id).single();
+      if (s.user_id && r2) notify([s.user_id], 'exam', r2.passed ? 'اجتزت ' + (paper?.title || 'الاختبار') : 'نتيجة ' + (paper?.title || 'الاختبار'), `درجتك ${fmtNum(r2.score, 1)}٪. ${r2.passed ? 'استُؤنفت خطتك، وتظهر مهامك من جديد.' : 'لم تجتز هذه المرة.'}`, ['inbox', 'push']).catch(() => {});
+      toast('اعتُمد التصحيح'); closeDrawer(); route();
+    };
+  });
+}
 
 // ============ لوحة الشرف ============
 SECTIONS.honor = async el => {
@@ -990,7 +1209,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127j&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127k&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
@@ -1327,7 +1546,7 @@ SECTIONS.summary = async el => {
   const progs = {}; for (const id of planIds) progs[id] = await planProgress(id);
   if (!el.isConnected) return;
   const { data: lv } = await db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').lte('date_from', to).gte('date_to', from);
-  const leaveOn = (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d);
+  const leaveOn = (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d) || !!A.holdOn(D.studentById[sid]?.assign, d);
   const allDates = datesBetween(from, to);
 
   const rows = studs.map(s => {
@@ -1376,10 +1595,12 @@ SECTIONS.summary = async el => {
   const pcs = {}; for (const id of planIds) { const { data } = await db.rpc('plan_commitment', { p_plan: id, p_from: from, p_to: to, p_student: null }); (data || []).forEach(r => pcs[r.student_id] = r); }
   if (!el.isConnected) return;
   rows.forEach(o => { const r = pcs[o.s.id]; o.commit = r?.iltizam == null ? null : Math.round(+r.iltizam); o.dabt = r?.dabt == null ? null : Math.round(+r.dabt); o.basis = ''; });
+  const exA = await fetchAll(() => db.from('exam_attempts').select('student_id, passed, status, submitted_at').eq('status', 'graded'));
+  rows.forEach(o => { const m = exA.filter(a => a.student_id === o.s.id && (a.submitted_at || '').slice(0, 10) >= from && (a.submitted_at || '').slice(0, 10) <= to); o.exams = m.length; o.examsPassed = m.filter(a => a.passed).length; });
   const sum = k => rows.reduce((a, r) => a + (r[k] || 0), 0);
   const avgOf = k => { const v = rows.map(r => r[k]).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null; };
   $('#sKpi').innerHTML = `<div class="minis">${mini('الطلاب', fmtNum(rows.length), 'slate')}${mini('أحاديث الحفظ', fmtNum(sum('memo')), 'green')}${mini('الربط', fmtNum(sum('link')), 'teal')}${mini('المراجعة', fmtNum(sum('review')), 'blue')}${mini('مرات التكرار', fmtNum(sum('repeat')), 'violet')}${mini('أحاديث مسمَّعة', fmtNum(sum('recited')), 'amber')}
-    ${mini('متوسط الالتزام', avgOf('commit') == null ? '—' : avgOf('commit') + '٪', 'teal')}${mini('متوسط الضبط', avgOf('dabt') == null ? '—' : avgOf('dabt') + '٪', 'violet')}</div>`;
+    ${mini('متوسط الالتزام', avgOf('commit') == null ? '—' : avgOf('commit') + '٪', 'teal')}${mini('متوسط الضبط', avgOf('dabt') == null ? '—' : avgOf('dabt') + '٪', 'violet')}${mini('الاختبارات', fmtNum(sum('exams')), 'amber', sum('exams') ? 'نسبة الاجتياز ' + Math.round(sum('examsPassed') / sum('exams') * 100) + '٪' : '')}</div>`;
   const pctColor = v => v >= 90 ? 'var(--green)' : v >= 70 ? 'var(--teal)' : v >= 50 ? '#9A6A08' : 'var(--red)';
   const pctHtml = v => v == null ? '—' : `<b style="color:${pctColor(v)}">${v}٪</b>`;
   const n0 = k => ({ key: k, num: true, html: x => x[k] == null ? '—' : fmtNum(x[k]) });
@@ -1388,14 +1609,14 @@ SECTIONS.summary = async el => {
     { ...n0('memo'), label: 'الحفظ' }, { ...n0('link'), label: 'الربط' }, { ...n0('review'), label: 'المراجعة' }, { ...n0('repeat'), label: 'التكرار' },
     { ...n0('recited'), label: 'التسميع' }, { key: 'memorized', label: 'المحفوظ المسمَّع', num: true, html: x => fmtNum(x.memorized, 1) },
     { key: 'avg', label: 'متوسط الدرجة', num: true, html: x => x.avg == null ? '—' : fmtNum(x.avg, 2) },
-    { key: 'commit', label: 'الالتزام', num: true, html: x => pctHtml(x.commit) }, { key: 'dabt', label: 'الضبط', num: true, html: x => pctHtml(x.dabt) },
+    { key: 'commit', label: 'الالتزام', num: true, html: x => pctHtml(x.commit) }, { key: 'dabt', label: 'الضبط', num: true, html: x => pctHtml(x.dabt) }, { key: 'exams', label: 'الاختبارات', num: true, html: x => x.exams ? `${x.examsPassed}/${x.exams} <span class="hint">مجتاز</span>` : '—' },
     { ...n0('recDays'), label: 'أيام التسميع' }, { ...n0('execDays'), label: 'أيام التنفيذ' }, { ...n0('excused'), label: 'الاستئذان' },
     { key: 'absent', label: 'الغياب', num: true, html: x => x.absent ? `<b style="color:var(--red)">${x.absent}</b>` : '0' },
     { key: 'last', label: 'آخر رصد', html: x => x.last ? A.greg(x.last) : '—' }] });
   $('#sExport').onclick = () => A.exportXlsx(`التقرير الإجمالي - ${from} إلى ${to}`, 'التقرير الإجمالي', [
     ['الطالب', x => x.name], ['البريد', x => x.email], ['البرنامج', x => x.program], ['المعلم', x => x.teacher], ['الفترة', x => x.room], ['الجنس', x => x.gender], ['الجنسية', x => x.nat],
     ['الحفظ', x => x.memo], ['الربط', x => x.link], ['المراجعة', x => x.review], ['التكرار', x => x.repeat], ['التسميع', x => x.recited], ['المحفوظ المسمَّع', x => x.memorized],
-    ['متوسط الدرجة', x => x.avg == null ? null : +x.avg.toFixed(2)], ['نسبة التسميع ٪', x => x.recPct], ['نسبة التنفيذ ٪', x => x.exPct], ['الالتزام ٪', x => x.commit], ['الضبط ٪', x => x.dabt],
+    ['متوسط الدرجة', x => x.avg == null ? null : +x.avg.toFixed(2)], ['نسبة التسميع ٪', x => x.recPct], ['نسبة التنفيذ ٪', x => x.exPct], ['الالتزام ٪', x => x.commit], ['الضبط ٪', x => x.dabt], ['اختبارات', x => x.exams], ['اختبارات مجتازة', x => x.examsPassed],
     ['أيام التسميع', x => x.recDays], ['أيام التنفيذ', x => x.execDays], ['الاستئذان', x => x.excused], ['الغياب', x => x.absent], ['آخر رصد', x => x.last]], tbl.getRows());
 };
 
@@ -1566,7 +1787,7 @@ async function renderCal(el, P, view, studs, title) {
   $('#fTitle').textContent = `${A.greg(first)} – ${A.greg(last)}`;
   $('#fHint').textContent = 'اضغط على أي خانة لتفاصيل اليوم، وعلى اسم الطالب لملفه وتقويمه الشهري (التسميع والتنفيذ معًا)';
   const { data: lv } = await db.from('leave_requests').select('student_id, date_from, date_to').eq('status', 'approved').lte('date_from', last).gte('date_to', first);
-  const ctx = { leaveOn: (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d), hasExec, tasksE, nDays: Object.keys(P.days).length, prog: hasExec ? await planProgress(P.id) : {} };
+  const ctx = { leaveOn: (sid, d) => (lv || []).some(l => l.student_id === sid && l.date_from <= d && l.date_to >= d) || !!A.holdOn(D.studentById[sid]?.assign, d), hasExec, tasksE, nDays: Object.keys(P.days).length, prog: hasExec ? await planProgress(P.id) : {} };
   if (!el.isConnected) return;
   const dates = datesBetween(first, last);
   const grid = studs.slice().sort((a, b) => a.name.localeCompare(b.name, 'ar')).map(s => ({ s, days: dates.map(d => dayState(s, P, d, ctx)) }));
@@ -1610,7 +1831,7 @@ async function studentMonth(s, P, month) {
     hasExec ? db.from('plan_progress').select('plan_day_id, column_id').eq('student_id', s.id).then(r => r.data || []) : []]);
   const dayOf = {}; Object.values(P.days).forEach(d => dayOf[d.id] = d.day_number);
   const mine = {}; prog.forEach(x => { const dn = dayOf[x.plan_day_id]; if (dn != null) (mine[dn] ||= new Set()).add(x.column_id); });
-  const ctx = { leaveOn: (sid, d) => (lv || []).some(l => l.date_from <= d && l.date_to >= d), hasExec, tasksE, nDays: Object.keys(P.days).length, prog: { [s.id]: mine } };
+  const ctx = { leaveOn: (sid, d) => (lv || []).some(l => l.date_from <= d && l.date_to >= d) || !!A.holdOn(s.assign, d), hasExec, tasksE, nDays: Object.keys(P.days).length, prog: { [s.id]: mine } };
   const dates = datesBetween(first, last);
   return { dates, days: dates.map(d => dayState(s, P, d, ctx)) };
 }
