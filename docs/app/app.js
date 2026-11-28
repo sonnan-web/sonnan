@@ -481,7 +481,12 @@
     bell: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16V11a6 6 0 1 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>',
     logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4"/><path d="M14 4v16"/><path d="M10 12H3"/><path d="M6 9l-3 3 3 3"/></svg>'
   };
-  async function unreadCount() { const { count } = await db.from('notifications').select('id', { count: 'exact', head: true }).eq('channel', 'inbox').is('read_at', null); return count || 0; }
+  // صندوق المستخدم نفسه فقط (المشرف يملك قراءة كل الإشعارات)، والمجدول لا يظهر قبل موعده
+  const myUid = async () => (await db.auth.getSession()).data.session?.user?.id;
+  const myInbox = (q, uid) => q.eq('channel', 'inbox').eq('recipient_user_id', uid).in('status', ['sent', 'queued']);
+  async function unreadCount() { const uid = await myUid(); if (!uid) return 0; const { count } = await myInbox(db.from('notifications').select('id', { count: 'exact', head: true }), uid).is('read_at', null); return count || 0; }
+  // النص مع الروابط قابلة للضغط
+  const linkify = t => esc(t || '').replace(/(https?:\/\/[^\s<]+[^\s<.,،؛:!?)])/g, u => `<a href="${u}" target="_blank" rel="noopener" style="word-break:break-all">${u}</a>`).replace(/\n/g, '<br>');
   async function topIcons(container, { profileHash = 'profile' } = {}) {
     container.innerHTML = `<a class="icbtn" href="#${profileHash}" title="ملفي الشخصي" aria-label="ملفي الشخصي">${ICON.user}</a>
       <button class="icbtn" type="button" id="bellBtn" title="الإشعارات" aria-label="الإشعارات">${ICON.bell}<span class="dotn" id="bellN" hidden></span></button>
@@ -492,9 +497,9 @@
   }
   async function refreshBell() { const n = await unreadCount(); const b = $('#bellN'); if (b) { b.textContent = n > 99 ? '99+' : n; b.hidden = !n; } }
   async function openInbox() {
-    const { data } = await db.from('notifications').select('*').eq('channel', 'inbox').order('created_at', { ascending: false }).limit(150);
+    const uid = await myUid(); const { data } = await myInbox(db.from('notifications').select('*'), uid).order('created_at', { ascending: false }).limit(150);
     drawer('الإشعارات', `<div class="row" style="justify-content:flex-end"><button class="btn ghost sm" id="inAll">تعليم الكل كمقروء</button></div>
-      <div class="card">${(data || []).map(n => `<div class="inbox-item${n.read_at ? ' read' : ''}" data-id="${n.id}"><span class="dot"></span><div><div class="row"><b>${esc(n.title)}</b><span class="small muted">${greg(n.created_at.slice(0, 10))}</span></div><p class="small" style="margin-top:3px;line-height:1.8">${esc(n.body)}</p></div></div>`).join('') || '<div class="empty">لا توجد إشعارات</div>'}</div>`, root => {
+      <div class="card">${(data || []).map(n => `<div class="inbox-item${n.read_at ? ' read' : ''}" data-id="${n.id}"><span class="dot"></span><div><div class="row"><b>${esc(n.title)}</b><span class="small muted">${greg(n.created_at.slice(0, 10))}</span></div><p class="small" style="margin-top:3px;line-height:1.8">${linkify(n.body)}</p>${n.link ? `<a class="btn ghost sm" href="${esc(n.link)}" target="_blank" rel="noopener" style="margin-top:4px">فتح الرابط</a>` : ''}</div></div>`).join('') || '<div class="empty">لا توجد إشعارات</div>'}</div>`, root => {
       const mark = async ids => { if (!ids.length) return; await db.from('notifications').update({ read_at: new Date().toISOString() }).in('id', ids); ids.forEach(id => $(`.inbox-item[data-id="${id}"]`, root)?.classList.add('read')); refreshBell(); };
       $$('.inbox-item:not(.read)', root).forEach(i => i.onclick = () => mark([i.dataset.id]));
       $('#inAll', root).onclick = () => mark((data || []).filter(n => !n.read_at).map(n => n.id));
@@ -833,7 +838,7 @@
     document.body.appendChild(dl);
   });
 
-  window.App = { exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
+  window.App = { SUPABASE_URL, SUPABASE_KEY, exportXlsx, recordWidget, loadPlansFull, setupPWA, installSheet, pushSheet, enablePush, pushState, isIOS, isAndroid, isMobile, isStandalone, donut, tally, PALETTE, topIcons, refreshBell, openInbox, profileSection, ICON, db, $, $$, esc, norm, fmtNum, todayMakkah, nowMakkahHM, dowMakkah, addDays, daysBetween, hijri, greg, dayName, DAYS, workdaysBetween,
     STATUS, statusPill, STU_STATUS, toast, fetchAll, requireRole, homeOf, logout, dataTable, fullscreenBtn, drawer, closeDrawer, confirmBox,
-    unionCount, planDayFor, loadTimeline, tlAt, dueRange, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, finishDate, finishText, stumbleInfo, discRules, periodFor, periodName, ladder, discStatus, leaveInfo, ordinal, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
+    linkify, unionCount, planDayFor, loadTimeline, tlAt, dueRange, holdOn, stageBounds, stageStatus, stagePanelHtml, studentPanel, finishDate, finishText, stumbleInfo, discRules, periodFor, periodName, ladder, discStatus, leaveInfo, ordinal, BASIS, isRecitationDay, TASKS, taskName, groupTasks, fmtTaskVal, taskAmount, taskDetails, normWeights, taskWeight, gradeWeight, isViewOnly, gradedTasks, commitParties, commitTasks, dayDegrees, execTasks, dayExec, sessionScore, svg };
 })();

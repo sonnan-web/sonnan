@@ -14,9 +14,9 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127u">
+<link rel="stylesheet" href="app.css?v=20261128a">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="app.js?v=20261127u"></script>
+<script src="app.js?v=20261128a"></script>
 <style>
 /* تصميم الجوال أولًا: بطاقات مضغوطة، مهام اليوم في الأعلى، والتنقل أسفل الشاشة */
 body{font-size:14px;-webkit-tap-highlight-color:transparent}
@@ -96,7 +96,7 @@ const [asg, ra, recsR, teacherR, memR, unread] = await Promise.all([
   db.from('plan_recitations').select('*').eq('student_id', stu.id).is('superseded_by', null).order('rec_date', { ascending: false }).limit(1000),
   stu.teacher_id ? db.from('teachers').select('user_id').eq('id', stu.teacher_id).maybeSingle() : Promise.resolve({ data: null }),
   db.rpc('memorized_of', { p_student: stu.id }),
-  db.from('notifications').select('id', { count: 'exact', head: true }).eq('channel', 'inbox').is('read_at', null)
+  db.from('notifications').select('id', { count: 'exact', head: true }).eq('channel', 'inbox').in('status', ['sent', 'queued']).is('read_at', null)
 ]);
 const recs = recsR.data || [];
 let teacherName = '—';

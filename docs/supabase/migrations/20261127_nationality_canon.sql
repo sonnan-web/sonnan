@@ -186,3 +186,8 @@ update public.plan_columns set graded = counts where graded = false and counts;
 -- نظام التنبيهات والإنذارات: discipline_events.track (recitation/execution) و seq و plan_id، وفهرس فريد (student_id, kind, track, event_date)
 -- track_stumbles_core / track_stumbles: أيام التعثر لكل مسار (يوم لم يُرصد فيه شيء نهائيًا)، والاستئذان الزائد على الحد في كل مدة يُحسب تعثرًا
 -- disc_period_key: مفتاح مدة العدّ. plan_metrics.stumbles = أيام التعثر في أي مسار — انظر migrations: discipline_tracks, track_stumbles_leave_over_limit
+
+-- نظام الإشعارات: notifications.scheduled_at/batch_id/template_id/action_id وحالات scheduled/sending/cancelled،
+-- notification_templates و notification_rule_log، والدوال release_scheduled_notifications (كل دقيقة) و run_notification_rules (كل ساعة)
+-- و fill_template و rule_matches و cancel_scheduled_notifications، والبريد عبر Google Apps Script: email_secret_create و email_status و email_claim و email_done
+-- انظر migrations: notifications_system, notifications_cancel_scheduled

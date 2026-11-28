@@ -14,10 +14,10 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap">
-<link rel="stylesheet" href="app.css?v=20261127u">
+<link rel="stylesheet" href="app.css?v=20261128a">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="app.js?v=20261127u"></script>
+<script src="app.js?v=20261128a"></script>
 <style>
 .plan-frame{width:100%;min-height:80vh;border:0;border-radius:12px;background:transparent}
 .cols-chart{display:flex;gap:3px;height:150px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
@@ -913,12 +913,14 @@ async function decideLeave(id, status) {
 }
 
 // ============ الإشعارات: كل رسالة تُسجَّل لكل قناة، وتُرسل البريد والجوال لاحقًا دالة خادم ============
-async function notify(userIds, kind, title, body, channels, dedupe) {
-  const rows = [];
-  userIds.forEach(u => channels.forEach(ch => rows.push({ recipient_user_id: u, channel: ch, kind, title, body, created_by: me.id, status: ch === 'inbox' ? 'sent' : 'queued', sent_at: ch === 'inbox' ? new Date().toISOString() : null, dedupe_key: dedupe ? `${dedupe}:${u}:${ch}` : null })));
+// opts: link، at (موعد الإرسال)، batch، template، action، per (دالة تعيد عنوانًا ونصًا مخصّصًا لكل مستلم)
+async function notify(userIds, kind, title, body, channels, dedupe, opts) {
+  opts = opts || {}; const rows = [], batch = opts.batch || crypto.randomUUID(), later = opts.at && new Date(opts.at) > new Date(Date.now() + 60000);
+  userIds.forEach(u => { const t = opts.per ? opts.per(u) : { title, body }; channels.forEach(ch => rows.push({ recipient_user_id: u, channel: ch, kind, title: t.title, body: t.body, link: opts.link || null, created_by: me.id,
+    status: later ? 'scheduled' : ch === 'inbox' ? 'sent' : 'queued', scheduled_at: later ? new Date(opts.at).toISOString() : null, sent_at: !later && ch === 'inbox' ? new Date().toISOString() : null,
+    batch_id: batch, template_id: opts.template || null, action_id: opts.action || null, dedupe_key: dedupe ? `${dedupe}:${u}:${ch}` : null })); });
   for (let i = 0; i < rows.length; i += 500) { const { error } = await db.from('notifications').upsert(rows.slice(i, i + 500), { onConflict: 'dedupe_key', ignoreDuplicates: true }); if (error) throw error; }
-  // إرسال إشعارات الجوال فورًا (ودالة الخادم تعيد المحاولة كل دقيقة أيضًا)
-  if (channels.includes('push')) db.functions.invoke('send-push', { body: {} }).catch(() => {});
+  if (!later && channels.includes('push')) db.functions.invoke('send-push', { body: {} }).catch(() => {});
   return rows.length;
 }
 
@@ -1040,13 +1042,13 @@ function issueEvent(s, P, item, st) {
   const title = item.kind === 'dismissal' ? `إحالة للفصل (${tn})` : `${item.label} (${tn})`;
   drawer(`إصدار ${title}: ${s.name}`, `<p class="small">أيام التعثر في ${esc(st.per.label)}: ${days || 'لا يوجد'}</p>
     <label class="f" for="eR">السبب (يصل للطالب)<textarea id="eR">${item.track === 'execution' ? 'عدم تنفيذ المهام المطلوبة في الخطة' : 'التغيب عن التسميع دون استئذان'} (${t?.n || 0} ${(t?.n || 0) > 2 && (t?.n || 0) < 11 ? 'أيام' : 'يوم'} في ${esc(st.per.label)})${days ? ': ' + days : ''}</textarea></label>
-    <div class="chips"><label title="لم تُربط خدمة إرسال البريد بعد"><input type="checkbox" disabled>البريد (غير مفعّل بعد)</label><label><input type="checkbox" id="ePush"${item.kind === 'dismissal' ? '' : ' checked'}>إشعار للطالب (المنصة والجوال)</label></div>
+    <div class="chips"><label><input type="checkbox" id="ePush"${item.kind === 'dismissal' ? '' : ' checked'}>إشعار للطالب (المنصة والجوال)</label><label title="يُرسل عبر سكربت Google بعد ربط البريد من «الإشعارات ← البريد»"><input type="checkbox" id="eMail">البريد أيضًا</label></div>
     <button class="btn ${item.kind === 'alert' ? '' : 'danger'}" id="eGo">إصدار ${esc(title)}</button>`, root => {
     $('#eGo', root).onclick = async () => {
       const reason = $('#eR', root).value.trim();
       const { data, error } = await db.from('discipline_events').insert({ student_id: s.id, plan_id: P.id, kind: item.kind, track: item.track, seq: item.seq, event_date: TODAY, reason, details: { stumble_dates: t?.dates || [], period: st.per.label }, created_by: me.id }).select('id').single();
       if (error) return toast(error.code === '23505' ? 'صدر لهذا الطالب ' + KIND[item.kind] + ' في هذا المسار اليوم' : error.message, true);
-      if ($('#ePush', root).checked) await notify([s.user_id], 'discipline_' + item.kind, title + ' من إدارة البرنامج', reason, ['inbox', 'push'], 'disc:' + data.id);
+      if ($('#ePush', root).checked || $('#eMail', root).checked) await notify([s.user_id], 'discipline_' + item.kind, title + ' من إدارة البرنامج', reason, ['inbox', ...($('#ePush', root).checked ? ['push'] : []), ...($('#eMail', root).checked ? ['email'] : [])], 'disc:' + data.id);
       toast('صدر ' + title + ($('#ePush', root).checked ? ' وأُشعر الطالب' : '')); closeDrawer(); D.tracks = null; route();
     };
   });
@@ -1313,7 +1315,7 @@ async function actionPopup(s, kind, P, reasonGiven) {
       if (!caseId) { const { data, error } = await db.from('follow_up_actions').insert({ student_id: s.id, case_date: date, reason: reasonV || null, status, contact_date: date, contact_method: method, created_by: me.id }).select('id').single(); if (error) return toast(error.message, true); caseId = data.id; }
       else { const { error } = await db.from('follow_up_actions').update({ status }).eq('id', caseId); if (error) return toast(error.message, true); }
       const { error } = await db.from('follow_up_contacts').insert({ action_id: caseId, contact_date: date, method, summary: summary || reasonV || null, reply: reply || null, created_by: me.id }); if (error) return toast(error.message, true);
-      if (method === 'إشعار في المنصة' && summary && s.user_id) notify([s.user_id], 'follow_up', 'رسالة من إدارة البرنامج', summary, ['inbox', 'push']).catch(() => {});
+      if ((method === 'إشعار في المنصة' || method === 'بريد إلكتروني') && summary && s.user_id) notify([s.user_id], 'follow_up', 'رسالة من إدارة البرنامج', summary, method === 'بريد إلكتروني' ? ['email', 'inbox'] : ['inbox', 'push'], null, { action: caseId }).catch(() => {});
       toast('سُجّل الإجراء في سجل الإجراءات'); closeDrawer();
     };
   });
@@ -1392,7 +1394,8 @@ SECTIONS.actions = async el => {
     const CH = { inbox: 'صندوق المنصة', push: 'إشعار الجوال', email: 'بريد إلكتروني' }, NST = { sent: ['أُرسل', 'ok'], queued: ['في الانتظار', 'warn'], failed: ['فشل', 'bad'], skipped: ['لم يُرسل', 'plain'] };
     const rows = [...X.nt.map(n => ({ date: n.created_at, name: userName(n.recipient_user_id), channel: CH[n.channel] || n.channel, title: n.title, body: n.body || '', st: n.status, read: n.read_at, err: n.error, src: 'المنصة' })),
       ...X.fc.filter(c => c.method === 'واتساب').map(c => { const f = X.fa.find(x => x.id === c.action_id); return { date: c.created_at, name: D.studentById[f?.student_id]?.name || '—', channel: 'واتساب', title: f?.reason || 'متابعة', body: c.summary || '', st: 'sent', src: 'يدوي' }; })];
-    $('#acTools').innerHTML = '<button class="btn ghost sm" id="acExp">تصدير</button>';
+    $('#acTools').innerHTML = '<a class="btn ghost sm" href="#notify" id="acArch">الأرشيف الشامل للإشعارات</a><button class="btn ghost sm" id="acExp">تصدير</button>';
+    $('#acArch').onclick = () => { NT.tab = 'archive'; };
     const tbl = dataTable($('#acTbl'), { rows, sortKey: 'date', dir: -1, pageSize: 200, cols: [
       { key: 'date', label: 'التاريخ', html: r => A.greg(r.date.slice(0, 10)) + `<div class="hint">${new Date(r.date).toLocaleTimeString('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit' })}</div>` },
       { key: 'name', label: 'المستلم' }, { key: 'channel', label: 'القناة', filter: true }, { key: 'title', label: 'العنوان' },
@@ -1447,7 +1450,7 @@ async function caseDrawer(c) {
     $('#cGo', root) && ($('#cGo', root).onclick = async () => {
       const msg = $('#cMsg', root).value.trim(), rep = $('#cRep', root).value.trim(); if (!msg) return toast('اكتب الرسالة أو خلاصة الإجراء', true);
       if (method === 'واتساب') { const l = waLink(s.phone, msg); if (!l) return toast('لا يوجد رقم جوال للطالب', true); window.open(l, '_blank', 'noopener'); }
-      if (method === 'إشعار في المنصة' || method === 'بريد إلكتروني') { if (!s.user_id) return toast('لا يوجد حساب للطالب', true); await notify([s.user_id], 'follow_up', 'رسالة من إدارة البرنامج', msg, method === 'بريد إلكتروني' ? ['email', 'inbox'] : ['inbox', 'push']); }
+      if (method === 'إشعار في المنصة' || method === 'بريد إلكتروني') { if (!s.user_id) return toast('لا يوجد حساب للطالب', true); await notify([s.user_id], 'follow_up', 'رسالة من إدارة البرنامج', msg, method === 'بريد إلكتروني' ? ['email', 'inbox'] : ['inbox', 'push'], null, { action: f.id }); }
       const { error } = await db.from('follow_up_contacts').insert({ action_id: f.id, method, summary: msg, reply: rep || null, created_by: me.id }); if (error) return toast(error.message, true);
       const nst = rep ? 'رد الطالب' : ($('#cWait', root).checked ? 'بانتظار رد الطالب' : 'مفتوحة');
       await db.from('follow_up_actions').update({ status: nst }).eq('id', f.id);
@@ -1486,7 +1489,7 @@ SECTIONS.plans = async el => {
   const edit = SECTIONS.plans.edit, tab = SECTIONS.plans.tab; SECTIONS.plans.edit = null; SECTIONS.plans.tab = null;
   if (edit) {
     el.innerHTML = `${secHead(edit === 'new' ? 'خطة جديدة' : tab === 'assign' ? 'إضافة طلاب للخطة' : 'تعديل الخطة', 'التعديلات لا تؤثر على ما رُصد سابقًا', 'gold', `<button class="btn ghost sm" id="back">رجوع لقائمة الخطط</button>`)}
-      <iframe class="plan-frame" id="pf" src="plans.html?v=20261127u&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
+      <iframe class="plan-frame" id="pf" src="plans.html?v=20261128a&embed=1&${edit === 'new' ? 'new=1' : 'id=' + encodeURIComponent(edit)}${tab ? '&tab=' + tab : ''}" title="محرر الخطة"></iframe>`;
     $('#back').onclick = () => route();
     const f = $('#pf');
     const fit = () => { try { f.style.height = Math.max(600, f.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) {} };
@@ -1678,49 +1681,286 @@ function roomForm(r) {
   });
 }
 
-// ============ الإشعارات ============
+// ============ الإشعارات: إرسال مباشر أو مجدول، وأرشيف شامل مع التصدير، وقوالب يدوية وتلقائية، وربط البريد ============
+const NT = { tab: 'send', tpl: '', from: '', to: '' };
+const NKIND = { manual: 'رسالة', auto: 'قالب تلقائي', leave_decided: 'قرار استئذان', discipline_alert: 'تنبيه', discipline_warning: 'إنذار', discipline_dismissal: 'إحالة للفصل', exam: 'اختبار', follow_up: 'إجراء مشرف' };
+const NCH = { inbox: 'داخل المنصة', push: 'إشعار الجوال', email: 'البريد' };
+const NST = { sent: ['وصل', 'ok'], queued: ['في الطريق', 'warn'], sending: ['يُرسل الآن', 'warn'], scheduled: ['مجدول', 'info'], failed: ['فشل', 'bad'], skipped: ['لا يوجد جهاز مفعّل', 'plain'], cancelled: ['أُلغي', 'plain'] };
+const TRIG = { manual: 'يدوي: تختاره عند الإرسال', stumbles: 'تلقائي: عند عدد أيام تعثر في المدة', stage_done: 'تلقائي: عند ختم مرحلة', achievement: 'تلقائي: عند بلوغ نسبة من الخطة', plan_done: 'تلقائي: عند ختم الخطة', inactive: 'تلقائي: عند الانقطاع عن التسميع' };
+const VARS = [['{الاسم}', 'الاسم الأول'], ['{الاسم_الكامل}', 'الاسم الكامل'], ['{الخطة}', 'الخطة'], ['{المعلم}', 'المعلم'], ['{الإنجاز}', 'مستوى الإنجاز'], ['{الالتزام}', 'الالتزام'], ['{الضبط}', 'الضبط'], ['{أيام_التعثر}', 'أيام التعثر'], ['{الباقي}', 'الباقي حتى الختم'], ['{التاريخ}', 'تاريخ اليوم']];
+const TRIG_VARS = { stumbles: [['{عدد_التعثر}', 'عدد التعثر في المدة']], stage_done: [['{المرحلة}', 'اسم المرحلة']], inactive: [['{أيام_الانقطاع}', 'أيام الانقطاع']] };
+const trigText = t => t.trigger === 'stumbles' ? `عند ${t.trigger_cfg?.count || 1} ${(t.trigger_cfg?.count || 1) > 2 && (t.trigger_cfg?.count || 1) < 11 ? 'أيام' : 'يوم'} تعثر${t.trigger_cfg?.track && t.trigger_cfg.track !== 'any' ? ' في ' + TRACK_NAME[t.trigger_cfg.track] : ''} في المدة`
+  : t.trigger === 'achievement' ? `عند بلوغ ${t.trigger_cfg?.pct || 50}٪ من الخطة` : t.trigger === 'inactive' ? `عند الانقطاع ${t.trigger_cfg?.days || 7} أيام` : t.trigger === 'manual' ? 'يدوي' : TRIG[t.trigger].replace('تلقائي: ', '');
+// تعبئة المتغيرات في المتصفح للإرسال اليدوي (والتلقائي يعبّئه الخادم بنفس المتغيرات)
+function fillVars(text, u, MX) {
+  const s = D.students.find(x => x.user_id === u), t = s ? null : D.teachers.find(x => x.user_id === u), m = s ? MX[s.id] : null, pc = v => v == null ? '—' : Math.round(+v) + '٪';
+  const name = s?.name || t?.name || D.userById[u]?.name || '';
+  const map = { '{الاسم}': name.split(' ')[0], '{الاسم_الكامل}': name, '{الخطة}': s?.plan || '', '{المعلم}': s?.teacher || '', '{الإنجاز}': pc(m?.ach), '{الالتزام}': pc(m?.iltizam), '{الضبط}': pc(m?.dabt), '{أيام_التعثر}': String(m?.stumbles ?? 0), '{الباقي}': m?.ach_left == null ? '—' : String(m.ach_left), '{التاريخ}': A.greg(TODAY) };
+  return String(text || '').replace(/\{[^{}\s]+\}/g, k => map[k] ?? k);
+}
+const insertAt = (ta, txt) => { const a = ta.selectionStart ?? ta.value.length, b = ta.selectionEnd ?? a; ta.value = ta.value.slice(0, a) + txt + ta.value.slice(b); ta.focus(); ta.selectionStart = ta.selectionEnd = a + txt.length; ta.dispatchEvent(new Event('input')); };
 SECTIONS.notify = async el => {
-  const { data: log } = await db.from('notifications').select('id, recipient_user_id, channel, kind, title, status, created_at, read_at').order('created_at', { ascending: false }).limit(1500);
-  const rows = (log || []).map(n => ({ n, date: n.created_at.slice(0, 10), who: D.userById[n.recipient_user_id]?.name || '—', title: n.title, kind: { manual: 'رسالة', leave_decided: 'قرار استئذان', discipline_alert: 'تنبيه', discipline_warning: 'إنذار' }[n.kind] || n.kind, channel: { inbox: 'داخل المنصة', email: 'بريد', push: 'جوال' }[n.channel], status: n.channel === 'inbox' ? (n.read_at ? 'مقروء' : 'لم يُقرأ') : { queued: 'بانتظار خدمة الإرسال', sent: 'أُرسل', failed: 'فشل', skipped: 'تُخطي' }[n.status] }));
-  el.innerHTML = `${secHead('الإشعارات', 'رسائل داخل المنصة، ومعها البريد وإشعار الجوال', 'blue')}
-    <div class="grid"><div class="card c-blue span5"><div class="head"><h3>رسالة جديدة</h3></div>
-      <label class="f" for="nAud">المستلمون<select id="nAud">${opt('all', 'كل الطلاب المنتظمين')}${opt('teacher', 'طلاب معلم')}${opt('room', 'طلاب فترة')}${opt('plan', 'طلاب خطة')}${opt('one', 'طالب واحد')}${opt('teachers', 'كل المعلمين')}${opt('oneTeacher', 'معلم واحد')}</select></label>
-      <div id="nSub" style="margin-top:8px"></div>
-      <label class="f" for="nT" style="margin-top:8px">العنوان<input id="nT" type="text"></label>
-      <label class="f" for="nB" style="margin-top:8px">النص<textarea id="nB"></textarea></label>
-      <div class="chips" style="margin-top:8px"><label><input type="checkbox" checked disabled>داخل المنصة</label><label title="لم تُربط خدمة إرسال البريد بعد"><input type="checkbox" id="nMail" disabled>بريد إلكتروني (غير مفعّل بعد)</label><label><input type="checkbox" id="nPush" checked>إشعار الجوال</label></div>
-      <p class="hint" style="margin-top:6px" id="nCount"></p>
-      <button class="btn" id="nGo" style="margin-top:8px">إرسال</button>
-      <div class="hintbox" style="margin-top:10px">الرسالة تظهر فورًا في صندوق الإشعارات داخل المنصة (رمز الجرس). «إشعار الجوال» يصل خلال دقيقة لمن فعّل الإشعارات على جواله من صفحته، ولمن لم يفعّلها يُسجَّل «لا يوجد جهاز مفعّل». البريد غير مفعّل حتى تُربط خدمة إرسال بريد.</div></div>
-      <div class="card span7" id="nCard"><div class="head"><h3>سجل الإشعارات</h3></div><div id="nTbl"></div></div></div>`;
+  el.innerHTML = `${secHead('الإشعارات', 'إرسال مباشر أو مجدول، وأرشيف شامل، وقوالب يدوية وتلقائية', 'blue')}
+    <div class="card" style="--a:var(--blue);margin-bottom:10px"><div class="seg">${[['send', 'إرسال إشعار'], ['archive', 'الأرشيف'], ['templates', 'القوالب'], ['email', 'البريد']].map(([k, l]) => `<button type="button" data-nt="${k}" aria-pressed="${NT.tab === k}">${l}</button>`).join('')}</div></div>
+    <div id="ntBody"><div class="loading">جارٍ التحميل…</div></div>`;
+  $$('[data-nt]', el).forEach(b => b.onclick = () => { NT.tab = b.dataset.nt; route(); });
+  const box = $('#ntBody', el);
+  if (NT.tab === 'archive') return ntArchive(box);
+  if (NT.tab === 'templates') return ntTemplates(box);
+  if (NT.tab === 'email') return ntEmail(box);
+  return ntSend(box);
+};
+
+// ----- إرسال -----
+async function ntSend(box) {
+  const [{ data: tpls }, es, MX, TR] = await Promise.all([db.from('notification_templates').select('*').order('name'), db.rpc('email_status'), loadMetrics(), loadTracks()]);
+  const emailOn = !!es.data?.linked, act = actives();
+  const AUD = [['all', 'كل الطلاب المنتظمين'], ['plan', 'طلاب خطة'], ['teacher', 'طلاب معلم'], ['room', 'طلاب فترة'], ['pick', 'طلاب أختارهم بالاسم'], ['due', 'المستحق عليهم تنبيه أو إنذار الآن'], ['stumbling', 'المتعثرون هذه المدة'], ['inactive', 'المنقطعون عن التسميع'], ['teachers', 'كل المعلمين'], ['oneTeacher', 'معلم واحد']];
+  box.innerHTML = `<div class="grid"><div class="card c-blue span7"><div class="head"><h3>رسالة جديدة</h3></div>
+    <label class="f" for="nTpl">من قالب <span class="hint">اختياري؛ يملأ العنوان والنص والرابط</span><select id="nTpl"><option value="">بدون قالب</option>${(tpls || []).map(t => opt(t.id, t.name + (t.trigger !== 'manual' ? ' (تلقائي)' : ''), t.id === NT.tpl)).join('')}</select></label>
+    <label class="f" for="nAud" style="margin-top:8px">المستلمون<select id="nAud">${AUD.map(([k, l]) => opt(k, l)).join('')}</select></label>
+    <div id="nSub" style="margin-top:8px"></div>
+    <label class="f" for="nT" style="margin-top:8px">العنوان<input id="nT" type="text"></label>
+    <label class="f" for="nB" style="margin-top:8px">النص<textarea id="nB" rows="5"></textarea></label>
+    <div class="row" style="flex-wrap:wrap;gap:4px;margin-top:4px;justify-content:flex-start"><span class="hint">أضف متغيرًا يُستبدل لكل طالب:</span>${VARS.map(([k, l]) => `<button type="button" class="btn ghost sm" data-var="${k}">${l}</button>`).join('')}</div>
+    <label class="f" for="nL" style="margin-top:8px">رابط <span class="hint">اختياري؛ يظهر للطالب زر «فتح الرابط». وأي رابط تكتبه داخل النص يصير قابلًا للضغط أيضًا</span><input id="nL" type="url" dir="ltr" placeholder="https://"></label>
+    <div class="chips" style="margin-top:8px"><label><input type="checkbox" checked disabled>داخل المنصة</label><label><input type="checkbox" id="nPush" checked>إشعار الجوال</label><label${emailOn ? '' : ' title="اربط البريد من تبويب «البريد»"'}><input type="checkbox" id="nMail"${emailOn ? '' : ' disabled'}>البريد${emailOn ? '' : ' (غير مربوط بعد)'}</label></div>
+    <div style="margin-top:8px"><b class="small">وقت الإرسال</b><div class="seg" style="margin-top:4px"><button type="button" data-when="now" aria-pressed="true">الآن</button><button type="button" data-when="later" aria-pressed="false">مجدول</button></div>
+      <label class="f" id="nAtW" hidden style="margin-top:6px">الموعد <span class="hint">بتوقيت جهازك</span><input id="nAt" type="datetime-local"></label></div>
+    <p class="hint" id="nCount" style="margin-top:6px"></p>
+    <button class="btn" id="nGo" style="margin-top:8px">إرسال</button></div>
+    <div class="card span5 c-teal"><div class="head"><h3>معاينة</h3><span class="hint" id="nPvWho"></span></div><div class="card" style="padding:8px"><div class="inbox-item"><span class="dot"></span><div style="min-width:0"><b id="nPvT"></b><p class="small" id="nPvB" style="margin-top:3px;line-height:1.8"></p><div id="nPvL"></div></div></div></div>
+      <div class="hintbox" style="margin-top:10px">• داخل المنصة: تظهر فورًا في رمز الجرس.<br>• إشعار الجوال: يصل خلال دقيقة لمن فعّل الإشعارات على جواله.<br>• البريد: يُرسل عبر سكربت Google بعد ربطه من تبويب «البريد».<br>• المجدول يُرسل تلقائيًا في موعده، ويمكن إلغاؤه من «الأرشيف» قبل موعده.</div></div></div>`;
+  let when = 'now', picked = new Set();
+  const stOf = s => discOf(s, TR, MX[s.id]);
   const sub = () => {
-    const a = $('#nAud').value;
-    $('#nSub').innerHTML = a === 'teacher' ? `<select id="nTe">${teacherOpts()}</select>` : a === 'room' ? `<select id="nRo">${roomOpts()}</select>` : a === 'plan' ? `<select id="nPl">${planOpts()}</select>` : a === 'oneTeacher' ? `<select id="nOT">${teacherOpts()}</select>` : a === 'one' ? `<select id="nOne">${D.students.slice().sort((x, y) => x.name.localeCompare(y.name, 'ar')).map(s => opt(s.id, s.name)).join('')}</select>` : '';
-    $$('#nSub select').forEach(s => s.onchange = count); count();
+    const a = $('#nAud', box).value, S = $('#nSub', box);
+    S.innerHTML = a === 'plan' ? `<select id="nPl">${planOpts()}</select>` : a === 'teacher' || a === 'oneTeacher' ? `<select id="nTe">${teacherOpts()}</select>` : a === 'room' ? `<select id="nRo">${roomOpts()}</select>`
+      : a === 'inactive' ? `<label class="f">لم يُرصد لهم تسميع منذ<input id="nDays" type="number" min="1" value="5"></label>`
+      : a === 'pick' ? `<input id="nQ" type="search" placeholder="ابحث بالاسم…"><div id="nPick" class="card" style="max-height:220px;overflow:auto;padding:6px;margin-top:6px"></div>` : '';
+    if (a === 'pick') { const draw = () => { const q = norm($('#nQ', box).value || ''); $('#nPick', box).innerHTML = act.filter(s => !q || norm(s.name).includes(q)).sort((x, y) => x.name.localeCompare(y.name, 'ar')).map(s => `<label class="row" style="justify-content:flex-start;gap:6px;padding:3px 0"><input type="checkbox" data-pk="${s.user_id}"${picked.has(s.user_id) ? ' checked' : ''}><span>${esc(s.name)}</span><span class="hint">${esc(s.teacher)}</span></label>`).join(''); $$('[data-pk]', box).forEach(c => c.onchange = () => { c.checked ? picked.add(c.dataset.pk) : picked.delete(c.dataset.pk); refresh(); }); }; $('#nQ', box).oninput = draw; draw(); }
+    $$('#nSub select, #nSub input[type=number]', box).forEach(i => i.oninput = i.onchange = refresh); refresh();
   };
   const recipients = () => {
-    const a = $('#nAud').value, act = actives();
+    const a = $('#nAud', box).value, v = id => $('#' + id, box)?.value;
     if (a === 'all') return act.map(s => s.user_id);
-    if (a === 'teacher') return act.filter(s => s.teacher_id === $('#nTe').value).map(s => s.user_id);
-    if (a === 'room') return act.filter(s => D.roomOfStudent[s.id] === $('#nRo').value).map(s => s.user_id);
-    if (a === 'plan') return act.filter(s => s.assign?.plan_id === $('#nPl').value).map(s => s.user_id);
-    if (a === 'one') return [D.studentById[$('#nOne').value]?.user_id].filter(Boolean);
+    if (a === 'plan') return act.filter(s => s.assign?.plan_id === v('nPl')).map(s => s.user_id);
+    if (a === 'teacher') return act.filter(s => s.teacher_id === v('nTe')).map(s => s.user_id);
+    if (a === 'room') return act.filter(s => D.roomOfStudent[s.id] === v('nRo')).map(s => s.user_id);
+    if (a === 'pick') return [...picked];
+    if (a === 'due') return act.filter(s => (stOf(s)?.sev || 0) >= 2).map(s => s.user_id);
+    if (a === 'stumbling') return act.filter(s => stOf(s)?.inWin).map(s => s.user_id);
+    if (a === 'inactive') { const n = +v('nDays') || 5; return act.filter(s => s.assign && A.daysBetween(lastRecOf(s) || s.assign.start_date, TODAY) >= n).map(s => s.user_id); }
     if (a === 'teachers') return D.teachers.filter(t => !t.is_archived).map(t => t.user_id);
-    if (a === 'oneTeacher') return [D.teacherById[$('#nOT').value]?.user_id].filter(Boolean);
+    if (a === 'oneTeacher') return [D.teacherById[v('nTe')]?.user_id].filter(Boolean);
     return [];
   };
-  const count = () => { $('#nCount').textContent = 'سيصل إلى ' + recipients().length + ' مستلم'; };
-  $('#nAud').onchange = sub; sub();
-  $('#nGo').onclick = async () => {
-    const t = $('#nT').value.trim(), b = $('#nB').value.trim(); if (!t || !b) return toast('اكتب العنوان والنص', true);
-    const ids = recipients(); if (!ids.length) return toast('لا يوجد مستلمون', true);
-    const ch = ['inbox']; if ($('#nMail').checked) ch.push('email'); if ($('#nPush').checked) ch.push('push');
-    const btn = $('#nGo'); btn.disabled = true;
-    try { await notify(ids, 'manual', t, b, ch, 'manual:' + Date.now()); toast('أُرسلت الرسالة إلى ' + ids.length); route(); } catch (e) { toast(e.message, true); btn.disabled = false; }
+  const refresh = () => {
+    const ids = recipients().filter(Boolean), t = $('#nT', box).value, b = $('#nB', box).value, l = $('#nL', box).value.trim();
+    $('#nCount', box).textContent = 'سيصل إلى ' + ids.length + ' مستلم' + (when === 'later' && $('#nAt', box).value ? ' في ' + new Date($('#nAt', box).value).toLocaleString('ar-SA-u-nu-latn-ca-gregory', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+    const u = ids[0]; $('#nPvWho', box).textContent = u ? 'كما يراها: ' + (D.userById[u]?.name || '') : '';
+    $('#nPvT', box).textContent = u ? fillVars(t, u, MX) : t; $('#nPvB', box).innerHTML = A.linkify(u ? fillVars(b, u, MX) : b);
+    $('#nPvL', box).innerHTML = l ? `<span class="btn ghost sm" style="margin-top:4px">فتح الرابط</span>` : '';
   };
-  dataTable($('#nTbl'), { rows, sortKey: 'date', dir: -1, cols: [{ key: 'date', label: 'التاريخ', html: r => A.greg(r.date) }, { key: 'who', label: 'المستلم' }, { key: 'title', label: 'العنوان' }, { key: 'kind', label: 'النوع', filter: true }, { key: 'channel', label: 'القناة', filter: true }, { key: 'status', label: 'الحالة', filter: true }] });
-  cardFull($('#nCard'));
-};
+  $('#nAud', box).onchange = sub; sub();
+  ['nT', 'nB', 'nL', 'nAt'].forEach(id => $('#' + id, box).addEventListener('input', refresh));
+  $$('[data-var]', box).forEach(b => b.onclick = () => insertAt($('#nB', box), b.dataset.var));
+  $$('[data-when]', box).forEach(b => b.onclick = () => { when = b.dataset.when; $$('[data-when]', box).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#nAtW', box).hidden = when !== 'later'; $('#nGo', box).textContent = when === 'later' ? 'جدولة الإرسال' : 'إرسال'; refresh(); });
+  const useTpl = id => { const t = (tpls || []).find(x => x.id === id); NT.tpl = id || ''; if (!t) return; $('#nT', box).value = t.title; $('#nB', box).value = t.body; $('#nL', box).value = t.link || ''; $('#nPush', box).checked = t.channels.includes('push'); if (emailOn) $('#nMail', box).checked = t.channels.includes('email'); refresh(); };
+  $('#nTpl', box).onchange = e => useTpl(e.target.value); if (NT.tpl) useTpl(NT.tpl);
+  $('#nGo', box).onclick = async () => {
+    const t = $('#nT', box).value.trim(), b = $('#nB', box).value.trim(), l = $('#nL', box).value.trim(); if (!t || !b) return toast('اكتب العنوان والنص', true);
+    if (l && !/^https?:\/\//.test(l)) return toast('الرابط يجب أن يبدأ بـ https://', true);
+    const ids = [...new Set(recipients().filter(Boolean))]; if (!ids.length) return toast('لا يوجد مستلمون', true);
+    let at = null; if (when === 'later') { at = $('#nAt', box).value; if (!at || new Date(at) <= new Date()) return toast('اختر موعدًا قادمًا', true); }
+    const ch = ['inbox']; if ($('#nPush', box).checked) ch.push('push'); if ($('#nMail', box).checked) ch.push('email');
+    if (!(await confirmBox(`${at ? 'جدولة' : 'إرسال'} «${t}» إلى ${ids.length} مستلم؟`))) return;
+    const btn = $('#nGo', box); btn.disabled = true;
+    try { await notify(ids, 'manual', t, b, ch, null, { link: l || null, at, template: NT.tpl || null, per: u => ({ title: fillVars(t, u, MX), body: fillVars(b, u, MX) }) }); toast(at ? 'جُدولت الرسالة لـ ' + ids.length : 'أُرسلت الرسالة إلى ' + ids.length); NT.tab = 'archive'; route(); }
+    catch (e) { toast(e.message, true); btn.disabled = false; }
+  };
+}
+
+// ----- الأرشيف -----
+async function ntArchive(box) {
+  const [rows, { data: tpls }, cases] = await Promise.all([
+    fetchAll(() => db.from('notifications').select('id, recipient_user_id, channel, kind, title, body, link, status, error, created_by, created_at, sent_at, read_at, scheduled_at, batch_id, template_id, action_id').order('created_at', { ascending: false })),
+    db.from('notification_templates').select('id, name'), fetchAll(() => db.from('follow_up_actions').select('id, student_id, case_date, status'))]);
+  if (!box.isConnected) return;
+  const tplName = Object.fromEntries((tpls || []).map(t => [t.id, t.name])), caseById = Object.fromEntries(cases.map(c => [c.id, c]));
+  const who = id => D.userById[id]?.name || '—', roleOf = id => D.students.some(s => s.user_id === id) ? 'طالب' : D.teachers.some(t => t.user_id === id) ? 'معلم' : (D.userById[id]?.role === 'admin' ? 'مشرف' : '—');
+  const inRange = r => { const d = (r.scheduled_at || r.created_at).slice(0, 10); return (!NT.from || d >= NT.from) && (!NT.to || d <= NT.to); };
+  const list = rows.filter(inRange);
+  // تجميع كل رسالة جماعية في سطر واحد
+  const G = new Map();
+  list.forEach(n => { const k = n.batch_id || [n.created_by, n.kind, n.title, n.created_at.slice(0, 16)].join('|'); if (!G.has(k)) G.set(k, []); G.get(k).push(n); });
+  const batches = [...G.entries()].map(([k, ns]) => {
+    const f = ns[ns.length - 1], users = new Set(ns.map(n => n.recipient_user_id)), inbox = ns.filter(n => n.channel === 'inbox'), cnt = st => ns.filter(n => n.status === st).length;
+    const sched = ns.some(n => n.status === 'scheduled');
+    return { k, ns, f, date: (f.scheduled_at || f.created_at), title: f.title, kind: NKIND[f.kind] || f.kind, sender: f.created_by ? who(f.created_by) : 'النظام', n: users.size,
+      to: users.size === 1 ? who([...users][0]) : users.size + ' مستلمًا', channels: [...new Set(ns.map(n => NCH[n.channel] || n.channel))].join('، '),
+      read: inbox.filter(n => n.read_at).length, inboxN: inbox.length, failed: cnt('failed'), skipped: cnt('skipped'), sched, state: sched ? 'مجدول' : cnt('cancelled') === ns.length ? 'أُلغي' : cnt('failed') ? 'فيه فشل' : cnt('queued') + cnt('sending') ? 'قيد الإرسال' : 'أُرسل',
+      tpl: tplName[f.template_id] || '', action: f.action_id ? caseById[f.action_id] : null };
+  });
+  const total = list.length, readN = list.filter(n => n.channel === 'inbox' && n.read_at).length, inboxN = list.filter(n => n.channel === 'inbox').length;
+  box.innerHTML = `<div class="card" style="--a:var(--blue);margin-bottom:10px"><div class="tbl-tools" style="margin:0">
+      <label class="small">من <input type="date" id="aF" value="${NT.from}" style="width:auto"></label><label class="small">إلى <input type="date" id="aT" value="${NT.to}" style="width:auto"></label>
+      <button class="btn ghost sm" id="aClr" type="button">كل الفترات</button><span class="hint">التاريخ تاريخ الإرسال، أو موعده للمجدول.</span></div></div>
+    <div class="card" style="--a:var(--blue);margin-bottom:10px"><div class="minis">${mini('رسائل', fmtNum(batches.length), 'blue')}${mini('إشعارات مفردة', fmtNum(total), 'slate', 'لكل مستلم ولكل قناة')}${mini('قُرئت', inboxN ? Math.round(readN / inboxN * 100) + '٪' : '—', 'green', fmtNum(readN) + ' من ' + fmtNum(inboxN) + ' داخل المنصة')}${mini('مجدولة', fmtNum(batches.filter(b => b.sched).length), 'violet')}${mini('فشلت', fmtNum(list.filter(n => n.status === 'failed').length), 'red')}${mini('بلا جهاز مفعّل', fmtNum(list.filter(n => n.status === 'skipped').length), 'amber', 'إشعار الجوال')}</div></div>
+    <div class="card c-blue" id="aCard"><div class="head"><h3>أرشيف الإشعارات</h3><div class="row" style="gap:6px"><button class="btn ghost sm" id="aExp1" type="button">تصدير الرسائل</button><button class="btn ghost sm" id="aExp2" type="button">تصدير تفصيلي لكل مستلم</button></div></div><div id="aTbl"></div></div>`;
+  $('#aF', box).onchange = e => { NT.from = e.target.value; route(); }; $('#aT', box).onchange = e => { NT.to = e.target.value; route(); }; $('#aClr', box).onclick = () => { NT.from = NT.to = ''; route(); };
+  const tm = d => new Date(d).toLocaleTimeString('ar-SA-u-nu-latn', { timeZone: 'Asia/Riyadh', hour: '2-digit', minute: '2-digit', hour12: false });
+  const tbl = dataTable($('#aTbl', box), { rows: batches, sortKey: 'date', dir: -1, pageSize: 200, onRow: b => batchDrawer(b), cols: [
+    { key: 'date', label: 'التاريخ', html: b => A.greg(b.date.slice(0, 10)) + `<div class="hint">${tm(b.date)}</div>` },
+    { key: 'title', label: 'العنوان', html: b => `<b>${esc(b.title)}</b>${b.tpl ? `<div class="hint">قالب: ${esc(b.tpl)}</div>` : ''}` },
+    { key: 'kind', label: 'النوع', filter: true }, { key: 'to', label: 'المستلم' }, { key: 'channels', label: 'القنوات', filter: true },
+    { key: 'read', label: 'قُرئت', num: true, html: b => b.inboxN ? `${b.read} من ${b.inboxN}` : '—' },
+    { key: 'state', label: 'الحالة', filter: true, html: b => `<span class="pill ${b.sched ? 'info' : b.state === 'أُلغي' ? 'plain' : b.failed ? 'bad' : b.state === 'أُرسل' ? 'ok' : 'warn'}">${b.state}</span>${b.skipped ? `<div class="hint">${b.skipped} بلا جهاز مفعّل</div>` : ''}` },
+    { key: 'sender', label: 'المرسل', filter: true }, { key: 'act', label: 'الإجراء', val: b => b.action ? 'مرتبط بحالة' : '', html: b => b.action ? `<a href="#actions" class="small" onclick="event.stopPropagation()">حالة ${A.greg(b.action.case_date)}</a>` : '' }] });
+  cardFull($('#aCard', box));
+  $('#aExp1', box).onclick = () => A.exportXlsx('أرشيف الإشعارات - ' + TODAY, 'الرسائل', [['التاريخ', b => b.date.slice(0, 10)], ['الوقت', b => tm(b.date)], ['العنوان', b => b.title], ['النص', b => b.f.body], ['الرابط', b => b.f.link], ['النوع', b => b.kind], ['القالب', b => b.tpl], ['عدد المستلمين', b => b.n], ['المستلم', b => b.to], ['القنوات', b => b.channels], ['قُرئت', b => b.read], ['داخل المنصة', b => b.inboxN], ['فشلت', b => b.failed], ['بلا جهاز', b => b.skipped], ['الحالة', b => b.state], ['المرسل', b => b.sender], ['مرتبط بحالة', b => b.action ? 'نعم' : '']], tbl.getRows ? tbl.getRows() : batches);
+  $('#aExp2', box).onclick = () => A.exportXlsx('أرشيف الإشعارات التفصيلي - ' + TODAY, 'لكل مستلم', [['التاريخ', n => (n.scheduled_at || n.created_at).slice(0, 10)], ['الوقت', n => tm(n.scheduled_at || n.created_at)], ['المستلم', n => who(n.recipient_user_id)], ['الصفة', n => roleOf(n.recipient_user_id)], ['البريد', n => D.userById[n.recipient_user_id]?.email], ['القناة', n => NCH[n.channel] || n.channel], ['النوع', n => NKIND[n.kind] || n.kind], ['العنوان', n => n.title], ['النص', n => n.body], ['الرابط', n => n.link], ['الحالة', n => NST[n.status]?.[0] || n.status], ['وقت القراءة', n => n.read_at ? n.read_at.slice(0, 16).replace('T', ' ') : ''], ['سبب الفشل', n => n.error], ['المرسل', n => n.created_by ? who(n.created_by) : 'النظام']], list);
+  function batchDrawer(b) {
+    const users = [...new Set(b.ns.map(n => n.recipient_user_id))].map(u => ({ u, ns: b.ns.filter(n => n.recipient_user_id === u) }));
+    drawer('الرسالة: ' + b.title, `<div class="card"><p class="small muted">${A.greg(b.date.slice(0, 10))} ${tm(b.date)} · ${esc(b.kind)} · من ${esc(b.sender)}${b.tpl ? ' · قالب ' + esc(b.tpl) : ''}</p>
+        <p style="margin-top:6px;line-height:1.9">${A.linkify(b.f.body)}</p>${b.f.link ? `<a class="btn ghost sm" href="${esc(b.f.link)}" target="_blank" rel="noopener">فتح الرابط</a>` : ''}
+        ${b.sched ? `<button class="btn danger sm" id="bCancel" type="button" style="margin-top:8px">إلغاء الإرسال المجدول</button>` : ''}</div>
+      <div class="card" style="margin-top:8px"><div class="head"><h3>المستلمون (${users.length})</h3><span class="hint">قُرئت ${b.read} من ${b.inboxN}</span></div>
+        <div class="tbl-wrap" style="max-height:60vh"><table><thead><tr><th>المستلم</th>${[...new Set(b.ns.map(n => n.channel))].map(c => `<th>${NCH[c]}</th>`).join('')}<th></th></tr></thead><tbody>
+        ${users.map(x => { const s = D.students.find(y => y.user_id === x.u), inb = x.ns.find(n => n.channel === 'inbox');
+          return `<tr><td>${esc(who(x.u))}<div class="hint">${roleOf(x.u)}</div></td>${[...new Set(b.ns.map(n => n.channel))].map(c => { const n = x.ns.find(y => y.channel === c); return `<td>${n ? `<span class="pill ${NST[n.status]?.[1] || 'plain'}" title="${esc(n.error || '')}">${c === 'inbox' && n.read_at ? 'قُرئت' : NST[n.status]?.[0] || n.status}</span>${c === 'inbox' && n.read_at ? `<div class="hint">${A.greg(n.read_at.slice(0, 10))} ${tm(n.read_at)}</div>` : ''}` : '—'}</td>`; }).join('')}
+            <td>${s && !inb?.read_at && !b.sched ? `<button class="btn ghost sm" type="button" data-follow="${s.id}">رصد إجراء</button>` : ''}</td></tr>`; }).join('')}</tbody></table></div></div>`, root => {
+      $('#bCancel', root) && ($('#bCancel', root).onclick = async () => { if (!(await confirmBox('إلغاء هذه الرسالة المجدولة؟ لن تصل لأحد.'))) return; const { error } = await db.rpc('cancel_scheduled_notifications', { p_ids: b.ns.filter(n => n.status === 'scheduled').map(n => n.id) }); if (error) return toast(error.message, true); toast('أُلغيت الرسالة المجدولة'); closeDrawer(); route(); });
+      $$('[data-follow]', root).forEach(x => x.onclick = () => { const s = D.studentById[x.dataset.follow]; closeDrawer(); actionPopup(s, 'rec', s.planObj, `لم يقرأ إشعار «${b.title}» المرسل ${A.greg(b.date.slice(0, 10))}`); });
+    });
+  }
+}
+
+// ----- القوالب -----
+async function ntTemplates(box) {
+  const { data: tpls, error } = await db.from('notification_templates').select('*').order('created_at'); if (error) { box.innerHTML = `<div class="error">${esc(error.message)}</div>`; return; }
+  box.innerHTML = `<div class="hintbox" style="margin-bottom:10px">القالب رسالة جاهزة بمتغيرات تُستبدل لكل طالب (مثل {الاسم} و{الإنجاز}). <b>اليدوي</b> تختاره عند الإرسال. <b>التلقائي</b> يُرسله النظام بنفسه عند حدثه (تعثر، ختم مرحلة، نسبة من الخطة، ختم الخطة، انقطاع)، ويُفحص كل ساعة، ولا يصل للطالب مرتين لنفس الحدث. القالب التلقائي لا يعمل حتى تفعّله.</div>
+    <div class="card c-blue" id="tCard"><div class="head"><h3>القوالب (${(tpls || []).length})</h3><div class="row" style="gap:6px">${(tpls || []).length ? '' : '<button class="btn ghost sm" id="tSug" type="button">إضافة قوالب مقترحة</button>'}<button class="btn gold sm" id="tNew" type="button">+ قالب جديد</button></div></div><div id="tTbl"></div></div>`;
+  dataTable($('#tTbl', box), { rows: (tpls || []).map(t => ({ t, name: t.name, trig: trigText(t), type: t.trigger === 'manual' ? 'يدوي' : 'تلقائي', plan: t.plan_id ? (D.planById[t.plan_id]?.name || '—') : 'كل الخطط', ch: t.channels.map(c => NCH[c]).join('، '), act: t.trigger === 'manual' ? '—' : t.active ? 'مفعّل' : 'متوقف' })), sortKey: 'name', pageSize: 100, onRow: r => tplForm(r.t), cols: [
+    { key: 'name', label: 'القالب', html: r => `<b>${esc(r.name)}</b><div class="hint">${esc(r.t.title)}</div>` }, { key: 'type', label: 'النوع', filter: true }, { key: 'trig', label: 'متى يُرسل' }, { key: 'plan', label: 'الخطة', filter: true }, { key: 'ch', label: 'القنوات' },
+    { key: 'act', label: 'الحالة', filter: true, html: r => r.act === '—' ? '—' : `<span class="pill ${r.t.active ? 'ok' : 'plain'}">${r.act}</span>` }] });
+  $('#tNew', box).onclick = () => tplForm(null);
+  $('#tSug', box) && ($('#tSug', box).onclick = async () => {
+    const S = [
+      ['تذكير بالتسميع', 'manual', {}, 'تذكير بموعد التسميع', 'السلام عليكم {الاسم}، نذكّرك بموعد التسميع اليوم مع {المعلم}. بارك الله في وقتك.'],
+      ['تهنئة ختم مرحلة', 'stage_done', {}, 'مبارك ختم {المرحلة}', 'السلام عليكم {الاسم}، نهنئك بختم {المرحلة} في {الخطة}. استعد لاختبار المرحلة، ونسأل الله لك التوفيق.'],
+      ['تهنئة نصف الخطة', 'achievement', { pct: 50 }, 'أتممت نصف الخطة', 'ما شاء الله يا {الاسم}، أتممت نصف خطة {الخطة}. مستوى إنجازك {الإنجاز}، والباقي {الباقي}. واصل!'],
+      ['تهنئة ختم الخطة', 'plan_done', {}, 'مبارك ختم الخطة', 'مبارك يا {الاسم} ختم {الخطة}. جزاك الله خيرًا على صبرك ومثابرتك.'],
+      ['تنبيه تعثر', 'stumbles', { count: 3, track: 'any' }, 'نفتقدك في التسميع', 'السلام عليكم {الاسم}، تعثرت {عدد_التعثر} أيام هذه المدة. ما الذي يعيقك؟ نحن هنا لمساعدتك حتى تواصل.'],
+      ['انقطاع عن التسميع', 'inactive', { days: 5 }, 'نفتقدك', 'السلام عليكم {الاسم}، لم نرَك في التسميع منذ {أيام_الانقطاع} أيام. نسأل الله أن تكون بخير، وننتظر عودتك.']];
+    const { error } = await db.from('notification_templates').insert(S.map(([name, trigger, cfg, title, body]) => ({ name, trigger, trigger_cfg: cfg, title, body, channels: ['inbox', 'push'], active: false, created_by: me.id })));
+    if (error) return toast(error.message, true); toast('أُضيفت 6 قوالب مقترحة (التلقائية متوقفة حتى تفعّلها)'); route();
+  });
+  cardFull($('#tCard', box));
+}
+function tplForm(t) {
+  const isNew = !t; t = t || { name: '', title: '', body: '', link: '', trigger: 'manual', trigger_cfg: {}, channels: ['inbox', 'push'], plan_id: null, active: false };
+  drawer(isNew ? 'قالب جديد' : 'تعديل القالب: ' + t.name, `<div class="stack">
+    <label class="f">اسم القالب <span class="hint">للمشرف فقط</span><input id="tfN" type="text" value="${esc(t.name)}"></label>
+    <label class="f">متى يُرسل<select id="tfTr">${Object.entries(TRIG).map(([k, l]) => opt(k, l, t.trigger === k)).join('')}</select></label>
+    <div id="tfCfg"></div>
+    <label class="f">الخطة<select id="tfP"><option value="">كل الخطط</option>${planOpts(t.plan_id)}</select></label>
+    <label class="f">العنوان<input id="tfT" type="text" value="${esc(t.title)}"></label>
+    <label class="f">النص<textarea id="tfB" rows="5">${esc(t.body)}</textarea></label>
+    <div class="row" id="tfVars" style="flex-wrap:wrap;gap:4px;justify-content:flex-start"></div>
+    <label class="f">رابط <span class="hint">اختياري</span><input id="tfL" type="url" dir="ltr" value="${esc(t.link || '')}" placeholder="https://"></label>
+    <div class="chips"><label><input type="checkbox" checked disabled>داخل المنصة</label><label><input type="checkbox" id="tfPush"${t.channels.includes('push') ? ' checked' : ''}>إشعار الجوال</label><label><input type="checkbox" id="tfMail"${t.channels.includes('email') ? ' checked' : ''}>البريد</label></div>
+    <label class="chips" id="tfActW"><label><input type="checkbox" id="tfAct"${t.active ? ' checked' : ''}><b>مفعّل</b>: يُرسله النظام تلقائيًا</label></label>
+    <div id="tfMatch" class="hint"></div>
+    <div class="row" style="gap:6px;justify-content:flex-start"><button class="btn" id="tfSave" type="button">حفظ</button>${isNew ? '' : '<button class="btn ghost" id="tfCheck" type="button">من ينطبق عليه الآن؟</button><button class="btn danger" id="tfDel" type="button">حذف</button>'}</div></div>`, root => {
+    const cfg = () => { const tr = $('#tfTr', root).value, c = t.trigger === tr ? t.trigger_cfg || {} : {};
+      $('#tfCfg', root).innerHTML = tr === 'stumbles' ? `<div class="g2"><label class="f">عدد أيام التعثر في مدة العدّ<input id="cfN" type="number" min="1" value="${c.count || 3}"></label><label class="f">المسار<select id="cfTk">${[['any', 'أي مسار'], ['recitation', 'التسميع'], ['execution', 'التنفيذ']].map(([k, l]) => opt(k, l, (c.track || 'any') === k)).join('')}</select></label></div>`
+        : tr === 'achievement' ? `<label class="f">عند بلوغ نسبة من الخطة (٪)<input id="cfP" type="number" min="1" max="100" value="${c.pct || 50}"></label>`
+        : tr === 'inactive' ? `<label class="f">عدد أيام الانقطاع عن التسميع<input id="cfD" type="number" min="1" value="${c.days || 5}"></label>` : '';
+      $('#tfActW', root).hidden = tr === 'manual';
+      $('#tfVars', root).innerHTML = '<span class="hint">متغيرات:</span>' + [...VARS, ...(TRIG_VARS[tr] || [])].map(([k, l]) => `<button type="button" class="btn ghost sm" data-v="${k}">${l}</button>`).join('');
+      $$('[data-v]', root).forEach(b => b.onclick = () => insertAt($('#tfB', root), b.dataset.v)); };
+    $('#tfTr', root).onchange = cfg; cfg();
+    const read = () => { const tr = $('#tfTr', root).value, ch = ['inbox']; if ($('#tfPush', root).checked) ch.push('push'); if ($('#tfMail', root).checked) ch.push('email');
+      return { name: $('#tfN', root).value.trim(), trigger: tr, plan_id: $('#tfP', root).value || null, title: $('#tfT', root).value.trim(), body: $('#tfB', root).value.trim(), link: $('#tfL', root).value.trim() || null, channels: ch,
+        trigger_cfg: tr === 'stumbles' ? { count: +$('#cfN', root).value || 1, track: $('#cfTk', root).value } : tr === 'achievement' ? { pct: +$('#cfP', root).value || 50 } : tr === 'inactive' ? { days: +$('#cfD', root).value || 5 } : {},
+        active: tr !== 'manual' && $('#tfAct', root).checked, updated_at: new Date().toISOString() }; };
+    const check = async id => { const { data, error } = await db.rpc('rule_matches', { p_template: id }); if (error) return $('#tfMatch', root).textContent = error.message; const { data: log } = await db.from('notification_rule_log').select('student_id, event_key').eq('template_id', id);
+      const sent = new Set((log || []).map(x => x.student_id + '|' + x.event_key)), pending = (data || []).filter(x => !sent.has(x.student_id + '|' + x.event_key));
+      $('#tfMatch', root).innerHTML = `ينطبق الآن على <b>${pending.length}</b> طالبًا لم يصلهم بعد${pending.length ? ': ' + pending.slice(0, 15).map(x => esc(D.studentById[x.student_id]?.name || '')).join('، ') + (pending.length > 15 ? '…' : '') : ''}. ${pending.length ? 'إذا فعّلته يصلهم خلال ساعة.' : ''}`; return pending.length; };
+    $('#tfSave', root).onclick = async () => {
+      const o = read(); if (!o.name || !o.title || !o.body) return toast('اكتب الاسم والعنوان والنص', true); if (o.link && !/^https?:\/\//.test(o.link)) return toast('الرابط يجب أن يبدأ بـ https://', true);
+      if (o.active && !t.active && t.id) { const n = await check(t.id); if (n && !(await confirmBox(`تفعيل القالب سيرسله الآن (خلال ساعة) إلى ${n} طالبًا ينطبق عليهم شرطه. متابعة؟`))) return; }
+      const res = isNew ? await db.from('notification_templates').insert({ ...o, created_by: me.id }).select('*').single() : await db.from('notification_templates').update(o).eq('id', t.id).select('*').single();
+      if (res.error) return toast(res.error.message, true);
+      if (isNew && o.active) { const n = await check(res.data.id); if (n) toast(`حُفظ القالب، ويصل خلال ساعة إلى ${n} طالبًا ينطبق عليهم شرطه`); else toast('حُفظ القالب'); } else toast('حُفظ القالب');
+      closeDrawer(); route();
+    };
+    $('#tfCheck', root) && ($('#tfCheck', root).onclick = () => check(t.id));
+    $('#tfDel', root) && ($('#tfDel', root).onclick = async () => { if (!(await confirmBox(`حذف القالب «${t.name}»؟ الإشعارات التي أُرسلت به تبقى في الأرشيف.`))) return; const { error } = await db.from('notification_templates').delete().eq('id', t.id); if (error) return toast(error.message, true); toast('حُذف القالب'); closeDrawer(); route(); });
+  });
+}
+
+// ----- البريد عبر Google Apps Script -----
+async function ntEmail(box) {
+  const { data: st } = await db.rpc('email_status');
+  const code = secret => `// سكربت إرسال بريد منصة سنن — يُلصق في https://script.google.com
+const SUPABASE_URL = '${A.SUPABASE_URL}';
+const API_KEY = '${A.SUPABASE_KEY}';
+const SECRET = '${secret || 'ضع_المفتاح_هنا'}';
+const SENDER_NAME = 'جمعية سنن التعليمية';
+
+function sendQueued() {
+  const quota = MailApp.getRemainingDailyQuota();
+  if (quota < 1) return;
+  const items = call_('email_claim', { p_secret: SECRET, p_limit: Math.min(50, quota) });
+  items.forEach(function (m) {
+    let ok = true, err = null;
+    try { MailApp.sendEmail({ to: m.to_email, subject: m.title, name: SENDER_NAME, htmlBody: html_(m) }); }
+    catch (e) { ok = false; err = String(e); }
+    call_('email_done', { p_secret: SECRET, p_id: m.id, p_ok: ok, p_error: err });
+  });
+}
+
+function call_(fn, body) {
+  const r = UrlFetchApp.fetch(SUPABASE_URL + '/rest/v1/rpc/' + fn, { method: 'post', contentType: 'application/json',
+    headers: { apikey: API_KEY }, payload: JSON.stringify(body), muteHttpExceptions: true });
+  if (r.getResponseCode() >= 300) throw new Error(fn + ': ' + r.getContentText());
+  const t = r.getContentText(); return t ? JSON.parse(t) : null;
+}
+
+function html_(m) {
+  const esc = s => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const body = esc(m.body).replace(/(https?:\\/\\/[^\\s<]+)/g, '<a href="$1">$1</a>').replace(/\\n/g, '<br>');
+  return '<div dir="rtl" style="font-family:Tahoma,Arial;font-size:15px;line-height:1.9;color:#0F2F33">'
+    + '<h3 style="margin:0 0 8px">' + esc(m.title) + '</h3><p>السلام عليكم ' + esc(m.to_name) + '،</p><p>' + body + '</p>'
+    + (m.link ? '<p><a href="' + esc(m.link) + '" style="background:#0F2F33;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">فتح الرابط</a></p>' : '')
+    + '<p style="color:#5F7679;font-size:12px">' + SENDER_NAME + '</p></div>';
+}
+
+// شغّلها مرة واحدة لتعمل الدالة sendQueued كل 5 دقائق تلقائيًا
+function setup() {
+  ScriptApp.getProjectTriggers().forEach(function (t) { ScriptApp.deleteTrigger(t); });
+  ScriptApp.newTrigger('sendQueued').timeBased().everyMinutes(5).create();
+  sendQueued();
+}`;
+  const last = st?.last_pull ? new Date(st.last_pull) : null, alive = last && Date.now() - last < 20 * 60000;
+  box.innerHTML = `<div class="card" style="--a:var(--blue);margin-bottom:10px"><div class="minis">${mini('الربط', st?.linked ? (alive ? 'يعمل' : 'مربوط') : 'غير مربوط', st?.linked ? (alive ? 'green' : 'amber') : 'red', last ? 'آخر سحب: ' + last.toLocaleString('ar-SA-u-nu-latn-ca-gregory', { dateStyle: 'short', timeStyle: 'short' }) : 'لم يعمل السكربت بعد')}${mini('بانتظار الإرسال', fmtNum(st?.queued || 0), 'amber')}${mini('أُرسل آخر 24 ساعة', fmtNum(st?.sent_today || 0), 'green')}${mini('فشل', fmtNum(st?.failed || 0), 'red', 'التفاصيل في الأرشيف')}</div></div>
+    <div class="card c-blue"><div class="head"><h3>ربط البريد عبر Google Apps Script</h3></div>
+      <ol class="small" style="line-height:2.1;padding-inline-start:20px">
+        <li>اضغط «${st?.linked ? 'إنشاء مفتاح جديد' : 'إنشاء مفتاح الربط'}» ثم «نسخ الكود».${st?.linked ? ' <b>المفتاح الجديد يُبطل القديم</b>، فاستبدل الكود في السكربت.' : ''}</li>
+        <li>افتح <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> بحساب Google الذي سيُرسل منه البريد، وأنشئ مشروعًا جديدًا.</li>
+        <li>احذف ما في الملف، والصق الكود، واحفظ.</li>
+        <li>من أعلى الصفحة اختر الدالة <b>setup</b> واضغط «تشغيل»، ووافق على الصلاحيات (إرسال البريد والاتصال بخدمة خارجية).</li>
+        <li>بعدها يعمل السكربت وحده كل 5 دقائق، ويظهر هنا «يعمل». حد Gmail المجاني نحو 100 رسالة يوميًا، وحساب Google Workspace نحو 1500.</li></ol>
+      <div class="row" style="gap:6px;justify-content:flex-start;margin-top:8px"><button class="btn" id="eKey" type="button">${st?.linked ? 'إنشاء مفتاح جديد' : 'إنشاء مفتاح الربط'}</button><button class="btn ghost" id="eCopy" type="button" disabled>نسخ الكود</button></div>
+      <pre id="eCode" dir="ltr" style="margin-top:8px;max-height:320px;overflow:auto;background:#0F2F33;color:#E9EFEF;padding:10px;border-radius:8px;font-size:12px;white-space:pre-wrap">${esc(code(null))}</pre>
+      <p class="hint">المفتاح يظهر مرة واحدة عند إنشائه، فانسخ الكود مباشرة. ولا تشاركه مع أحد.</p></div>`;
+  let full = '';
+  $('#eKey', box).onclick = async () => { if (st?.linked && !(await confirmBox('إنشاء مفتاح جديد يوقف السكربت الحالي حتى تضع الكود الجديد فيه. متابعة؟'))) return;
+    const { data, error } = await db.rpc('email_secret_create'); if (error) return toast(error.message, true); full = code(data); $('#eCode', box).textContent = full; $('#eCopy', box).disabled = false; toast('أُنشئ المفتاح. انسخ الكود الآن'); };
+  $('#eCopy', box).onclick = async () => { try { await navigator.clipboard.writeText(full); toast('نُسخ الكود'); } catch (e) { toast('انسخ الكود يدويًا من المربع', true); } };
+}
 
 // ============ لوحة التقارير ============
 SECTIONS.reports = async el => {
